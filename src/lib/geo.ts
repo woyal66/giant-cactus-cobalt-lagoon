@@ -67,7 +67,7 @@ export function destPoint(start: LatLng, bearingDeg: number, distM: number): Lat
       Math.sin(br) * Math.sin(ang) * Math.cos(lat1),
       Math.cos(ang) - Math.sin(lat1) * Math.sin(lat2),
     );
-  let lng = ((lng2 * 180) / Math.PI + 540) % 360 - 180;
+  const lng = ((lng2 * 180) / Math.PI + 540) % 360 - 180;
   return { lat: (lat2 * 180) / Math.PI, lng };
 }
 

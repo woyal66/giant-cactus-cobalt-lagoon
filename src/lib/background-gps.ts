@@ -45,6 +45,12 @@ export function asPosition(loc: Location): GeolocationPosition {
 
 export type BackgroundWatch = { stop: () => void };
 
+let activeWatchers = 0;
+/** True while a lock-screen watcher runs: fixes keep arriving with the screen off. */
+export function isBackgroundGpsActive(): boolean {
+  return activeWatchers > 0;
+}
+
 /**
  * Start a lock-screen-safe watcher. `onDenied` fires when the user refuses
  * location access. Returns a handle whose `stop()` is safe to call at any time,
@@ -56,6 +62,7 @@ export function startBackgroundGps(
 ): BackgroundWatch {
   let id: string | null = null;
   let stopped = false;
+  activeWatchers += 1;
 
   void bg()
     .addWatcher(
@@ -81,10 +88,15 @@ export function startBackgroundGps(
       id = watcherId;
       if (stopped) void bg().removeWatcher({ id: watcherId });
     })
-    .catch(() => onDenied());
+    .catch(() => {
+      if (!stopped) activeWatchers -= 1;
+      stopped = true;
+      onDenied();
+    });
 
   return {
     stop() {
+      if (!stopped) activeWatchers -= 1;
       stopped = true;
       if (id) void bg().removeWatcher({ id });
       id = null;

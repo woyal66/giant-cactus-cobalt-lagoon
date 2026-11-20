@@ -14,7 +14,7 @@ import {
 } from "@/lib/anchor";
 import { bowFromGps, gpsReachM, gpsStationLabel } from "@/lib/boat";
 import { formatMeters, haversineMeters, pathLengthMeters, trackInView, TRACK_CHORD_PRESETS, TRACK_TURN_PRESETS } from "@/lib/geo";
-import { GARMIN_SDK_URL, IMAGERY } from "@/lib/imagery";
+import { GARMIN_SDK_URL, availableImagery } from "@/lib/imagery";
 import { getChartBounds } from "@/components/helm/map-view";
 import { AnchorWxCard } from "@/components/helm/weather";
 import {
@@ -43,6 +43,7 @@ import { fetchTideRise } from "@/lib/tides";
 import { STEER_PRESETS, XTE_ALARM_PRESETS } from "@/lib/steer";
 import { SignedIn, SignedOut, UserButton } from "@/lib/auth/gates";
 import { isNativeApp } from "@/lib/native";
+import { shareGpx } from "@/lib/share-gpx";
 import { isPreview } from "@/lib/subscription";
 import { SubscriptionRow } from "@/components/subscription";
 import { useCurrentUserState } from "@/lib/auth/use-current-user";
@@ -425,6 +426,8 @@ export function LayersPanel() {
   const setSeamarks = useHelm((s) => s.setSeamarks);
   const depths = useHelm((s) => s.depths);
   const setDepths = useHelm((s) => s.setDepths);
+  const reefOutlines = useHelm((s) => s.reefOutlines);
+  const setReefOutlines = useHelm((s) => s.setReefOutlines);
   const crumbOn = useHelm((s) => s.crumbOn);
   const setCrumbOn = useHelm((s) => s.setCrumbOn);
   const crumb = useHelm((s) => s.crumb);
@@ -432,6 +435,8 @@ export function LayersPanel() {
   const reverseTrack = useHelm((s) => s.reverseTrack);
   const look = useHelm((s) => s.look);
   const setLook = useHelm((s) => s.setLook);
+  const autoNight = useHelm((s) => s.autoNight);
+  const setAutoNight = useHelm((s) => s.setAutoNight);
   const sunPunch = useHelm((s) => s.sunPunch);
   const setSunPunch = useHelm((s) => s.setSunPunch);
   const tapMode = useHelm((s) => s.tapMode);
@@ -457,7 +462,7 @@ export function LayersPanel() {
         )}
       </div>
       <div className="mb-2 grid gap-1">
-        {IMAGERY.map((im) => (
+        {availableImagery().map((im) => (
           <button
             key={im.id}
             type="button"
@@ -507,6 +512,7 @@ export function LayersPanel() {
         <ToggleRow label="Lat / long lines" on={graticule} onChange={setGraticule} />
         <ToggleRow label="Seamarks" on={seamarks} onChange={setSeamarks} />
         <ToggleRow label="Depth contours" on={depths} onChange={setDepths} />
+        <ToggleRow label="Reef outlines (GBR)" on={reefOutlines} onChange={setReefOutlines} />
         <ToggleRow label="Yellow line while recording" on={crumbOn} onChange={setCrumbOn} />
       </div>
       {crumb.length >= 2 ? (
@@ -520,7 +526,15 @@ export function LayersPanel() {
         </div>
       ) : null}
       <p className="mb-1.5 text-[10px] tracking-[0.14em] text-muted-foreground uppercase">Look</p>
-      <div className="mb-2 grid grid-cols-3 gap-2">
+      <div className="mb-2 grid grid-cols-4 gap-2">
+        <Button
+          variant={autoNight ? "default" : "outline"}
+          size="sm"
+          onClick={() => setAutoNight(!autoNight)}
+          aria-pressed={autoNight}
+        >
+          Auto
+        </Button>
         {([
           ["normal", "Normal"],
           ["sunlight", "Sun"],
@@ -528,9 +542,10 @@ export function LayersPanel() {
         ] as const).map(([id, label]) => (
           <Button
             key={id}
-            variant={look === id ? "default" : "outline"}
+            variant={!autoNight && look === id ? "default" : "outline"}
             size="sm"
             onClick={() => {
+              setAutoNight(false);
               setLook(id);
               if (id === "sunlight") {
                 void document.documentElement.requestFullscreen?.().catch(() => {});
@@ -597,8 +612,13 @@ function OfflinePacks() {
     setBusy(true);
     setProgress({ done: 0, total: 1, bytes: 0 });
     try {
-      await downloadPack(box, maxZ, name.trim() || packName(box), setProgress);
-      toast.success(`${name.trim() || packName(box)} on this phone`);
+      const pack = await downloadPack(box, maxZ, name.trim() || packName(box), setProgress);
+      const label = name.trim() || packName(box);
+      if (pack.missing) {
+        toast.warning(`${label} saved with ${pack.missing} tiles missing. Download again to fill gaps.`);
+      } else {
+        toast.success(`${label} on this phone`);
+      }
       setPackBox(null);
       refresh();
     } catch (err) {
@@ -610,7 +630,7 @@ function OfflinePacks() {
     }
   };
 
-  const useReef = (lat: number, lng: number, reefName: string, radiusM: number) => {
+  const pickReef = (lat: number, lng: number, reefName: string, radiusM: number) => {
     const b = boxAround({ lat, lng }, radiusM);
     setPackBox(b);
     setName(reefName);
@@ -640,7 +660,7 @@ function OfflinePacks() {
           variant="outline"
           size="sm"
           disabled={busy}
-          onClick={() => useReef(-23.904, 152.395, "Lady Musgrave", 2200)}
+          onClick={() => pickReef(-23.904, 152.395, "Lady Musgrave", 2200)}
         >
           Lady Musgrave
         </Button>
@@ -1010,7 +1030,29 @@ export function PassagesPanel() {
                   <p className="truncate text-sm font-medium">{d.title}</p>
                   <p className="text-[11px] text-muted-foreground">{d.waypoints.length} marks</p>
                 </button>
-                <Button variant="ghost" size="sm" className="h-7" onClick={() => removeDraft(d.localId)}>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7"
+                  onClick={() => {
+                    shareGpx(d.title, d.waypoints).catch((err: unknown) => {
+                      // Closing the share sheet is not an error.
+                      if (!/cancel/i.test(String(err))) toast.error("Couldn't export the track");
+                    });
+                  }}
+                >
+                  GPX
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7"
+                  onClick={() => {
+                    if (window.confirm(`Delete "${d.title}"? This can't be undone.`)) {
+                      removeDraft(d.localId);
+                    }
+                  }}
+                >
                   Del
                 </Button>
               </li>

@@ -19,6 +19,14 @@ export default defineConfig({
         replacement: resolve(import.meta.dirname, "src/lib/bom-tides.mobile.ts"),
       },
       {
+        find: "@/lib/auth/gates",
+        replacement: resolve(import.meta.dirname, "src/mobile-shims/auth-gates.tsx"),
+      },
+      {
+        find: "@/lib/auth/use-current-user",
+        replacement: resolve(import.meta.dirname, "src/mobile-shims/use-current-user.ts"),
+      },
+      {
         find: "@/lib/auth/server",
         replacement: resolve(import.meta.dirname, "src/mobile-shims/auth-server.ts"),
       },

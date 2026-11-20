@@ -16,6 +16,7 @@ import {
   snapToLayback,
   suggestedPayOutM,
   swingRadiusM,
+  fixPreciseForWatch,
   tautHorizM,
   appendSwingTrail,
 } from "./anchor.ts";
@@ -81,6 +82,20 @@ describe("rodeMath", () => {
       scopeTarget: 5,
     });
     assert.equal(math.overTotal, true);
+  });
+
+  it("sizes the swing for the shallowest water, not high water", () => {
+    const math = rodeMath({
+      ...DEFAULT_RODE,
+      depthM: 5,
+      chainM: 20,
+      bowM: 1.5,
+      loaM: 12,
+      tideRiseM: 3,
+    });
+    // taut horizontal at 6.5 m (now) is longer than at 9.5 m (HW)
+    assert.equal(math.radiusM, swingRadiusM(20, 6.5, 12));
+    assert.ok(math.radiusM > swingRadiusM(20, 9.5, 12));
   });
 
   it("grows the swing when the phone sits 15 m aft of the roller", () => {
@@ -233,5 +248,15 @@ describe("swing trail", () => {
     const far = destPoint(a, 90, 8);
     assert.equal(appendSwingTrail([a], near).length, 1);
     assert.equal(appendSwingTrail([a], far).length, 2);
+  });
+});
+
+describe("fixPreciseForWatch", () => {
+  it("ignores fixes too vague to judge the circle", () => {
+    assert.equal(fixPreciseForWatch(5, 30), true);
+    assert.equal(fixPreciseForWatch(22, 30), true);
+    assert.equal(fixPreciseForWatch(40, 30), false);
+    assert.equal(fixPreciseForWatch(9, 12), true); // floor of 10 m for tiny circles
+    assert.equal(fixPreciseForWatch(null, 30), true);
   });
 });

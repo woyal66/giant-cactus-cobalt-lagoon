@@ -1,8 +1,15 @@
 import { destPoint, haversineMeters, type LatLng } from "./geo.ts";
-import { ESRI_URL, SENTINEL_URL, STUB_TILE_BYTES } from "./imagery.ts";
+import {
+  ESRI_URL,
+  LICENSED_IMAGERY_ONLY,
+  SENTINEL_URL,
+  STUB_TILE_BYTES,
+  satTileUrl,
+  sourceReady,
+} from "./imagery.ts";
 import { nearestReef } from "./reefs.ts";
 
-export type OfflineSource = "maxar" | "sentinel";
+export type OfflineSource = "maxar" | "sentinel" | "maptiler";
 export type PackQuality = "helm" | "close";
 export type PackZoom = 16 | 17 | 18 | 19;
 
@@ -21,6 +28,8 @@ export type OfflinePack = {
   maxZ: number;
   sources: OfflineSource[];
   tiles: number;
+  /** Tiles that still failed after a retry (the pack is usable, with gaps). */
+  missing?: number;
   bytes: number;
   savedAt: string;
 };
@@ -38,7 +47,18 @@ const DB_NAME = "reefpilot-tiles";
 const DB_VER = 1;
 const AVG_TILE = 28_000;
 const MAX_TILES = 8_000;
-const SOURCES: OfflineSource[] = ["sentinel", "maxar"];
+/**
+ * Sources saved into an offline pack. Bulk-saving tiles is only allowed where the
+ * provider's terms permit device caching: MapTiler does on paid plans; the free
+ * Esri and EOX endpoints are kept for development builds only.
+ */
+function packSources(): OfflineSource[] {
+  const out: OfflineSource[] = [];
+  if (sourceReady("maptiler")) out.push("maptiler");
+  if (!LICENSED_IMAGERY_ONLY) out.push("sentinel", "maxar");
+  return out;
+}
+const SOURCES: OfflineSource[] = packSources();
 export const PACK_ZOOMS: PackZoom[] = [16, 17, 18, 19];
 
 let abort: AbortController | null = null;
@@ -191,6 +211,7 @@ export function tileKey(source: OfflineSource, z: number, x: number, y: number) 
 }
 
 export function tileUrl(source: OfflineSource, z: number, x: number, y: number) {
+  if (source === "maptiler") return satTileUrl("maptiler", x, y, z);
   const t = source === "maxar" ? ESRI_URL : SENTINEL_URL;
   return t
     .replace("{z}", String(z))
@@ -327,7 +348,21 @@ export async function downloadPack(
   }
   let done = 0;
   let bytes = 0;
+  let missing = 0;
   const workers = 6;
+  /** One flaky tile (a signal drop, a 503) must not throw away the whole pack. */
+  const fetchTile = async (url: string): Promise<Blob | null> => {
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      try {
+        const res = await fetch(url, { mode: "cors", signal });
+        if (res.ok) return await res.blob();
+        if (res.status === 404) return null;
+      } catch (err) {
+        if (signal.aborted) throw err;
+      }
+    }
+    return null;
+  };
   let cursor = 0;
   const run = async () => {
     while (cursor < jobs.length) {
@@ -341,13 +376,12 @@ export async function downloadPack(
         bytes += hit.size;
       } else {
         const url = tileUrl(job.source, job.z, job.x, job.y);
-        const res = await fetch(url, { mode: "cors", signal });
-        if (res.ok) {
-          const blob = await res.blob();
-          if (blob.size >= STUB_TILE_BYTES) {
-            await putTile(key, blob);
-            bytes += blob.size;
-          }
+        const blob = await fetchTile(url);
+        if (blob && blob.size >= STUB_TILE_BYTES) {
+          await putTile(key, blob);
+          bytes += blob.size;
+        } else if (!blob) {
+          missing += 1;
         }
       }
       done += 1;
@@ -365,6 +399,7 @@ export async function downloadPack(
     maxZ: est.maxZ,
     sources: [...SOURCES],
     tiles: jobs.length,
+    missing,
     bytes,
     savedAt: new Date().toISOString(),
   };

@@ -36,6 +36,10 @@ import {
   SEAMARK_URL,
   SENTINEL_URL,
   STUB_TILE_BYTES,
+  ATTR_MAPTILER,
+  ATTR_REEFS,
+  REEF_WMS_LAYERS,
+  REEF_WMS_URL,
   autoSatOrder,
   satTileUrl,
   type ImageryId,
@@ -142,7 +146,7 @@ export function getChartBounds(): ChartBounds | null {
 const TRANSPARENT_GIF =
   "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==";
 
-let satEpoch = 0;
+const satEpoch = 0;
 const memTiles = new Map<string, Blob>();
 
 function rememberTile(key: string | undefined, blob: Blob) {
@@ -166,17 +170,29 @@ function leafletFrom(mod: unknown): LeafletNS {
   throw new Error("Leaflet TileLayer missing");
 }
 
+/** One tiny reusable canvas for the placeholder test (was one new canvas per tile). */
+let probe: CanvasRenderingContext2D | null = null;
+function probeCtx(): CanvasRenderingContext2D | null {
+  if (probe) return probe;
+  const canvas = document.createElement("canvas");
+  canvas.width = 8;
+  canvas.height = 8;
+  probe = canvas.getContext("2d", { willReadFrequently: true });
+  return probe;
+}
+
 /** Light grey "no imagery" tiles are tiny and flat. Real ocean can be small and dark — keep those. */
 async function isPlaceholder(blob: Blob): Promise<boolean> {
   if (blob.size < 400) return true;
   if (blob.size > 6000) return false;
   try {
     const bmp = await createImageBitmap(blob);
-    const canvas = document.createElement("canvas");
-    canvas.width = 8;
-    canvas.height = 8;
-    const g = canvas.getContext("2d", { willReadFrequently: true });
-    if (!g) return false;
+    const g = probeCtx();
+    if (!g) {
+      bmp.close();
+      return false;
+    }
+    g.clearRect(0, 0, 8, 8);
     g.drawImage(bmp, 0, 0, 8, 8);
     bmp.close();
     const d = g.getImageData(0, 0, 8, 8).data;
@@ -206,7 +222,11 @@ async function isPlaceholder(blob: Blob): Promise<boolean> {
   }
 }
 
-async function fetchRealTile(url: string, cacheKey?: string): Promise<Blob | null> {
+async function fetchRealTile(
+  url: string,
+  cacheKey?: string,
+  signal?: AbortSignal,
+): Promise<Blob | null> {
   if (cacheKey) {
     const mem = memTiles.get(cacheKey);
     if (mem) return mem;
@@ -217,7 +237,8 @@ async function fetchRealTile(url: string, cacheKey?: string): Promise<Blob | nul
     }
   }
   try {
-    const r = await fetch(url, { mode: "cors" });
+    if (signal?.aborted) return null;
+    const r = await fetch(url, { mode: "cors", signal });
     if (!r.ok) return null;
     const blob = await r.blob();
     if (await isPlaceholder(blob)) return null;
@@ -228,11 +249,16 @@ async function fetchRealTile(url: string, cacheKey?: string): Promise<Blob | nul
   }
 }
 
+/** Tiles that scroll away mid-download are aborted so the visible ones load first. */
+const tileAborts = new WeakMap<HTMLElement, AbortController>();
+
 function loadSatTile(
   tile: HTMLImageElement,
   sources: { id: string; url: string; cacheKey?: string }[],
   done: DoneCallback,
 ) {
+  const ctrl = new AbortController();
+  tileAborts.set(tile, ctrl);
   const ok = () => done(undefined, tile);
   const blank = () => {
     tile.src = TRANSPARENT_GIF;
@@ -250,13 +276,13 @@ function loadSatTile(
 
   void (async () => {
     for (const src of sources) {
-      if (tile.dataset.gen !== String(satEpoch)) return;
-      const blob = await fetchRealTile(src.url, src.cacheKey);
+      if (tile.dataset.gen !== String(satEpoch) || ctrl.signal.aborted) return;
+      const blob = await fetchRealTile(src.url, src.cacheKey, ctrl.signal);
       if (!blob) continue;
       paint(blob, src.id);
       return;
     }
-    if (tile.dataset.gen !== String(satEpoch)) return;
+    if (tile.dataset.gen !== String(satEpoch) || ctrl.signal.aborted) return;
     const first = sources[0];
     if (!first) {
       blank();
@@ -292,7 +318,8 @@ function satLayer(
     detectRetina: false,
     keepBuffer: 6,
     updateWhenIdle: false,
-    updateWhenZooming: true,
+    // Fetching every in-between level during a pinch stutters on phones; load when the zoom settles.
+    updateWhenZooming: false,
     attribution: opts.attribution,
     errorTileUrl: TRANSPARENT_GIF,
     opacity: opts.opacity ?? 1,
@@ -366,6 +393,8 @@ function satLayer(
   ) => TileLayer;
   const layer = new Ctor(url, options);
   layer.on("tileunload", (e: TileEvent) => {
+    tileAborts.get(e.tile)?.abort();
+    tileAborts.delete(e.tile);
     const blob = e.tile.dataset.blob;
     if (blob) URL.revokeObjectURL(blob);
   });
@@ -384,6 +413,7 @@ function tileChoice(id: SatSource, coords: Coords) {
 
 function nativeZoom(id: ImageryId): number {
   if (id === "google" || id === "auto") return 21;
+  if (id === "maptiler") return 20;
   if (id === "bing") return 19;
   return 18;
 }
@@ -474,16 +504,21 @@ export function MapView() {
         if (chartPane) chartPane.style.zIndex = "270";
 
         let activeImagery: ImageryId = useHelm.getState().imagery;
-        const attrFor = (id: ImageryId) =>
+        const attrOne = (id: Exclude<ImageryId, "auto">) =>
           id === "google"
             ? ATTR_GOOGLE
             : id === "bing"
               ? ATTR_BING
               : id === "sentinel"
                 ? ATTR_SENTINEL
-                : id === "auto"
-                  ? "Clearest satellite · Google, Maxar, Bing, Copernicus"
+                : id === "maptiler"
+                  ? ATTR_MAPTILER
                   : ATTR_ESRI;
+        // Auto credits every source it may draw from in this build.
+        const attrFor = (id: ImageryId) =>
+          id === "auto"
+            ? [...new Set(autoSatOrder(18).concat(autoSatOrder(12)).map(attrOne))].join(" · ")
+            : attrOne(id);
         const sourcesFor = (id: ImageryId) => (c: Coords) =>
           id === "auto"
             ? autoSatOrder(c.z).map((src) => ({
@@ -522,6 +557,18 @@ export function MapView() {
           pane: "chartOverlay",
           attribution: ATTR_OPENSEAMAP,
         });
+
+        const reefs: TileLayer = L.tileLayer.wms(REEF_WMS_URL, {
+          layers: REEF_WMS_LAYERS,
+          format: "image/png",
+          transparent: true,
+          version: "1.1.1",
+          maxZoom: MAX_ZOOM,
+          opacity: 0.75,
+          pane: "chartOverlay",
+          attribution: ATTR_REEFS,
+        });
+        let reefsOn = false;
 
         L.control
           .scale({ metric: true, imperial: false, position: "bottomright" })
@@ -1133,6 +1180,15 @@ export function MapView() {
             map.removeLayer(depths);
             depthsOn = false;
           }
+          if (s.reefOutlines) {
+            if (!reefsOn) {
+              reefs.addTo(map);
+              reefsOn = true;
+            }
+          } else if (reefsOn) {
+            map.removeLayer(reefs);
+            reefsOn = false;
+          }
 
           let framingTrack = false;
           if (s.flyTo && s.flyTo.nonce !== lastFly) {
@@ -1336,9 +1392,10 @@ export function MapView() {
               draftLine.setLatLngs([]);
             }
           }
-          rangeLine.setLatLngs([]);
+          // Only clear once; redrawing an empty path on every store change was wasted work.
+          if (rangeLine.getLatLngs().length) rangeLine.setLatLngs([]);
           paintGrid();
-          crumbLine.setLatLngs([]);
+          if (crumbLine.getLatLngs().length) crumbLine.setLatLngs([]);
 
           if (s.anchor && s.swingTrailOn && s.swingTrail.length >= 2) {
             const last = s.swingTrail[s.swingTrail.length - 1]!;

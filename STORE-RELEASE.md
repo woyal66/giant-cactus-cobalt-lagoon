@@ -177,7 +177,28 @@ Any web host works. All you need is two public pages with the same text.
 **Have a lawyer review the Terms and Privacy text before launch.** They're a
 starting point, not legal advice.
 
-## 9. Test before you submit
+## 9. Map and weather data: licences for a paid app
+
+Most free map and weather feeds may only be used by **non-commercial** apps.
+Anchor Mate is paid, so before launch:
+
+| Data | Used for | What's needed for a paid app |
+| --- | --- | --- |
+| Google / Bing satellite | Sharpest close-in photos | **No licence possible this way.** They're fetched directly from consumer tile servers. Turn them off for the store build (below). |
+| Esri World Imagery and Clarity | Reef photos | An ArcGIS Location Platform account and key → `VITE_ESRI_KEY`. Clarity has no commercial terms, so it's hidden in the store build. |
+| Sentinel-2 cloudless (EOX) | Wide-area colour | The 2018–2024 mosaics are non-commercial. A commercial licence comes from EOX (cloudless@eox.at). |
+| **MapTiler Satellite** (recommended) | Licensed satellite and offline packs | A paid MapTiler Cloud plan → `VITE_MAPTILER_KEY`. Its terms cover saving tiles on the device. |
+| Open-Meteo | Wind, waves, currents, model tide | A commercial API plan → `VITE_OPEN_METEO_KEY`. Requests switch over automatically. |
+| BOM tide tables | Official port tides | BOM content is personal use by default. Ask BOM about a data licence, and show their copyright and disclaimer. |
+| OpenSeaMap seamarks and depths | Chart overlays | CC BY-SA. Credit is shown. For heavy use, contact the project. |
+| GBRMPA reef outlines (eAtlas) | Reef overlay | CC BY. Credit is shown. |
+
+For the store build, add `VITE_LICENSED_IMAGERY_ONLY=1` to `.env.production.local`.
+It hides every map source above that has no licence and saves offline packs from
+MapTiler only. With it on and no keys set, the map has no satellite layer, so
+add at least `VITE_MAPTILER_KEY`.
+
+## 10. Test before you submit
 
 - **Purchases:** Apple sandbox testers (App Store Connect → Users and Access →
   Sandbox) and Google license testers (Play Console → Settings → License
@@ -187,9 +208,16 @@ starting point, not legal advice.
   phone. Set an anchor with a small swing radius, lock the phone, walk away, and
   confirm the alarm notification arrives. Repeat with battery saver on.
   This is the feature people pay for, so test it at sea before launch.
-- **Offline:** turn on aeroplane mode with a subscription active; the app should stay unlocked.
+- **Offline:** turn on aeroplane mode with a subscription active; the app should stay unlocked,
+  and the weather panel should show the last forecast with a "No signal" badge.
+- **Alarm volume:** with the ringer switch on silent (iPhone) and in Do Not Disturb,
+  check the drag alarm still sounds. For Do Not Disturb on iPhone, Apple's *Critical
+  Alerts* entitlement is the only option. Request it from Apple (developer site →
+  search "Critical Alerts entitlement") if you want the alarm to override Focus modes.
+- **Battery:** an overnight anchor watch uses the GPS once a second. Recommend a charger
+  in the app description.
 
-## 10. Store listing checklist
+## 11. Store listing checklist
 
 - [ ] App name, subtitle, description (mention the free trial and annual price)
 - [ ] Screenshots: iPhone 6.9" and 6.5", Android phone (take them from the real app)

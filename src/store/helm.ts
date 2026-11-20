@@ -3,7 +3,7 @@ import { persist } from "zustand/middleware";
 import type { Passage, PassageKind, Waypoint } from "@/lib/passages";
 import { DEFAULT_REEF_ID, getReef } from "@/lib/reefs";
 import { isChartUp, type ChartUp, type LatLng, appendTrail, reverseCourse, reverseWaypoints, simplifyTrack, fitTrackView, haversineMeters, type TrackClean } from "@/lib/geo";
-import { HELM_ZOOM, isImageryId, type ImageryId } from "@/lib/imagery";
+import { HELM_ZOOM, isImageryId, usableImagery, type ImageryId } from "@/lib/imagery";
 import { boxShortM, squareFromCorners, type BBox, type OfflinePack } from "@/lib/offline-tiles";
 import {
   clampAlarmRadius,
@@ -142,6 +142,8 @@ export type HelmState = {
   graticule: boolean;
   seamarks: boolean;
   depths: boolean;
+  /** GBRMPA reef / cay / rock outlines overlay. */
+  reefOutlines: boolean;
   panel: PanelId;
   /** Forecast pin. Null means the forecast is for the boat. */
   wxPin: LatLng | null;
@@ -183,6 +185,8 @@ export type HelmState = {
   chartZoom: number;
   sunlight: boolean;
   look: LookMode;
+  /** Switch to night (red) view at sunset and back at sunrise. */
+  autoNight: boolean;
   sunPunch: 1 | 2 | 3;
   rode: RodeSetup;
   hull: BoatSetup;
@@ -220,6 +224,7 @@ type HelmActions = {
   setGraticule: (v: boolean) => void;
   setSeamarks: (v: boolean) => void;
   setDepths: (v: boolean) => void;
+  setReefOutlines: (v: boolean) => void;
   setPanel: (panel: PanelId) => void;
   setWxPin: (p: LatLng | null) => void;
   setDrawMode: (mode: DrawMode) => void;
@@ -272,6 +277,7 @@ type HelmActions = {
   setChartZoom: (z: number) => void;
   setSunlight: (v: boolean) => void;
   setLook: (v: LookMode) => void;
+  setAutoNight: (v: boolean) => void;
   cycleLook: () => void;
   setSunPunch: (n: 1 | 2 | 3) => void;
   setRode: (partial: Partial<RodeSetup>) => void;
@@ -372,8 +378,10 @@ function persistSig(state: Record<string, unknown>): string {
     state.graticule,
     state.seamarks,
     state.depths,
+    state.reefOutlines,
     state.sunlight,
     state.look,
+    state.autoNight,
     state.sunPunch,
     state.chartUp,
     state.boatLow,
@@ -398,10 +406,57 @@ function persistSig(state: Record<string, unknown>): string {
     persistId(state.wxModels),
     persistId(state.crumb),
     persistId(state.mob),
+    persistId(state.anchor),
   ].join("|");
 }
 
 let savedPersistSig = "";
+let savedAnchorId = -1;
+let pendingWrite: { name: string; value: { state: unknown; version?: number } } | null = null;
+let writeTimer: ReturnType<typeof setTimeout> | null = null;
+/** Settings and tracks are saved at most this often; the anchor is saved at once. */
+const PERSIST_DEBOUNCE_MS = 4_000;
+
+function flushHelmWrite() {
+  if (writeTimer != null) {
+    clearTimeout(writeTimer);
+    writeTimer = null;
+  }
+  const w = pendingWrite;
+  pendingWrite = null;
+  if (!w || typeof localStorage === "undefined") return;
+  try {
+    localStorage.setItem(w.name, JSON.stringify(w.value));
+  } catch {
+    /* quota exceeded or storage blocked: keep running, the watch is in memory */
+  }
+}
+
+if (typeof document !== "undefined") {
+  // The OS may kill a backgrounded app without warning: write before that can happen.
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden") flushHelmWrite();
+  });
+  window.addEventListener("pagehide", flushHelmWrite);
+}
+
+export function isAnchorWatch(v: unknown): v is AnchorWatch {
+  if (!v || typeof v !== "object") return false;
+  const a = v as AnchorWatch;
+  const okFence =
+    a.fence === null ||
+    (Array.isArray(a.fence) &&
+      a.fence.every((p) => p && Number.isFinite(p.lat) && Number.isFinite(p.lng)));
+  return (
+    Number.isFinite(a.lat) &&
+    Number.isFinite(a.lng) &&
+    Number.isFinite(a.radiusM) &&
+    a.radiusM > 0 &&
+    Number.isFinite(a.droppedAt) &&
+    typeof a.radiusLocked === "boolean" &&
+    okFence
+  );
+}
 
 const helmStorage = {
   getItem: (name: string) => {
@@ -426,10 +481,18 @@ const helmStorage = {
     const sig = persistSig(state as Record<string, unknown>);
     if (sig === savedPersistSig) return;
     savedPersistSig = sig;
-    localStorage.setItem(name, JSON.stringify(value));
+    pendingWrite = { name, value };
+    const anchorId = persistId((state as { anchor?: unknown }).anchor);
+    if (anchorId !== savedAnchorId) {
+      savedAnchorId = anchorId;
+      flushHelmWrite();
+      return;
+    }
+    writeTimer ??= setTimeout(flushHelmWrite, PERSIST_DEBOUNCE_MS);
   },
   removeItem: (name: string) => {
     savedPersistSig = "";
+    pendingWrite = null;
     if (typeof localStorage === "undefined") return;
     localStorage.removeItem(name);
   },
@@ -450,6 +513,7 @@ export const useHelm = create<HelmState & HelmActions>()(
       graticule: false,
       seamarks: false,
       depths: false,
+      reefOutlines: false,
       panel: null,
       drawMode: "idle",
       draft: [],
@@ -481,6 +545,7 @@ export const useHelm = create<HelmState & HelmActions>()(
       chartZoom: 3,
       sunlight: false,
       look: "normal",
+      autoNight: false,
       sunPunch: 2,
       rode: DEFAULT_RODE,
       hull: DEFAULT_BOAT,
@@ -575,6 +640,7 @@ export const useHelm = create<HelmState & HelmActions>()(
       setGraticule: (graticule) => set({ graticule }),
       setSeamarks: (v) => set({ seamarks: v }),
       setDepths: (v) => set({ depths: v }),
+      setReefOutlines: (v) => set({ reefOutlines: v }),
       setPanel: (panel) => set({ panel }),
       setWxPin: (wxPin) => set({ wxPin }),
       setDrawMode: (drawMode) => {
@@ -998,6 +1064,7 @@ export const useHelm = create<HelmState & HelmActions>()(
       setSunlight: (sunlight) =>
         set({ sunlight, look: sunlight ? "sunlight" : "normal" }),
       setLook: (look) => set({ look, sunlight: look === "sunlight" }),
+      setAutoNight: (autoNight) => set({ autoNight }),
       cycleLook: () => {
         const look = nextLook(get().look);
         set({ look, sunlight: look === "sunlight" });
@@ -1172,8 +1239,10 @@ export const useHelm = create<HelmState & HelmActions>()(
         graticule: s.graticule,
         seamarks: s.seamarks,
         depths: s.depths,
+        reefOutlines: s.reefOutlines,
         sunlight: s.sunlight,
         look: s.look,
+        autoNight: s.autoNight,
         sunPunch: s.sunPunch,
         drafts: s.drafts,
         lastFix: s.lastFix,
@@ -1195,6 +1264,8 @@ export const useHelm = create<HelmState & HelmActions>()(
         crumb: s.crumb,
         crumbOn: s.crumbOn,
         mob: s.mob,
+        // Restored on relaunch so an OS kill overnight does not silently end the watch.
+        anchor: s.anchor,
       }),
       merge: (persisted, current) => {
         const p = (persisted ?? {}) as Partial<HelmState>;
@@ -1210,8 +1281,11 @@ export const useHelm = create<HelmState & HelmActions>()(
         return {
           ...current,
           ...p,
-          imagery: isImageryId(p.imagery) ? p.imagery : current.imagery,
+          imagery: isImageryId(p.imagery) ? usableImagery(p.imagery) : current.imagery,
           depths: typeof p.depths === "boolean" ? p.depths : current.depths,
+          reefOutlines:
+            typeof p.reefOutlines === "boolean" ? p.reefOutlines : current.reefOutlines,
+          autoNight: typeof p.autoNight === "boolean" ? p.autoNight : current.autoNight,
           look: isLookMode(p.look)
             ? p.look
             : p.sunlight === true
@@ -1266,6 +1340,7 @@ export const useHelm = create<HelmState & HelmActions>()(
               )
             : current.crumb,
           mob: isMobMark(p.mob) ? p.mob : null,
+          anchor: isAnchorWatch(p.anchor) ? p.anchor : null,
           alarmSound: isAlarmSound(p.alarmSound) ? p.alarmSound : current.alarmSound,
           gpsAlarmOn: typeof p.gpsAlarmOn === "boolean" ? p.gpsAlarmOn : true,
           introOpen: false,
@@ -1295,13 +1370,27 @@ export function passagePoints(
   return p.waypoints.map((w) => ({ lat: w.lat, lng: w.lng }));
 }
 
-/** The saved line only. The live crumb must not add points while you are following it. */
+const guideCache = new WeakMap<
+  Waypoint[],
+  { turn: number | undefined; chord: number | undefined; pts: LatLng[] }
+>();
+
+/**
+ * The saved line only. The live crumb must not add points while you are following it.
+ * Memoised per waypoint array: the map, the anchor watch and the mark tracker all ask
+ * for this every second, and simplifying a long passage each time was wasted work.
+ * Callers must treat the result as read-only.
+ */
 export function guidePoints(
   p: Passage | LocalDraft | { waypoints: Waypoint[] },
   _crumb?: LatLng[],
   clean?: Partial<TrackClean>,
 ): LatLng[] {
-  return simplifyTrack(p.waypoints, clean);
+  const hit = guideCache.get(p.waypoints);
+  if (hit && hit.turn === clean?.turnDeg && hit.chord === clean?.chordM) return hit.pts;
+  const pts = simplifyTrack(p.waypoints, clean);
+  guideCache.set(p.waypoints, { turn: clean?.turnDeg, chord: clean?.chordM, pts });
+  return pts;
 }
 
 export function helmBow(s: { boat: BoatFix | null; hull: BoatSetup }): LatLng | null {

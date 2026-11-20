@@ -1,3 +1,4 @@
+import { openMeteoUrl } from "./open-meteo.ts";
 export type TideHour = {
   at: number;
   m: number;
@@ -301,7 +302,7 @@ export async function fetchTideRise(lat: number, lng: number): Promise<TideRise>
   } catch {
     /* fall through to the marine model */
   }
-  const url = new URL("https://marine-api.open-meteo.com/v1/marine");
+  const url = openMeteoUrl("https://marine-api.open-meteo.com/v1/marine");
   url.searchParams.set("latitude", lat.toFixed(4));
   url.searchParams.set("longitude", lng.toFixed(4));
   url.searchParams.set("hourly", "sea_level_height_msl");

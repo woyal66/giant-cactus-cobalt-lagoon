@@ -2,7 +2,7 @@ import { useEffect, useRef } from "react";
 import type { Position } from "@capacitor/geolocation";
 import { toast } from "sonner";
 import { cornerIndexes, haversineMeters, shouldAppendTrack } from "@/lib/geo";
-import { boatInsideWatch, anchorPollMs, ANCHOR_POLL_FAST_MS } from "@/lib/anchor";
+import { boatInsideWatch, anchorPollMs, ANCHOR_POLL_FAST_MS, fixPreciseForWatch } from "@/lib/anchor";
 import { HELM_ZOOM } from "@/lib/imagery";
 import { startAlarmTone, stopAlarmTone, unlockAlarmAudio } from "@/lib/alarm";
 import { setSteerEar, stopSteerEar } from "@/lib/steer-audio";
@@ -20,7 +20,13 @@ import {
   type GuardState,
 } from "@/lib/watch-guard";
 import { isNativeApp } from "@/lib/native";
-import { FIX_EVENT, startBackgroundGps, type BackgroundWatch } from "@/lib/background-gps";
+import { isDaylight } from "@/lib/sun";
+import {
+  FIX_EVENT,
+  isBackgroundGpsActive,
+  startBackgroundGps,
+  type BackgroundWatch,
+} from "@/lib/background-gps";
 import { useHelm, guidePoints } from "@/store/helm";
 import type { Waypoint } from "@/lib/passages";
 
@@ -395,7 +401,11 @@ export function useAnchorWatch() {
           fresh,
       );
       const dragging = Boolean(
-        fresh && boat && anchor && !boatInsideWatch(boat, anchor),
+        fresh &&
+          boat &&
+          anchor &&
+          fixPreciseForWatch(boat.accuracy, anchor.radiusM) &&
+          !boatInsideWatch(boat, anchor),
       );
       const pts = s.activePassage
         ? guidePoints(s.activePassage, s.crumb, {
@@ -408,9 +418,11 @@ export function useAnchorWatch() {
         boat && pts.length >= 2
           ? steerCue(boat, pts, s.steerSense, s.xteAlarmM, leg?.index)
           : null;
+      // With lock-screen GPS running the page is not frozen when hidden, so the
+      // guard can (and must) still raise "GPS lost" with the screen off.
       const { state, alarms } = stepGuard(guard.current, {
         now,
-        visible,
+        visible: visible || isBackgroundGpsActive(),
         goodFix,
         fixAt: boat?.at,
         dragging: dragging && goodFix,
@@ -598,3 +610,26 @@ export function startMusgraveDemo() {
 }
 
 export { unlockAlarmAudio, MUSGRAVE };
+
+/** Auto look: night (red) view between sunset and sunrise at the boat, normal by day. */
+export function useAutoNight() {
+  const autoNight = useHelm((s) => s.autoNight);
+  useEffect(() => {
+    if (!autoNight) return;
+    const check = () => {
+      const s = useHelm.getState();
+      const at = s.boat ?? s.lastFix ?? s.flyTo;
+      if (!at) return;
+      const day = isDaylight(at.lat, at.lng, Date.now());
+      if (!day && s.look !== "night") s.setLook("night");
+      else if (day && s.look === "night") s.setLook("normal");
+    };
+    check();
+    const id = window.setInterval(check, 60_000);
+    document.addEventListener("visibilitychange", check);
+    return () => {
+      window.clearInterval(id);
+      document.removeEventListener("visibilitychange", check);
+    };
+  }, [autoNight]);
+}

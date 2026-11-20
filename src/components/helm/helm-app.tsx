@@ -20,6 +20,7 @@ import {
 import { BoatPanel } from "@/components/helm/boat-panel";
 import {
   useAnchorWatch,
+  useAutoNight,
   useDemoCruise,
   useGpsWatch,
   useMarkMade,
@@ -35,6 +36,7 @@ export function HelmApp() {
   useAnchorWatch();
   useWakeLock();
   useMarkMade();
+  useAutoNight();
 
   useEffect(() => {
     void listPacks().then((p) => useHelm.getState().setOfflinePacks(p));

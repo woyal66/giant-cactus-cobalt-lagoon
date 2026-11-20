@@ -23,6 +23,10 @@ a server function, give the phone build an equivalent or it silently returns `nu
 - `src/lib/background-gps.ts`: lock-screen GPS (`@capacitor-community/background-geolocation`). Used by `useGpsWatch` in `src/hooks/helm-runtime.ts` whenever an anchor, recording or passage is active on native; emits `helm:fix` so `useAnchorWatch` evaluates on every fix.
 - `src/lib/watch-guard.ts`, `src/lib/anchor.ts`: alarm logic (pure, tested).
 - `src/lib/watch-notify.ts`: alarm notifications (Android channel `anchor-alarm`, max importance).
+- `src/lib/imagery.ts`: map sources and licensing switches (`VITE_MAPTILER_KEY`, `VITE_ESRI_KEY`, `VITE_LICENSED_IMAGERY_ONLY`). `src/lib/open-meteo.ts` adds the commercial Open-Meteo key.
+- `src/lib/weather.ts`: forecasts are saved per ~10 km cell and revived offline (`reviveForecast`).
+- `src/lib/gpx.ts` / `share-gpx.ts`: GPX export via the share sheet.
+- Anchor watch: saved immediately on change and restored on relaunch (`isAnchorWatch` in the store). Other state is saved at most every 4 s and flushed on backgrounding.
 - `src/components/legal/terms.tsx`, `src/routes/privacy.tsx`: legal text shown in-app and on the website. Keep in sync with what the stores link to.
 
 ## Commands

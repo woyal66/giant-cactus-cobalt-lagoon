@@ -1,6 +1,11 @@
 import { isNativeApp } from "@/lib/native";
 
 let lastKey = "";
+let lastShownAt = 0;
+/** A notification sound is at most ~30 s (iOS limit), so a live alarm re-fires on this beat. */
+export const ALARM_RENOTIFY_MS = 30_000;
+/** 28 s klaxon in ios/App/App and android res/raw. Without it iOS alarms are silent. */
+const ALARM_SOUND_FILE = "anchor_alarm.wav";
 let statusKey = "";
 let statusNote: Notification | null = null;
 
@@ -88,7 +93,8 @@ function post(msg: WatchMsg) {
 }
 
 /** Android: alarms need their own max-importance channel to sound on a locked phone. */
-const ALARM_CHANNEL = "anchor-alarm";
+// Android fixes a channel's sound when it is first created, so a new sound needs a new id.
+const ALARM_CHANNEL = "anchor-alarm-v2";
 let channelReady: Promise<void> | null = null;
 
 function ensureAlarmChannel(
@@ -101,6 +107,7 @@ function ensureAlarmChannel(
     importance: 5,
     visibility: 1,
     vibration: true,
+    sound: ALARM_SOUND_FILE,
   }).catch(() => undefined); // iOS has no channels; that is fine.
   return channelReady;
 }
@@ -120,6 +127,7 @@ function nativeAlarm(kind: "drag" | "xte" | "gps" | "mob", title: string, body: 
             ongoing: kind === "drag",
             autoCancel: false,
             channelId: ALARM_CHANNEL,
+            sound: ALARM_SOUND_FILE,
           },
         ],
       });
@@ -137,8 +145,17 @@ export function showWatchNotice(kind: "drag" | "xte" | "gps" | "mob", body: stri
           ? "Man overboard"
           : "GPS lost";
   const key = `${kind}:${body}`;
-  if (key === lastKey) return;
+  const now = Date.now();
+  // Same alarm still ringing: re-fire natively so the sound keeps going on a locked phone.
+  if (key === lastKey) {
+    if (isNativeApp() && now - lastShownAt >= ALARM_RENOTIFY_MS) {
+      lastShownAt = now;
+      nativeAlarm(kind, title, body);
+    }
+    return;
+  }
   lastKey = key;
+  lastShownAt = now;
   post({ type: "show", title, body });
   nativeAlarm(kind, title, body);
   try {

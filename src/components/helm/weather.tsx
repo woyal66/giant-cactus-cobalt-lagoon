@@ -1864,6 +1864,11 @@ export function AnchorWxCard() {
       <div className="flex items-center justify-between px-3 pt-2 pb-1">
         <p className="text-[10px] tracking-[0.14em] text-muted-foreground uppercase">
           Next 24 h
+          {data.savedAt ? (
+            <span className="ml-2 rounded-sm bg-amber-500/20 px-1.5 py-0.5 tracking-normal text-amber-300 normal-case">
+              No signal · saved {savedAgo(data.savedAt)}
+            </span>
+          ) : null}
         </p>
         <button
           type="button"
@@ -2015,4 +2020,11 @@ export function WindInstrument({ compact }: { compact?: boolean }) {
       </p>
     </button>
   );
+}
+
+function savedAgo(at: number): string {
+  const h = Math.max(0, Math.round((Date.now() - at) / 3_600_000));
+  if (h < 1) return "just now";
+  if (h < 48) return `${h} h ago`;
+  return `${Math.round(h / 24)} days ago`;
 }

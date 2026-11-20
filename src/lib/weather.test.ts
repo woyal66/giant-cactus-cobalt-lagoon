@@ -18,6 +18,9 @@ import {
   axisMarks,
   dayClock,
   windCardinal,
+  reviveForecast,
+  WX_SAVE_MAX_AGE_MS,
+  type WxForecast,
 } from "./weather.ts";
 
 describe("forecast axis", () => {
@@ -248,5 +251,32 @@ describe("horizon", () => {
       30,
     );
     assert.notEqual(two, fortnight);
+  });
+});
+
+describe("offline forecast", () => {
+  const H = 3_600_000;
+  const t0 = Date.parse("2026-11-01T00:00:00Z");
+  const hour = (i: number, kn: number) => ({
+    at: t0 + i * H, windKn: kn, gustKn: null, dirDeg: 90, tempC: 25, precipMm: 0.5,
+    cloudPct: 10, sky: "sun" as const,
+  });
+  const base = {
+    lat: -23.9, lng: 152.4, source: "ecmwf" as const,
+    hours: Array.from({ length: 24 }, (_, i) => hour(i, i === 2 ? 30 : 10)),
+    rainMm: 12, sea: null, savedAt: t0,
+  } as unknown as WxForecast;
+
+  it("moves 'now' to the current hour and drops the past", () => {
+    const f = reviveForecast(base, t0 + 5 * H)!;
+    assert.equal(f.now.at, t0 + 4 * H); // keeps the hour just gone
+    assert.equal(f.hours.length, 20);
+    assert.equal(f.maxWind.windKn, 10); // the 30 kn hour is in the past now
+  });
+
+  it("refuses a forecast that is too old or nearly used up", () => {
+    assert.equal(reviveForecast(base, t0 + WX_SAVE_MAX_AGE_MS + 1), null);
+    assert.equal(reviveForecast(base, t0 + 23 * H), null);
+    assert.equal(reviveForecast({ ...base, savedAt: undefined }, t0), null);
   });
 });

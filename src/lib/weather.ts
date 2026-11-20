@@ -7,6 +7,7 @@ import {
   type TideTurn,
 } from "./tides.ts";
 import { fetchBomStationTide, modelTideOrigin } from "./tide-station.ts";
+import { openMeteoUrl } from "./open-meteo.ts";
 
 export type WxSky =
   | "clear"
@@ -72,6 +73,8 @@ export type WxForecast = {
   /** Other models drawn against the primary line. */
   compare?: Array<{ source: WxModel; hours: WxHour[] }>;
   alt?: { source: WxModel; hours: WxHour[] };
+  /** Set when there was no signal and this is the last forecast saved on the phone. */
+  savedAt?: number;
 };
 
 export const WX_MODEL_LABEL: Record<WxModel, string> = {
@@ -696,7 +699,7 @@ async function fetchJson(url: string, headers?: HeadersInit): Promise<unknown> {
 }
 
 async function fetchSea(lat: number, lng: number): Promise<SeaState | null> {
-  const url = new URL("https://marine-api.open-meteo.com/v1/marine");
+  const url = openMeteoUrl("https://marine-api.open-meteo.com/v1/marine");
   url.searchParams.set("latitude", lat.toFixed(4));
   url.searchParams.set("longitude", lng.toFixed(4));
   url.searchParams.set(
@@ -720,7 +723,7 @@ async function fetchNamedModel(
     icon: { base: "https://api.open-meteo.com/v1/forecast", model: "icon_global", days: "7" },
     ukmo: { base: "https://api.open-meteo.com/v1/forecast", model: "ukmo_global_deterministic_10km", days: "7" },
   }[source];
-  const url = new URL(spec.base);
+  const url = openMeteoUrl(spec.base);
   url.searchParams.set("latitude", lat.toFixed(4));
   url.searchParams.set("longitude", lng.toFixed(4));
   url.searchParams.set(
@@ -746,7 +749,7 @@ async function fetchOpenMeteo(
   lng: number,
   model: "ecmwf_ifs025" | "gfs_global" | "auto",
 ): Promise<WxForecast> {
-  const url = new URL("https://api.open-meteo.com/v1/forecast");
+  const url = openMeteoUrl("https://api.open-meteo.com/v1/forecast");
   url.searchParams.set("latitude", lat.toFixed(4));
   url.searchParams.set("longitude", lng.toFixed(4));
   url.searchParams.set(
@@ -769,7 +772,61 @@ async function fetchMetNo(lat: number, lng: number): Promise<WxForecast> {
   return parseMetNo(json, lat, lng);
 }
 
+/* ---------- offline: keep the last forecast for out-of-signal anchorages ---------- */
+
+const WX_SAVE_PREFIX = "anchormate.wx.";
+/** Older than this, a saved forecast is more misleading than helpful. */
+export const WX_SAVE_MAX_AGE_MS = 72 * 3_600_000;
+
+function wxSaveKey(lat: number, lng: number): string {
+  // ~10 km cells: a forecast for the bay is still right after the boat swings or moves a little.
+  return `${WX_SAVE_PREFIX}${lat.toFixed(1)},${lng.toFixed(1)}`;
+}
+
+function saveForecast(f: WxForecast) {
+  try {
+    const slim: WxForecast = { ...f, compare: undefined, alt: undefined, savedAt: Date.now() };
+    localStorage.setItem(wxSaveKey(f.lat, f.lng), JSON.stringify(slim));
+  } catch {
+    /* storage full or blocked */
+  }
+}
+
+/** Re-anchor a saved forecast on the current hour so "now" is not hours out of date. */
+export function reviveForecast(f: WxForecast, now = Date.now()): WxForecast | null {
+  if (!f.savedAt || now - f.savedAt > WX_SAVE_MAX_AGE_MS) return null;
+  const hours = f.hours.filter((h) => h.at >= now - 3_600_000);
+  if (hours.length < 3) return null;
+  const { maxWind, rainMm } = windowStats(hours);
+  return { ...f, hours, now: hours[0]!, maxWind, rainMm };
+}
+
+function loadForecast(lat: number, lng: number): WxForecast | null {
+  try {
+    const raw = localStorage.getItem(wxSaveKey(lat, lng));
+    return raw ? reviveForecast(JSON.parse(raw) as WxForecast) : null;
+  } catch {
+    return null;
+  }
+}
+
 export async function fetchWeather(
+  lat: number,
+  lng: number,
+  opts?: { compare?: boolean },
+): Promise<WxForecast> {
+  try {
+    const live = await fetchWeatherLive(lat, lng, opts);
+    saveForecast(live);
+    return live;
+  } catch (err) {
+    const saved = loadForecast(lat, lng);
+    if (saved) return saved;
+    throw err;
+  }
+}
+
+async function fetchWeatherLive(
   lat: number,
   lng: number,
   opts?: { compare?: boolean },
