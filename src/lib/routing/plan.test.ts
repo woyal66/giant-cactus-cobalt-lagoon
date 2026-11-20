@@ -12,10 +12,27 @@ const H = 3_600_000;
 const A = { lat: -23.5, lng: 152.0 };
 const B = { lat: -23.5, lng: 152.5 };
 
-test("departures every 3 h, widening to fit the cap", () => {
-  assert.equal(departureTimes(t0, t0 + 12 * H).length, 5);
-  assert.ok(departureTimes(t0, t0 + 72 * H, 8).length <= 8);
+test("hourly departures, widening to fit the cap", () => {
+  assert.equal(departureTimes(t0, t0 + 6 * H).length, 7);
+  assert.equal(departureTimes(t0, t0 + 12 * H).length, 13); // hourly
+  assert.equal(departureTimes(t0, t0 + 24 * H).length, 13); // 2 h steps
+  assert.ok(departureTimes(t0, t0 + 72 * H).length <= 13);
   assert.deepEqual(departureTimes(t0, t0), [t0]);
+});
+
+test("catches the fair tide", () => {
+  // Tidal stream flips every 6 h: east-going (fair for an eastward trip) for hours 0-5, 12-17...
+  const f: WeatherField = uniformField({ windKn: 14, windDir: 0 }, box, t0, 48);
+  for (let i = 0; i <= 48; i += 1) {
+    f.curKn[i] = new Float32Array(9).fill(2);
+    f.curDir[i] = new Float32Array(9).fill(Math.floor(i / 6) % 2 === 0 ? 90 : 270);
+  }
+  const out = planPassage({ start: A, finish: B, windowStart: t0 + 3 * H, windowEnd: t0 + 9 * H, fields: [f], boat, limits: DEFAULT_LIMITS });
+  const best = out.best.fastest!;
+  const hourOfDay = (best.row.departAt - t0) / H;
+  assert.ok(hourOfDay >= 6 || hourOfDay <= 3 || best.result.metrics.avgCurrentKn > 0, `left at +${hourOfDay} h`);
+  const worst = out.rows.filter((r) => r.results.fastest.ok).map((r) => (r.results.fastest as { metrics: { hours: number } }).metrics.hours);
+  assert.ok(best.result.metrics.hours < Math.max(...worst) - 0.3, "tide timing should matter");
 });
 
 test("picks the departure that avoids a gale and reports model spread", () => {

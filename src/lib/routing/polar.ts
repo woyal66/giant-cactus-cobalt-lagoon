@@ -9,8 +9,15 @@ export type BoatType = "cruiser" | "performance" | "catamaran" | "motor";
 export type BoatPerf = {
   type: BoatType;
   loaM: number;
-  /** Sail below this speed and the engine goes on (0 = never motor). */
+  /** Engine on when the predicted sailing speed is below this (0 = off). */
   motorBelowKn: number;
+  /** Engine on when the wind is below this, whatever the sailing speed (0 = off). */
+  motorWindBelowKn?: number;
+  /**
+   * Wind on the nose (inside the no-go zone): false = tack, as a sailor would in a
+   * working breeze; true = motor straight into it at motor speed.
+   */
+  motorOnNose?: boolean;
   /** Cruising speed under engine. */
   motorKn: number;
 };
@@ -90,15 +97,23 @@ export function sailSpeed(p: BoatPerf, twsKn: number, twaDeg: number): number {
 export type Speed = { stwKn: number; motoring: boolean };
 
 /**
- * Speed with the engine rule applied. The engine goes on only when the wind is
- * too light to sail well on any point of sail (judged at a beam reach). Pointing
- * into the no-go zone in a good breeze means tacking, not motoring.
+ * Speed with the engine rules applied, like the motoring settings in most routing
+ * software:
+ *   - wind below `motorWindBelowKn`: motor;
+ *   - predicted sailing speed below `motorBelowKn`: motor, except that inside the
+ *     no-go zone the boat tacks unless `motorOnNose` is set.
+ * Motor-sailing never makes the boat slower than sailing alone.
  */
 export function boatSpeed(p: BoatPerf, twsKn: number, twaDeg: number): Speed {
   if (p.type === "motor") return { stwKn: p.motorKn, motoring: true };
   const sail = sailSpeed(p, twsKn, twaDeg);
-  if (p.motorBelowKn > 0 && sailSpeed(p, twsKn, 90) < p.motorBelowKn) {
-    return { stwKn: Math.max(sail, p.motorKn), motoring: true };
+  const twa = Math.abs(((twaDeg + 540) % 360) - 180);
+  const onNose = twa < noGoDeg(p.type);
+  const motor = { stwKn: Math.max(sail, p.motorKn), motoring: true };
+  if ((p.motorWindBelowKn ?? 0) > 0 && twsKn < p.motorWindBelowKn!) return motor;
+  if (p.motorBelowKn > 0 && sail < p.motorBelowKn) {
+    // In a breeze, a sailor tacks rather than motoring into the no-go zone.
+    if (!onNose || p.motorOnNose || sailSpeed(p, twsKn, 90) < p.motorBelowKn) return motor;
   }
   return { stwKn: sail, motoring: false };
 }

@@ -36,16 +36,17 @@ export type PlanInput = {
   limits: Limits;
   obstacle?: Obstacle;
   isDay?: IsDay;
-  /** Max departures to try (default 8). */
+  /** Max departures to try (default 13: a 24 h window in 2 h steps). */
   maxDepartures?: number;
 };
 
 const H = 3_600_000;
 const MODES: RouteMode[] = ["fastest", "comfort", "safest"];
 
-export function departureTimes(windowStart: number, windowEnd: number, max = 8): number[] {
+/** Hourly departures where the window allows, so the planner can catch the tide. */
+export function departureTimes(windowStart: number, windowEnd: number, max = 13): number[] {
   const span = Math.max(0, windowEnd - windowStart);
-  let stepH = 3;
+  let stepH = 1;
   while (span / (stepH * H) + 1 > max) stepH *= 2;
   const out: number[] = [];
   for (let t = windowStart; t <= windowEnd + 1; t += stepH * H) out.push(t);

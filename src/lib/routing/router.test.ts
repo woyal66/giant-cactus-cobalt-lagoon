@@ -2,7 +2,8 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { haversineMeters } from "../geo.ts";
 import { uniformField } from "./field.ts";
-import { DEFAULT_LIMITS, route, windAgainstCurrent } from "./router.ts";
+import { DEFAULT_LIMITS, route, waterWind, windAgainstCurrent } from "./router.ts";
+import { boatSpeed } from "./polar.ts";
 import type { BoatPerf } from "./polar.ts";
 
 const boat: BoatPerf = { type: "cruiser", loaM: 12, motorBelowKn: 0, motorKn: 6 };
@@ -107,4 +108,45 @@ test("prefers a few long tacks to a zigzag", () => {
     if (s1 && s2 && s1 !== s2) tacks += 1;
   }
   assert.ok(tacks <= 4, `${tacks} tacks`);
+});
+
+test("the boat sails in the wind over the water", () => {
+  // 10 kn from the north; current setting north into it adds 2 kn of breeze.
+  const against = waterWind({ windKn: 10, windDir: 0, curKn: 2, curDir: 0 });
+  assert.ok(Math.abs(against.kn - 12) < 1e-6 && (against.dir < 0.5 || against.dir > 359.5));
+  const withIt = waterWind({ windKn: 10, windDir: 0, curKn: 2, curDir: 180 });
+  assert.ok(Math.abs(withIt.kn - 8) < 1e-6);
+});
+
+test("motoring rules: wind threshold, speed threshold, and wind on the nose", () => {
+  const base = { type: "cruiser" as const, loaM: 12, motorBelowKn: 0, motorKn: 6 };
+  assert.equal(boatSpeed({ ...base, motorWindBelowKn: 6 }, 5, 120).motoring, true);
+  assert.equal(boatSpeed({ ...base, motorWindBelowKn: 6 }, 8, 120).motoring, false);
+  assert.equal(boatSpeed({ ...base, motorBelowKn: 4 }, 5, 170).motoring, true); // slow dead run
+  assert.equal(boatSpeed({ ...base, motorBelowKn: 4 }, 15, 20).motoring, false); // tacks
+  assert.equal(boatSpeed({ ...base, motorBelowKn: 4, motorOnNose: true }, 15, 20).motoring, true);
+});
+
+test("wind over tide raises the seas, and can push them over your limit", () => {
+  const box2 = box;
+  const calm = uniformField({ windKn: 14, windDir: 0, waveM: 1.5, waveDir: 0, wavePerS: 5 }, box2, t0, 48);
+  const tide = uniformField({ windKn: 14, windDir: 0, waveM: 1.5, waveDir: 0, wavePerS: 5, curKn: 2.5, curDir: 0 }, box2, t0, 48);
+  const a = route({ start: A, finish: EAST, departAt: t0, field: calm, boat, mode: "fastest", limits: DEFAULT_LIMITS });
+  const b = route({ start: A, finish: EAST, departAt: t0, field: tide, boat, mode: "fastest", limits: DEFAULT_LIMITS });
+  ok(a);
+  ok(b);
+  assert.equal(a.metrics.steepSeaHours, 0);
+  assert.ok(b.metrics.steepSeaHours > 1 && b.metrics.maxWaveAmp > 1.15, JSON.stringify(b.metrics));
+  assert.ok(b.metrics.maxWaveM > a.metrics.maxWaveM);
+  assert.match(b.warnings.join(" "), /wind over tide/);
+  const tight = route({ start: A, finish: EAST, departAt: t0, field: tide, boat, mode: "fastest", limits: { ...DEFAULT_LIMITS, maxWaveM: 1.7 } });
+  assert.equal(tight.ok, false);
+});
+
+test("foul current is reported", () => {
+  const foul = uniformField({ windKn: 14, windDir: 0, curKn: 1.5, curDir: 270 }, box, t0, 48);
+  const r = route({ start: A, finish: EAST, departAt: t0, field: foul, boat, mode: "fastest", limits: DEFAULT_LIMITS });
+  ok(r);
+  assert.ok(r.metrics.avgCurrentKn < -1);
+  assert.match(r.warnings.join(" "), /Foul tide/);
 });

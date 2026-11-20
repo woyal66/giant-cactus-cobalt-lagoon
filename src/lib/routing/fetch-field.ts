@@ -68,6 +68,7 @@ export function fieldFromResponses(
     gustKn: layers(),
     waveM: layers(),
     waveDir: layers(),
+    wavePer: layers(),
     curKn: layers(),
     curDir: layers(),
   };
@@ -90,6 +91,7 @@ export function fieldFromResponses(
       const idx = new Map(m.time.map((s, i) => [s * 1000, i] as const));
       put(f.waveM, m.wave_height, k, 1, idx);
       put(f.waveDir, m.wave_direction, k, 1, idx);
+      put(f.wavePer!, m.wave_period, k, 1, idx);
       put(f.curKn, m.ocean_current_velocity, k, 1 / 1.852, idx); // km/h -> kn
       put(f.curDir, m.ocean_current_direction, k, 1, idx);
     }
@@ -129,7 +131,7 @@ export async function fetchField(grid: CorridorGrid, model: RouteModel, days: nu
   const m = openMeteoUrl("https://marine-api.open-meteo.com/v1/marine");
   m.searchParams.set("latitude", lat);
   m.searchParams.set("longitude", lng);
-  m.searchParams.set("hourly", "wave_height,wave_direction,ocean_current_velocity,ocean_current_direction");
+  m.searchParams.set("hourly", "wave_height,wave_direction,wave_period,ocean_current_velocity,ocean_current_direction");
   m.searchParams.set("timeformat", "unixtime");
   m.searchParams.set("forecast_days", String(Math.min(8, Number(d))));
   const [wind, marine] = await Promise.all([getJson(w), getJson(m).catch(() => null)]);

@@ -15,6 +15,7 @@
 import { bearingDegrees, destPoint, haversineMeters, type LatLng } from "../geo.ts";
 import { conditionsAt, fieldEnd, type Conditions, type WeatherField } from "./field.ts";
 import { boatSpeed, noGoDeg, waveFactor, type BoatPerf } from "./polar.ts";
+import { effectiveWave } from "./waves.ts";
 
 export type RouteMode = "fastest" | "comfort" | "safest";
 
@@ -49,7 +50,12 @@ export type RoutePoint = LatLng & {
   windKn: number;
   windDir: number;
   gustKn: number;
+  /** Wave height after wind-over-tide steepening. */
   waveM: number;
+  /** How much the current raised the waves (1 = not at all). */
+  waveAmp: number;
+  /** Current along the boat's track, knots (+ fair, − foul). */
+  curAlongKn: number;
   curKn: number;
   curDir: number;
   /** True wind angle on this leg, 0–180. */
@@ -68,6 +74,12 @@ export type RouteMetrics = {
   upwindPct: number;
   motorHours: number;
   windAgainstCurrentHours: number;
+  /** Hours where an opposing current raised the seas by 15% or more. */
+  steepSeaHours: number;
+  /** Largest wind-over-tide height increase, e.g. 1.4 = 40% higher. */
+  maxWaveAmp: number;
+  /** Average current along the track, knots (+ fair, − foul). */
+  avgCurrentKn: number;
   arrivesInDark: boolean;
 };
 
@@ -127,11 +139,27 @@ type Step = {
   stwKn: number;
   motoring: boolean;
   twa: number;
+  waveM: number;
+  waveAmp: number;
+  curAlongKn: number;
   /** Multiplier ≥ 1 on time for this step, or Infinity if not allowed. */
   penalty: number;
 };
 
 /** Sail one heading through the water at these conditions. */
+/** Wind relative to the water: forecast (ground) wind minus the current. */
+export function waterWind(c: Pick<Conditions, "windKn" | "windDir" | "curKn" | "curDir">): { kn: number; dir: number } {
+  if (!(c.curKn > 0.05)) return { kn: c.windKn, dir: c.windDir };
+  const to = ((c.windDir + 180) * Math.PI) / 180;
+  const cr = (c.curDir * Math.PI) / 180;
+  const x = c.windKn * Math.sin(to) - c.curKn * Math.sin(cr);
+  const y = c.windKn * Math.cos(to) - c.curKn * Math.cos(cr);
+  const kn = Math.hypot(x, y);
+  // Back to "blowing FROM".
+  const dir = ((Math.atan2(-x, -y) * 180) / Math.PI + 360) % 360;
+  return { kn, dir };
+}
+
 export function stepOn(
   boat: BoatPerf,
   c: Conditions,
@@ -139,9 +167,14 @@ export function stepOn(
   mode: RouteMode,
   limits: Limits,
 ): Step {
-  const twa = norm180(c.windDir - headingDeg);
-  const sp = boatSpeed(boat, c.windKn, twa);
-  const stw = sp.stwKn * waveFactor(c.waveM, c.waveDir - headingDeg, boat.loaM);
+  // The boat sails in the wind over the moving water, not the forecast (ground) wind:
+  // a current against the wind adds to the breeze, a current with it takes away.
+  const ww = waterWind(c);
+  const twa = norm180(ww.dir - headingDeg);
+  const sp = boatSpeed(boat, ww.kn, twa);
+  // Waves running into an opposing current stand up.
+  const wave = effectiveWave(c.waveM, c.wavePerS, c.waveDir, c.curKn, c.curDir);
+  const stw = sp.stwKn * waveFactor(wave.heightM, c.waveDir - headingDeg, boat.loaM);
   // Ground velocity = water velocity + current.
   const hr = (headingDeg * Math.PI) / 180;
   const cr = (c.curDir * Math.PI) / 180;
@@ -149,27 +182,42 @@ export function stepOn(
   const vy = stw * Math.cos(hr) + c.curKn * Math.cos(cr);
   const sog = Math.hypot(vx, vy);
   const cog = ((Math.atan2(vx, vy) * 180) / Math.PI + 360) % 360;
+  const curAlong = c.curKn * Math.cos(((c.curDir - cog) * Math.PI) / 180);
 
   const margin = mode === "safest" ? 0.85 : 1;
   const over =
     c.windKn > limits.maxWindKn * margin ||
     c.gustKn > limits.maxGustKn * margin ||
-    c.waveM > limits.maxWaveM * margin;
+    wave.heightM > limits.maxWaveM * margin ||
+    (mode === "safest" && wave.blocked);
   let penalty = over ? Infinity : 1;
   if (penalty !== Infinity && mode === "comfort") {
     if (!sp.motoring && twa < 60) penalty += 0.45;
-    if (c.waveM > 1.2) penalty += 0.25 * (c.waveM - 1.2);
+    if (wave.heightM > 1.2) penalty += 0.25 * (wave.heightM - 1.2);
+    // Short, steep wind-over-tide chop is the most uncomfortable sea there is.
+    if (wave.steep > 1.3 && wave.heightM > 0.6) penalty += 0.4 * (wave.steep - 1.3);
     if (c.gustKn > 22) penalty += 0.03 * (c.gustKn - 22);
-    if (norm180(c.waveDir - headingDeg) > 60 && norm180(c.waveDir - headingDeg) < 120 && c.waveM > 1.5) {
+    if (norm180(c.waveDir - headingDeg) > 60 && norm180(c.waveDir - headingDeg) < 120 && wave.heightM > 1.5) {
       penalty += 0.2; // rolling in beam seas
     }
   }
   if (penalty !== Infinity && mode === "safest") {
     penalty += 0.8 * Math.pow(c.windKn / limits.maxWindKn, 4);
-    penalty += 0.8 * Math.pow(c.waveM / limits.maxWaveM, 4);
-    if (windAgainstCurrent(c)) penalty += 0.5;
+    penalty += 0.8 * Math.pow(wave.heightM / limits.maxWaveM, 4);
+    if (wave.amp >= 1.15 || windAgainstCurrent(c)) penalty += 0.5;
+    if (wave.blocked) penalty += 2;
   }
-  return { sogKn: sog, cogDeg: cog, stwKn: stw, motoring: sp.motoring, twa, penalty };
+  return {
+    sogKn: sog,
+    cogDeg: cog,
+    stwKn: stw,
+    motoring: sp.motoring,
+    twa,
+    waveM: wave.heightM,
+    waveAmp: wave.amp,
+    curAlongKn: curAlong,
+    penalty,
+  };
 }
 
 function stepHours(directNm: number): number {
@@ -193,6 +241,8 @@ function toPoints(nodes: Node[]): RoutePoint[] {
       windDir: leg?.windDir ?? 0,
       gustKn: leg?.gustKn ?? 0,
       waveM: leg?.waveM ?? 0,
+      waveAmp: leg?.waveAmp ?? 1,
+      curAlongKn: leg?.curAlongKn ?? 0,
       curKn: leg?.curKn ?? 0,
       curDir: leg?.curDir ?? 0,
       twa: leg?.twa ?? 0,
@@ -209,6 +259,9 @@ export function metricsOf(points: RoutePoint[], isDay?: IsDay): RouteMetrics {
   let sailing = 0;
   let motor = 0;
   let wac = 0;
+  let steep = 0;
+  let maxAmp = 1;
+  let curSum = 0;
   let maxWind = 0;
   let maxGust = 0;
   let maxWave = 0;
@@ -226,6 +279,9 @@ export function metricsOf(points: RoutePoint[], isDay?: IsDay): RouteMetrics {
       if (a.twa < 60) upwind += h;
     }
     if (windAgainstCurrent(a)) wac += h;
+    if (a.waveAmp >= 1.15) steep += h;
+    maxAmp = Math.max(maxAmp, a.waveAmp);
+    curSum += a.curAlongKn * h;
   }
   const first = points[0]!;
   const last = points[points.length - 1]!;
@@ -238,6 +294,9 @@ export function metricsOf(points: RoutePoint[], isDay?: IsDay): RouteMetrics {
     upwindPct: sailing > 0 ? Math.round((upwind / sailing) * 100) : 0,
     motorHours: motor,
     windAgainstCurrentHours: wac,
+    steepSeaHours: steep,
+    maxWaveAmp: maxAmp,
+    avgCurrentKn: (last.at - first.at) / H > 0 ? curSum / ((last.at - first.at) / H) : 0,
     arrivesInDark: isDay ? !isDay(last.lat, last.lng, last.at) : false,
   };
 }
@@ -245,9 +304,14 @@ export function metricsOf(points: RoutePoint[], isDay?: IsDay): RouteMetrics {
 function warningsFor(m: RouteMetrics, limits: Limits): string[] {
   const w: string[] = [];
   if (m.arrivesInDark) w.push("Arrives after dark. Leave earlier or later to see reefs and marks.");
-  if (m.windAgainstCurrentHours >= 1) {
+  if (m.steepSeaHours >= 0.5) {
+    w.push(
+      `About ${Math.max(1, Math.round(m.steepSeaHours))} h of wind over tide: seas up to ${Math.round((m.maxWaveAmp - 1) * 100)}% higher and steeper. Try a departure that carries the tide with the wind.`,
+    );
+  } else if (m.windAgainstCurrentHours >= 1) {
     w.push(`About ${Math.round(m.windAgainstCurrentHours)} h of wind against current: short, steep seas.`);
   }
+  if (m.avgCurrentKn <= -0.4) w.push(`Foul tide and current: about ${Math.abs(m.avgCurrentKn).toFixed(1)} kn against you on average.`);
   if (m.maxGustKn > limits.maxGustKn * 0.9) w.push(`Gusts up to ${Math.round(m.maxGustKn)} kn.`);
   if (m.upwindPct >= 50) w.push(`${m.upwindPct}% of the sailing is upwind.`);
   if (m.motorHours >= 1) w.push(`About ${Math.round(m.motorHours)} h under engine.`);
@@ -365,12 +429,14 @@ function legOf(c: Conditions, s: Step): NonNullable<Node["leg"]> {
     windKn: c.windKn,
     windDir: c.windDir,
     gustKn: c.gustKn,
-    waveM: c.waveM,
     curKn: c.curKn,
     curDir: c.curDir,
     twa: s.twa,
     stwKn: s.stwKn,
     sogKn: s.sogKn,
     motoring: s.motoring,
+    waveM: s.waveM,
+    waveAmp: s.waveAmp,
+    curAlongKn: s.curAlongKn,
   };
 }

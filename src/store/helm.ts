@@ -566,7 +566,12 @@ function applyLengthUnit(v: unknown, fallback: LengthUnit): LengthUnit {
 
 export type RoutePrefs = {
   boatType: BoatType;
+  /** Motor when predicted sailing speed is below this (0 = off). */
   motorBelowKn: number;
+  /** Motor when the wind is below this (0 = off). */
+  motorWindBelowKn: number;
+  /** Wind on the nose: motor straight into it instead of tacking. */
+  motorOnNose: boolean;
   motorKn: number;
   limits: Limits;
 };
@@ -574,6 +579,8 @@ export type RoutePrefs = {
 export const DEFAULT_ROUTE_PREFS: RoutePrefs = {
   boatType: "cruiser",
   motorBelowKn: 3,
+  motorWindBelowKn: 0,
+  motorOnNose: false,
   motorKn: 6,
   limits: DEFAULT_LIMITS,
 };
@@ -585,7 +592,9 @@ function readRoutePrefs(v: unknown): RoutePrefs {
   const l = (p.limits ?? {}) as Partial<Limits>;
   return {
     boatType: BOAT_TYPES.some((b) => b.id === p.boatType) ? (p.boatType as BoatType) : "cruiser",
-    motorBelowKn: num(p.motorBelowKn, 3, 0, 8),
+    motorBelowKn: num(p.motorBelowKn, 3, 0, 10),
+    motorWindBelowKn: num(p.motorWindBelowKn, 0, 0, 20),
+    motorOnNose: typeof p.motorOnNose === "boolean" ? p.motorOnNose : false,
     motorKn: num(p.motorKn, 6, 2, 30),
     limits: {
       maxWindKn: num(l.maxWindKn, DEFAULT_LIMITS.maxWindKn, 8, 50),

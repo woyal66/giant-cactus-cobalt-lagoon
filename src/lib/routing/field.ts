@@ -23,6 +23,8 @@ export type FieldData = {
   gustKn: Float32Array[];
   waveM: Float32Array[];
   waveDir: Float32Array[];
+  /** Wave period, seconds (optional: older fields and tests may leave it empty). */
+  wavePer?: Float32Array[];
   curKn: Float32Array[];
   curDir: Float32Array[];
 };
@@ -37,6 +39,8 @@ export type Conditions = {
   waveM: number;
   /** Direction waves come FROM. */
   waveDir: number;
+  /** Wave period, seconds; 0 if unknown. */
+  wavePerS: number;
   curKn: number;
   /** Direction the current sets TOWARD. */
   curDir: number;
@@ -145,12 +149,14 @@ export function conditionsAt(f: WeatherField, lat: number, lng: number, at: numb
   const wave = vector(f.waveM, f.waveDir, ti, wt);
   const cur = vector(f.curKn, f.curDir, ti, wt);
   const gust = scalar(f.gustKn, ti, wt);
+  const per = f.wavePer ? scalar(f.wavePer, ti, wt) : NaN;
   return {
     windKn: Number.isFinite(wind.speed) ? wind.speed : 0,
     windDir: Number.isFinite(wind.dir) ? wind.dir : 0,
     gustKn: Number.isFinite(gust) ? gust : Number.isFinite(wind.speed) ? wind.speed * 1.3 : 0,
     waveM: Number.isFinite(wave.speed) ? wave.speed : 0,
     waveDir: Number.isFinite(wave.dir) ? wave.dir : 0,
+    wavePerS: Number.isFinite(per) ? per : 0,
     curKn: Number.isFinite(cur.speed) ? cur.speed : 0,
     curDir: Number.isFinite(cur.dir) ? cur.dir : 0,
   };
@@ -185,6 +191,7 @@ export function uniformField(
     gustKn: fill(c.gustKn ?? c.windKn * 1.25),
     waveM: fill(c.waveM ?? 0),
     waveDir: fill(c.waveDir ?? c.windDir),
+    wavePer: fill(c.wavePerS ?? NaN),
     curKn: fill(c.curKn ?? 0),
     curDir: fill(c.curDir ?? 0),
   };

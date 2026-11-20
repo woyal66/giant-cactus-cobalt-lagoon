@@ -9,7 +9,7 @@ import { shareGpx } from "@/lib/share-gpx";
 import { BOAT_TYPES } from "@/lib/routing/polar";
 import { runPlan } from "@/lib/routing/client";
 import type { Choice, DepartureRow, PlanOutput } from "@/lib/routing/plan";
-import type { RouteMode, RoutePoint } from "@/lib/routing/router";
+import type { RouteMetrics, RouteMode, RoutePoint } from "@/lib/routing/router";
 import { useHelm, type LocalDraft } from "@/store/helm";
 
 const H = 3_600_000;
@@ -116,7 +116,14 @@ function PlannerSheet() {
       finish,
       windowStart,
       windowEnd: windowStart + windowH * H,
-      boat: { type: prefs.boatType, loaM: hull.loaM, motorBelowKn: prefs.motorBelowKn, motorKn: prefs.motorKn },
+      boat: {
+        type: prefs.boatType,
+        loaM: hull.loaM,
+        motorBelowKn: prefs.motorBelowKn,
+        motorWindBelowKn: prefs.motorWindBelowKn,
+        motorOnNose: prefs.motorOnNose,
+        motorKn: prefs.motorKn,
+      },
       limits: prefs.limits,
       onStatus: setBusy,
     })
@@ -185,20 +192,12 @@ function PlannerSheet() {
             <Stepper label="Gust kn" value={prefs.limits.maxGustKn} step={1} onChange={(v) => setPrefs({ limits: { ...prefs.limits, maxGustKn: v } })} />
             <Stepper label="Waves" value={prefs.limits.maxWaveM} step={0.25} show={(v) => formatDepth(v)} onChange={(v) => setPrefs({ limits: { ...prefs.limits, maxWaveM: v } })} />
           </div>
-          {prefs.boatType !== "motor" ? (
-            <button
-              type="button"
-              role="switch"
-              aria-checked={prefs.motorBelowKn > 0}
-              onClick={() => setPrefs({ motorBelowKn: prefs.motorBelowKn > 0 ? 0 : 3 })}
-              className="mb-2 flex min-h-11 w-full items-center justify-between rounded-md border border-border bg-background px-3 py-2 text-left text-sm"
-            >
-              <span>Motor when slower than 3 kn</span>
-              <span className={`text-[11px] font-semibold uppercase ${prefs.motorBelowKn > 0 ? "text-primary" : "text-muted-foreground"}`}>
-                {prefs.motorBelowKn > 0 ? "On" : "Off"}
-              </span>
-            </button>
-          ) : null}
+          <MotorSettings />
+          <p className="mb-2 text-[11px] leading-snug text-muted-foreground">
+            Tide and ocean currents are included (Météo-France SMOC model, about 8 km
+            detail): they speed you up or slow you down, change the wind you sail in, and
+            make seas stand up where they run against the waves.
+          </p>
           {distM < 926 ? (
             <p className="mb-2 text-[12px] text-destructive">
               Start and finish are under half a mile apart. Tap Change start or finish and zoom out.
@@ -305,6 +304,7 @@ function Results({
                 {x.motorHours >= 0.5 && x.hours - x.motorHours >= 0.5 ? ` · ${dur(x.motorHours)} motoring` : ""} ·{" "}
                 {agreement(c.row)}
               </p>
+              <p className="text-[11px] text-muted-foreground tabular-nums">{tideLine(x)}</p>
               <p className="mt-0.5 text-[11px] text-muted-foreground">{PLAN_LOOK[m].why}</p>
             </button>
           );
@@ -330,9 +330,9 @@ function Results({
                   className={`size-2.5 shrink-0 rounded-full ${row.light === "green" ? "bg-emerald-400" : row.light === "amber" ? "bg-amber-400" : "bg-destructive"}`}
                 />
                 <span className="w-24 shrink-0 text-[12px] tabular-nums">{when(row.departAt)}</span>
-                <span className="min-w-0 flex-1 truncate text-[11px] text-muted-foreground tabular-nums">
+                <span className="min-w-0 flex-1 text-[11px] leading-snug text-muted-foreground tabular-nums">
                   {r.ok
-                    ? `${dur(r.metrics.hours)} · ${Math.round(r.metrics.maxWindKn)} kn · ${formatDepth(r.metrics.maxWaveM)}${r.metrics.arrivesInDark ? " · dark arrival" : ""}`
+                    ? `${dur(r.metrics.hours)} · ${Math.round(r.metrics.maxWindKn)} kn · ${formatDepth(r.metrics.maxWaveM)} · tide ${signedKn(r.metrics.avgCurrentKn)}${r.metrics.steepSeaHours >= 0.5 ? " · wind over tide" : ""}${r.metrics.arrivesInDark ? " · dark arrival" : ""}`
                     : "Over your limits"}
                 </span>
               </button>
@@ -417,6 +417,94 @@ function PickedActions({ picked }: { picked: Choice }) {
         >
           GPX
         </Button>
+      </div>
+    </div>
+  );
+}
+
+function signedKn(v: number): string {
+  if (Math.abs(v) < 0.05) return "0 kn";
+  return `${v > 0 ? "+" : "−"}${Math.abs(v).toFixed(1)} kn`;
+}
+
+/** "Tide +0.8 kn fair · 2 h wind over tide (seas +35%)" */
+function tideLine(m: RouteMetrics): string {
+  const fair = m.avgCurrentKn >= 0.1 ? "fair" : m.avgCurrentKn <= -0.1 ? "foul" : "slack";
+  const tide = `Tide and current ${signedKn(m.avgCurrentKn)} ${fair}`;
+  if (m.steepSeaHours >= 0.5) {
+    return `${tide} · ${Math.max(1, Math.round(m.steepSeaHours))} h wind over tide (seas +${Math.round((m.maxWaveAmp - 1) * 100)}%)`;
+  }
+  return tide;
+}
+
+/** Motoring rules, as in most routing software. Hidden for motor boats (always motoring). */
+function MotorSettings() {
+  const prefs = useHelm((s) => s.routePrefs);
+  const setPrefs = useHelm((s) => s.setRoutePrefs);
+  if (prefs.boatType === "motor") {
+    return (
+      <div className="mb-2 grid grid-cols-[1fr_8rem] items-center gap-2">
+        <span className="text-sm">Cruising speed</span>
+        <Stepper label="Motor kn" value={prefs.motorKn} step={0.5} onChange={(v) => setPrefs({ motorKn: v })} />
+      </div>
+    );
+  }
+  const row = "flex min-h-11 w-full items-center justify-between gap-2 rounded-md border border-border bg-background px-3 py-1.5 text-left text-sm";
+  const pill = (on: boolean) => `text-[11px] font-semibold uppercase ${on ? "text-primary" : "text-muted-foreground"}`;
+  return (
+    <div className="mb-2">
+      <p className="mb-1 text-[10px] tracking-[0.14em] text-muted-foreground uppercase">Motoring</p>
+      <div className="grid gap-1.5">
+        <div className={row}>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={prefs.motorBelowKn > 0}
+            className="flex flex-1 items-center justify-between gap-2 text-left"
+            onClick={() => setPrefs({ motorBelowKn: prefs.motorBelowKn > 0 ? 0 : 3 })}
+          >
+            <span>Motor if boat speed is below</span>
+            <span className={pill(prefs.motorBelowKn > 0)}>{prefs.motorBelowKn > 0 ? "On" : "Off"}</span>
+          </button>
+          {prefs.motorBelowKn > 0 ? (
+            <div className="w-28 shrink-0">
+              <Stepper label="kn" value={prefs.motorBelowKn} step={0.5} onChange={(v) => setPrefs({ motorBelowKn: v })} />
+            </div>
+          ) : null}
+        </div>
+        <div className={row}>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={prefs.motorWindBelowKn > 0}
+            className="flex flex-1 items-center justify-between gap-2 text-left"
+            onClick={() => setPrefs({ motorWindBelowKn: prefs.motorWindBelowKn > 0 ? 0 : 6 })}
+          >
+            <span>Motor if wind is below</span>
+            <span className={pill(prefs.motorWindBelowKn > 0)}>{prefs.motorWindBelowKn > 0 ? "On" : "Off"}</span>
+          </button>
+          {prefs.motorWindBelowKn > 0 ? (
+            <div className="w-28 shrink-0">
+              <Stepper label="kn" value={prefs.motorWindBelowKn} step={1} onChange={(v) => setPrefs({ motorWindBelowKn: v })} />
+            </div>
+          ) : null}
+        </div>
+        {prefs.motorBelowKn > 0 || prefs.motorWindBelowKn > 0 ? (
+          <>
+            <div className="grid grid-cols-[1fr_8rem] items-center gap-2 px-1">
+              <span className="text-sm">Motoring speed</span>
+              <Stepper label="kn" value={prefs.motorKn} step={0.5} onChange={(v) => setPrefs({ motorKn: v })} />
+            </div>
+            <div className="grid grid-cols-2 gap-1.5">
+              <Button size="sm" variant={!prefs.motorOnNose ? "default" : "outline"} onClick={() => setPrefs({ motorOnNose: false })}>
+                Wind on the nose: tack
+              </Button>
+              <Button size="sm" variant={prefs.motorOnNose ? "default" : "outline"} onClick={() => setPrefs({ motorOnNose: true })}>
+                Wind on the nose: motor
+              </Button>
+            </div>
+          </>
+        ) : null}
       </div>
     </div>
   );
