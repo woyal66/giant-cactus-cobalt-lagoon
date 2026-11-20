@@ -1,13 +1,13 @@
 import { useRef, useState, type PointerEvent } from "react";
 import { Button } from "@/components/ui/button";
 import { WeatherTable } from "@/components/helm/weather-table";
+import { ForecastNow } from "@/components/helm/forecast-now";
 import { toast } from "sonner";
 import { useSpotWx, useWx } from "@/hooks/weather";
 import {
   beaufort,
   clockLabel,
   dayClock,
-  dayStamp,
   formatKn,
   graphAreaTimed,
   graphLineTimed,
@@ -183,13 +183,19 @@ export function WeatherPanel() {
   const wx = pin ? spot : boatWx;
   if (panel !== "weather") return null;
   const data = wx.data;
+  const measureHead = (el: HTMLDivElement | null) => {
+    if (!el) return;
+    const set = () => el.parentElement?.style.setProperty("--wx-head", `${el.offsetHeight}px`);
+    set();
+    new ResizeObserver(set).observe(el);
+  };
   const fromBoat =
     pin && boat ? haversineMeters(boat, pin) : null;
   const brg = pin && boat ? formatHeading(bearingDegrees(boat, pin)) : null;
 
   return (
     <div className="pointer-events-auto absolute inset-0 z-50 flex flex-col overflow-x-hidden overflow-y-auto bg-card pt-[max(0.4rem,env(safe-area-inset-top))] pb-[max(1.5rem,env(safe-area-inset-bottom))]">
-      <div className="sticky top-0 z-10 border-b border-border/60 bg-card/95 px-3 py-1.5 backdrop-blur-md">
+      <div ref={measureHead} className="sticky top-0 z-10 border-b border-border/60 bg-card/95 px-3 py-1.5 backdrop-blur-md">
         <div className="flex items-center justify-between gap-2">
           <div className="min-w-0">
             <h2 className="font-display text-lg font-semibold tracking-tight">
@@ -232,7 +238,6 @@ export function WeatherPanel() {
         </div>
       </div>
       <div className="w-full max-w-full px-3 pt-2">
-        <MoonCard />
         {wx.isLoading && !data ? (
           <p className="text-sm text-muted-foreground">Fetching forecast…</p>
         ) : null}
@@ -245,6 +250,9 @@ export function WeatherPanel() {
           </div>
         ) : null}
         {data ? <WxBody data={data} horizonH={horizonH} onHorizon={setHorizon} /> : null}
+        <div className="mt-3">
+          <MoonCard />
+        </div>
       </div>
     </div>
   );
@@ -312,7 +320,6 @@ function WxBody({
   horizonH: number;
   onHorizon: (h: number) => void;
 }) {
-  const upcoming = sliceByHorizon(data.hours, horizonH);
   const hours = data.hours;
   const available: Array<{ id: WindModelId; hours: WxHour[] }> = [];
   if (isWindModel(data.source)) available.push({ id: data.source, hours: data.hours });
@@ -329,9 +336,6 @@ function WxBody({
     setWxModels(next);
   };
   const shown = available.filter((m) => onModels[m.id]);
-  const stats = windowStats(upcoming.length ? upcoming : data.hours.slice(0, 1));
-  const maxB = beaufort(stats.maxWind.windKn);
-  const strong = stats.maxWind.windKn >= 22;
   const setHours = data.sea?.currentHours ?? [];
   const waveHours = data.sea?.waveHours ?? [];
   const hasTide = Boolean(data.sea && data.sea.tideHours.length >= 2);
@@ -359,12 +363,21 @@ function WxBody({
 
   return (
     <div className="grid w-full max-w-full grid-cols-[minmax(0,1fr)] gap-3">
-      {strong ? (
-        <p className="rounded-md bg-destructive/10 px-2.5 py-1.5 text-sm text-destructive">
-          {maxB.label} later — {formatKn(stats.maxWind.windKn)} kn {windCardinal(stats.maxWind.dirDeg)}{" "}
-          at {dayStamp(stats.maxWind.at)} {hourLabel(stats.maxWind.at)}
-        </p>
-      ) : null}
+      <ForecastNow data={data} />
+      <div className="grid grid-cols-4 gap-1.5" role="radiogroup" aria-label="Time span">
+        {SPANS.map((sp) => (
+          <Button
+            key={sp.h}
+            role="radio"
+            aria-checked={horizonH === sp.h}
+            variant={horizonH === sp.h ? "default" : "outline"}
+            className="h-11"
+            onClick={() => onHorizon(sp.h)}
+          >
+            {sp.label}
+          </Button>
+        ))}
+      </div>
 
       <div className="grid gap-1">
         <div className="flex flex-wrap gap-1">
@@ -429,6 +442,13 @@ function WxBody({
     </div>
   );
 }
+
+const SPANS = [
+  { h: 24, label: "1 day" },
+  { h: 48, label: "2 days" },
+  { h: 72, label: "3 days" },
+  { h: 168, label: "7 days" },
+];
 
 const GRAPH_W = 320;
 const GRAPH_H = 228;
@@ -540,31 +560,8 @@ function SeaStack({
 
   return (
     <div className="grid w-full max-w-full grid-cols-[minmax(0,1fr)] gap-2">
-      {lanes.map((lane) => (
-        <div key={lane.key}>
-          <p className="mb-0.5 text-t12 font-medium text-muted-foreground">{lane.title}</p>
-          <ForecastGraph
-            hours={hours}
-            windSeries={windSeries}
-            horizonH={horizonH}
-            tideHours={tideHours}
-            tideTurns={tideTurns}
-            latDatum={datum}
-            layers={{ wind: false, tide: false, current: false, waves: false, [lane.key]: true }}
-            currentHours={currentHours}
-            waveHours={waveHours}
-            cursorAt={cursor}
-            onCursor={setCursorAt}
-            windowStart={windowStart}
-            onPan={canPan ? shiftWindow : undefined}
-            onZoom={zoomWindow}
-            height={lane.key === "wind" ? GRAPH_H - 28 : LANE_H}
-            lat={lat}
-            lng={lng}
-          />
-        </div>
-      ))}
-      <div className="rounded-xl border border-border bg-background px-2.5 py-2">
+      {/* Pinned under the header, so it stays in view while dragging any graph. */}
+      <div className="sticky top-[var(--wx-head,3.5rem)] z-[5] rounded-xl border border-border bg-background/97 px-2.5 py-2 shadow-[var(--shadow-border)] backdrop-blur-sm">
         <div className="flex items-baseline justify-between gap-2">
           <p className="font-display text-lg leading-none font-semibold tabular-nums">
             {clockLabel(cursor)}
@@ -660,6 +657,30 @@ function SeaStack({
           </div>
         ) : null}
       </div>
+      {lanes.map((lane) => (
+        <div key={lane.key}>
+          <p className="mb-0.5 text-t12 font-medium text-muted-foreground">{lane.title}</p>
+          <ForecastGraph
+            hours={hours}
+            windSeries={windSeries}
+            horizonH={horizonH}
+            tideHours={tideHours}
+            tideTurns={tideTurns}
+            latDatum={datum}
+            layers={{ wind: false, tide: false, current: false, waves: false, [lane.key]: true }}
+            currentHours={currentHours}
+            waveHours={waveHours}
+            cursorAt={cursor}
+            onCursor={setCursorAt}
+            windowStart={windowStart}
+            onPan={canPan ? shiftWindow : undefined}
+            onZoom={zoomWindow}
+            height={lane.key === "wind" ? GRAPH_H - 28 : LANE_H}
+            lat={lat}
+            lng={lng}
+          />
+        </div>
+      ))}
       <WeatherTable
         hours={hours}
         waveHours={waveHours}
