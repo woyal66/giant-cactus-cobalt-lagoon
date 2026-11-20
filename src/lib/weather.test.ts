@@ -24,6 +24,14 @@ import {
 } from "./weather.ts";
 
 describe("forecast axis", () => {
+  it("keeps time labels far enough apart to read", () => {
+    const t0 = Date.UTC(2026, 10, 20, 0);
+    for (const h of [6, 12, 24, 48, 72, 168, 336]) {
+      const n = axisMarks(t0, h).length;
+      assert.ok(n >= 3 && n <= 7, `${h} h → ${n} labels`);
+    }
+  });
+
   it("keeps the weekday on a zoomed window and aligns marks to the clock", () => {
     const t0 = Date.parse("2026-10-06T15:10:00");
     const marks = axisMarks(t0, 6);

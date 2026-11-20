@@ -1017,6 +1017,8 @@ function SeaLayerGraph({
       />
       {points.map((h, i) => {
         if (i % arrowEvery !== 0) return null;
+        // Hours outside the window were being clamped onto the graph edges.
+        if (h.at < t0 || h.at > t0 + horizonH * 3_600_000) return null;
         const x = graphXAt(h.at, t0, horizonH, GRAPH_W, PAD_L, PAD_R);
         const y = yAt(h.v);
         return <PlotArrow key={h.at} x={x} y={y} deg={h.dirDeg} fill="fill-sky-300" />;
@@ -1570,6 +1572,8 @@ function ForecastGraph({
         {showWind && arrowSeries && horizonH <= 72
           ? arrowSeries.hours.map((h, i) => {
               if (i % arrowEvery !== 0) return null;
+        // Hours outside the window were being clamped onto the graph edges.
+        if (h.at < t0 || h.at > t0 + horizonH * 3_600_000) return null;
               const x = graphXAt(h.at, t0, horizonH, GRAPH_W, PAD_L, PAD_R);
               const y = yWind(h.windKn);
               return (
@@ -1586,6 +1590,8 @@ function ForecastGraph({
         {showWaves && waveHours && horizonH <= 72
           ? waveHours.map((h, i) => {
               if (i % arrowEvery !== 0) return null;
+        // Hours outside the window were being clamped onto the graph edges.
+        if (h.at < t0 || h.at > t0 + horizonH * 3_600_000) return null;
               const x = graphXAt(h.at, t0, horizonH, GRAPH_W, PAD_L, PAD_R);
               const y = yWave(h.heightM);
               return (
@@ -1602,6 +1608,8 @@ function ForecastGraph({
         {showCurrent && currentHours && horizonH <= 72
           ? currentHours.map((h, i) => {
               if (i % arrowEvery !== 0) return null;
+        // Hours outside the window were being clamped onto the graph edges.
+        if (h.at < t0 || h.at > t0 + horizonH * 3_600_000) return null;
               const x = graphXAt(h.at, t0, horizonH, GRAPH_W, PAD_L, PAD_R);
               const y = yCurrent(h.kn);
               return (

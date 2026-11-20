@@ -227,8 +227,8 @@ export type AxisMark = { at: number; time: string; day: string | null };
 /** Clock-aligned marks. They move with the window instead of stretching a fake Now to the left edge. */
 export function axisMarks(t0: number, horizonH: number): AxisMark[] {
   const end = t0 + Math.max(1, horizonH) * 3_600_000;
-  const stepH =
-    horizonH <= 8 ? 1 : horizonH <= 18 ? 2 : horizonH <= 36 ? 3 : horizonH <= 72 ? 6 : horizonH <= 168 ? 12 : 24;
+  // At most about 6 labels across a phone-width graph, or "12 PM" and "6 PM" run together.
+  const stepH = [1, 2, 3, 4, 6, 12, 24, 48, 72].find((h) => horizonH / h <= 6) ?? 72;
   const step = stepH * 3_600_000;
   const start = new Date(t0);
   start.setMinutes(0, 0, 0);
