@@ -13,7 +13,9 @@ import {
 } from "@/lib/units";
 import { isTopic } from "@/lib/remote-watch";
 import type { DriftPoint } from "@/lib/mob";
-import { BOAT_TYPES, type BoatType } from "@/lib/routing/polar";
+import type { CellTrend } from "@/lib/radar";
+import { BOAT_TYPES, type BoatPerf, type BoatType } from "@/lib/routing/polar";
+import { EMPTY_LEARNED, readLearned, type LearnedPolar, type PerfLive } from "@/lib/routing/learned";
 import { DEFAULT_LIMITS, DEFAULT_RULES, type Limits, type RouteRules } from "@/lib/routing/router";
 import { isTreat } from "@/lib/routing/storm";
 import { DEFAULT_SAILS, readSails, type SailDef } from "@/lib/routing/sails";
@@ -162,6 +164,12 @@ export type HelmState = {
   reefOutlines: boolean;
   /** GBR Marine Park zoning overlay. */
   parkZones: boolean;
+  /** Live speed against the polar while underway (not saved). */
+  perfLive: PerfLive | null;
+  /** Rain radar overlay with loop. */
+  radar: boolean;
+  /** Radar frame on screen, and the nearest heavy-rain cell if it is closing on the boat. */
+  radarInfo: { frameAt: number; latestAt: number; playing: boolean; cell: CellTrend | null } | null;
   panel: PanelId;
   /** Forecast pin. Null means the forecast is for the boat. */
   wxPin: LatLng | null;
@@ -268,6 +276,9 @@ type HelmActions = {
   setDepths: (v: boolean) => void;
   setReefOutlines: (v: boolean) => void;
   setParkZones: (v: boolean) => void;
+  setRadar: (v: boolean) => void;
+  setPerfLive: (v: PerfLive | null) => void;
+  setRadarInfo: (v: HelmState["radarInfo"]) => void;
   setPanel: (panel: PanelId) => void;
   setWxPin: (p: LatLng | null) => void;
   setDrawMode: (mode: DrawMode) => void;
@@ -436,6 +447,7 @@ function persistSig(state: Record<string, unknown>): string {
     state.depths,
     state.reefOutlines,
     state.parkZones,
+    state.radar,
     state.sunlight,
     state.look,
     state.autoNight,
@@ -588,7 +600,26 @@ export type RoutePrefs = {
   /** Weather models to route on; the first is the main one. */
   models: string[];
   sails: SailDef[];
+  /** This boat's own speed against the polar, learned while sailing. */
+  learned: LearnedPolar;
+  /** Route with the learned polar instead of the built-in one. */
+  useLearned: boolean;
+  /** Engine running: pauses learning (GPS can't tell). */
+  engineOn: boolean;
 };
+
+/** Boat profile for the router from the route settings. */
+export function boatPerfOf(prefs: RoutePrefs, loaM: number): BoatPerf {
+  return {
+    type: prefs.boatType,
+    loaM,
+    motorBelowKn: prefs.motorBelowKn,
+    motorWindBelowKn: prefs.motorWindBelowKn,
+    motorOnNose: prefs.motorOnNose,
+    motorKn: prefs.motorKn,
+    ...(prefs.useLearned ? { learned: prefs.learned } : {}),
+  };
+}
 
 export type RoutePreset = "family" | "delivery" | "racing" | "custom";
 
@@ -637,6 +668,9 @@ export const DEFAULT_ROUTE_PREFS: RoutePrefs = {
   rules: DEFAULT_RULES,
   models: ["ecmwf", "gfs"],
   sails: DEFAULT_SAILS,
+  learned: EMPTY_LEARNED,
+  useLearned: false,
+  engineOn: false,
 };
 
 function readRoutePrefs(v: unknown): RoutePrefs {
@@ -661,6 +695,9 @@ function readRoutePrefs(v: unknown): RoutePrefs {
       ? p.models.slice(0, 4)
       : DEFAULT_ROUTE_PREFS.models,
     sails: readSails(p.sails),
+    learned: readLearned(p.learned),
+    useLearned: p.useLearned === true,
+    engineOn: p.engineOn === true,
   };
 }
 
@@ -695,6 +732,9 @@ export const useHelm = create<HelmState & HelmActions>()(
       depths: false,
       reefOutlines: false,
       parkZones: false,
+      radar: false,
+      radarInfo: null,
+      perfLive: null,
       panel: null,
       drawMode: "idle",
       draft: [],
@@ -833,6 +873,9 @@ export const useHelm = create<HelmState & HelmActions>()(
       setDepths: (v) => set({ depths: v }),
       setReefOutlines: (v) => set({ reefOutlines: v }),
       setParkZones: (v) => set({ parkZones: v }),
+      setRadar: (v) => set(v ? { radar: true } : { radar: false, radarInfo: null }),
+      setRadarInfo: (v) => set({ radarInfo: v }),
+      setPerfLive: (v) => set({ perfLive: v }),
       setPanel: (panel) => set({ panel }),
       setWxPin: (wxPin) => set({ wxPin }),
       setDrawMode: (drawMode) => {
@@ -1285,7 +1328,7 @@ export const useHelm = create<HelmState & HelmActions>()(
             limits: { ...cur.limits, ...(p.limits ?? {}) },
             rules: { ...cur.rules, ...(p.rules ?? {}) },
             // Hand-edits turn a preset into Custom; choosing a preset sets it explicitly.
-            preset: p.preset ?? (Object.keys(p).some((k) => k !== "sails" && k !== "boatType" && k !== "models") ? "custom" : cur.preset),
+            preset: p.preset ?? (Object.keys(p).some((k) => !["sails", "boatType", "models", "learned", "useLearned", "engineOn"].includes(k)) ? "custom" : cur.preset),
           },
         });
       },
@@ -1481,6 +1524,7 @@ export const useHelm = create<HelmState & HelmActions>()(
         depths: s.depths,
         reefOutlines: s.reefOutlines,
         parkZones: s.parkZones,
+        radar: s.radar,
         sunlight: s.sunlight,
         look: s.look,
         autoNight: s.autoNight,
@@ -1532,6 +1576,8 @@ export const useHelm = create<HelmState & HelmActions>()(
           reefOutlines:
             typeof p.reefOutlines === "boolean" ? p.reefOutlines : current.reefOutlines,
           parkZones: typeof p.parkZones === "boolean" ? p.parkZones : current.parkZones,
+          radar: typeof p.radar === "boolean" ? p.radar : current.radar,
+          radarInfo: null,
           autoNight: typeof p.autoNight === "boolean" ? p.autoNight : current.autoNight,
           depthUnit: applyDepthUnit(p.depthUnit, current.depthUnit),
           guideDone: typeof p.guideDone === "boolean" ? p.guideDone : current.guideDone,

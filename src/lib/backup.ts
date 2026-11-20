@@ -38,6 +38,8 @@ export const BACKUP_SETTING_KEYS = [
   "wxLayers",
   "wxModels",
   "wxHorizonH",
+  "radar",
+  "routePrefs",
 ] as const;
 
 export type BackupFile = {

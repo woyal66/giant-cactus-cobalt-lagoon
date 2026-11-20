@@ -49,6 +49,8 @@ import {
 } from "@/lib/imagery";
 import { squareFromCorners } from "@/lib/offline-tiles";
 import { toast } from "sonner";
+import { createRadar } from "@/components/helm/radar-layer";
+import { radarAvailable } from "@/lib/radar";
 
 /** LatLng to put at screen centre so the boat sits just below it. */
 function followCenter(
@@ -450,6 +452,7 @@ export function MapView() {
     const host = hostRef.current;
     if (!host) return;
     let cancelled = false;
+    let stopRadar = () => {};
     let map: LeafletMap | null = null;
     let unsub: () => void = () => {};
 
@@ -583,6 +586,8 @@ export function MapView() {
           attribution: ATTR_ZONING,
         });
         let zonesOn = false;
+        const radar = createRadar(L, map, MAX_ZOOM);
+        stopRadar = () => radar.destroy();
 
         L.control
           .scale({ metric: true, imperial: false, position: "bottomright" })
@@ -1241,6 +1246,7 @@ export function MapView() {
             map.removeLayer(zones);
             zonesOn = false;
           }
+          radar.set(s.radar && radarAvailable());
           if (s.reefOutlines) {
             if (!reefsOn) {
               reefs.addTo(map);
@@ -2203,6 +2209,7 @@ export function MapView() {
     return () => {
       cancelled = true;
       paintSeaSet = null;
+      stopRadar();
       unsub();
       map?.remove();
     };

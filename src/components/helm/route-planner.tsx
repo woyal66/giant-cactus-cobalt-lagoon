@@ -13,12 +13,14 @@ import type { Limits, RouteRules } from "@/lib/routing/router";
 import { formatHeading, formatMeters, bearingDegrees, haversineMeters } from "@/lib/geo";
 import { formatDepth } from "@/lib/units";
 import { shareGpx } from "@/lib/share-gpx";
+import { shareTextAndFile } from "@/lib/share-file";
+import { passageBrief } from "@/lib/routing/brief";
 import { findWeatherWindows, runPlan } from "@/lib/routing/client";
 import type { WindowScan } from "@/lib/routing/plan";
 import { WindowFinder } from "@/components/helm/window-finder";
 import type { Choice, DepartureRow, PlanOutput } from "@/lib/routing/plan";
 import type { RouteMetrics, RouteMode, RoutePoint } from "@/lib/routing/router";
-import { useHelm, type LocalDraft } from "@/store/helm";
+import { boatPerfOf, useHelm, type LocalDraft } from "@/store/helm";
 
 const H = 3_600_000;
 
@@ -138,14 +140,7 @@ function PlannerSheet() {
     setOut(null);
     setPicked(null);
     setPreview(null);
-    const boat = {
-      type: prefs.boatType,
-      loaM: hull.loaM,
-      motorBelowKn: prefs.motorBelowKn,
-      motorWindBelowKn: prefs.motorWindBelowKn,
-      motorOnNose: prefs.motorOnNose,
-      motorKn: prefs.motorKn,
-    };
+    const boat = boatPerfOf(prefs, hull.loaM);
     runPlan({
       start,
       finish,
@@ -261,14 +256,7 @@ function PlannerSheet() {
               findWeatherWindows({
                 start,
                 finish,
-                boat: {
-                  type: prefs.boatType,
-                  loaM: hull.loaM,
-                  motorBelowKn: prefs.motorBelowKn,
-                  motorWindBelowKn: prefs.motorWindBelowKn,
-                  motorOnNose: prefs.motorOnNose,
-                  motorKn: prefs.motorKn,
-                },
+                boat: boatPerfOf(prefs, hull.loaM),
                 limits: prefs.limits,
                 rules: prefs.rules,
                 models: prefs.models,
@@ -462,7 +450,7 @@ function PickedActions({ picked, ctx, shelter }: { picked: Choice; ctx: PlanCont
       ) : (
         <p className="mb-2 text-[12px] text-muted-foreground">No warnings on this plan.</p>
       )}
-      <div className="grid grid-cols-3 gap-1.5">
+      <div className="grid grid-cols-4 gap-1.5">
         <Button
           size="sm"
           onClick={() => {
@@ -513,6 +501,35 @@ function PickedActions({ picked, ctx, shelter }: { picked: Choice; ctx: PlanCont
           }}
         >
           GPX
+        </Button>
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() => {
+            if (!start || !finish) return;
+            const b = passageBrief({
+              title,
+              start,
+              finish,
+              departAt: picked.row.departAt,
+              arriveAt: r.arriveAt,
+              points: r.points,
+              metrics: r.metrics,
+              warnings: r.warnings,
+              sails: prefs.sails,
+              models: ctx?.models ?? prefs.models,
+              forecastAt: ctx?.forecastAt ?? Date.now(),
+              shelter,
+              wave: (m) => formatDepth(m),
+            });
+            shareTextAndFile({ fileName: "passage-brief.html", file: b.html, mime: "text/html", text: b.text, title }).catch(
+              (err: unknown) => {
+                if (!/cancel/i.test(String(err))) toast.error("Couldn't share the brief");
+              },
+            );
+          }}
+        >
+          Brief
         </Button>
       </div>
     </div>

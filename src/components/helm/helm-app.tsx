@@ -21,6 +21,9 @@ import { BoatPanel } from "@/components/helm/boat-panel";
 import { FirstRunGuide } from "@/components/helm/first-run-guide";
 import { RoutePlanner } from "@/components/helm/route-planner";
 import { PassageHud } from "@/components/helm/passage-hud";
+import { RadarChip } from "@/components/helm/radar-chip";
+import { PerfChip } from "@/components/helm/perf-chip";
+import { usePolarMonitor } from "@/hooks/polar-monitor";
 import { useMobDrift } from "@/hooks/mob-drift";
 import {
   useAnchorWatch,
@@ -45,6 +48,7 @@ export function HelmApp() {
   useAutoNight();
   useRemoteWatch();
   useMobDrift();
+  usePolarMonitor();
 
   useEffect(() => {
     void listPacks().then((p) => useHelm.getState().setOfflinePacks(p));
@@ -100,6 +104,8 @@ export function HelmApp() {
       <WxStrip />
       <BottomDock />
       <Disclaimer />
+      <RadarChip />
+      <PerfChip />
       <PassageHud />
       <RoutePlanner />
       <AlarmOverlay />

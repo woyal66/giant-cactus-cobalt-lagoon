@@ -6,6 +6,7 @@ import { TREAT_LABEL, type Treat } from "@/lib/routing/storm";
 import type { RouteRules } from "@/lib/routing/router";
 import type { SailDef } from "@/lib/routing/sails";
 import { ROUTE_PRESETS, useHelm, type RoutePreset } from "@/store/helm";
+import { EMPTY_LEARNED, MIN_SAMPLES, polarInsight } from "@/lib/routing/learned";
 
 const label = "mb-1 text-[10px] tracking-[0.14em] text-muted-foreground uppercase";
 
@@ -205,6 +206,8 @@ export function RouteSettings({ onDone }: { onDone: () => void }) {
         <p className="mt-1 text-[11px] text-muted-foreground">Ranges are typical sailmaker figures. Your sailmaker&apos;s chart is the better guide.</p>
       </div>
 
+      <LearnedPolarSettings />
+
       <div>
         <p className={label}>Weather models (first is the main one)</p>
         <div className="grid grid-cols-4 gap-1.5">
@@ -293,6 +296,60 @@ export function MotorSettings() {
           </>
         ) : null}
       </div>
+    </div>
+  );
+}
+
+/** The boat's own polar, learned while sailing: summary, use it for routes, reset. */
+function LearnedPolarSettings() {
+  const p = useHelm((s) => s.routePrefs);
+  const set = useHelm((s) => s.setRoutePrefs);
+  const bins = Object.values(p.learned.bins);
+  const trusted = bins.filter((b) => b.n >= MIN_SAMPLES);
+  const avg = trusted.length ? trusted.reduce((a, b) => a + b.ratio, 0) / trusted.length : null;
+  const insight = polarInsight(p.learned);
+  return (
+    <div>
+      <p className={label}>Your boat&apos;s polar</p>
+      <div className="rounded-md border border-border px-3 py-2 text-[13px] leading-snug">
+        {p.learned.samples === 0 ? (
+          <p className="text-muted-foreground">
+            Nothing learned yet. While you sail with the engine off, the app compares your speed with the polar and
+            learns how this boat really goes.
+          </p>
+        ) : (
+          <p>
+            {p.learned.samples} samples, {trusted.length} of {bins.length} wind bins trusted
+            {avg != null ? `, on average ${Math.round(avg * 100)}% of the built-in polar` : ""}.
+          </p>
+        )}
+        {insight ? <p className="mt-1 text-primary">{insight}</p> : null}
+      </div>
+      <div className="mt-1.5 grid grid-cols-2 gap-1.5">
+        <Button
+          size="sm"
+          variant={p.useLearned ? "default" : "outline"}
+          aria-pressed={p.useLearned}
+          disabled={!trusted.length}
+          onClick={() => set({ useLearned: !p.useLearned })}
+        >
+          {p.useLearned ? "Routing with learned" : "Route with learned"}
+        </Button>
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={p.learned.samples === 0}
+          onClick={() => {
+            if (window.confirm("Forget everything learned about this boat's speed?")) set({ learned: EMPTY_LEARNED, useLearned: false });
+          }}
+        >
+          Reset learned
+        </Button>
+      </div>
+      <p className="mt-1 text-[11px] text-muted-foreground">
+        Learned bins are used only once they have {MIN_SAMPLES} clean samples; elsewhere the built-in polar is used.
+        Wind comes from the forecast, so treat it as a trend, not a trim tool.
+      </p>
     </div>
   );
 }

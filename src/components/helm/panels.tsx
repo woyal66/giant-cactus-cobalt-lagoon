@@ -54,6 +54,7 @@ import { formatDepth, formatLength } from "@/lib/units";
 import { criticalAlerts, type CriticalStatus } from "@/lib/critical-alert";
 import { openLocationSettings } from "@/lib/background-gps";
 import { isPreview } from "@/lib/subscription";
+import { radarAvailable } from "@/lib/radar";
 import { SubscriptionRow } from "@/components/subscription";
 import { useCurrentUserState } from "@/lib/auth/use-current-user";
 import { simulateAnchorDrag, startMusgraveDemo, unlockAlarmAudio } from "@/hooks/helm-runtime";
@@ -445,6 +446,8 @@ export function LayersPanel() {
   const parkZones = useHelm((s) => s.parkZones);
   const setParkZones = useHelm((s) => s.setParkZones);
   const setReefOutlines = useHelm((s) => s.setReefOutlines);
+  const radar = useHelm((s) => s.radar);
+  const setRadar = useHelm((s) => s.setRadar);
   const crumbOn = useHelm((s) => s.crumbOn);
   const setCrumbOn = useHelm((s) => s.setCrumbOn);
   const crumb = useHelm((s) => s.crumb);
@@ -532,6 +535,7 @@ export function LayersPanel() {
         <ToggleRow label="Reef outlines (GBR)" on={reefOutlines} onChange={setReefOutlines} />
         <ToggleRow label="Marine park zones (GBR)" on={parkZones} onChange={setParkZones} />
         {parkZones ? <ZoneLegend /> : null}
+        {radarAvailable() ? <ToggleRow label="Rain radar (needs signal)" on={radar} onChange={setRadar} /> : null}
         <ToggleRow label="Yellow line while recording" on={crumbOn} onChange={setCrumbOn} />
       </div>
       {crumb.length >= 2 ? (

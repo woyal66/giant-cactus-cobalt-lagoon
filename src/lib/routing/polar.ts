@@ -1,3 +1,5 @@
+import { learnedFactor, type LearnedPolar } from "./learned.ts";
+
 /**
  * Boat performance (polars): speed through the water for a true wind speed (TWS)
  * and true wind angle (TWA). Built-in tables are typical cruising figures for a
@@ -20,6 +22,8 @@ export type BoatPerf = {
   motorOnNose?: boolean;
   /** Cruising speed under engine. */
   motorKn: number;
+  /** This boat's learned speed ratios; applied when present. */
+  learned?: LearnedPolar;
 };
 
 export const BOAT_TYPES: { id: BoatType; label: string }[] = [
@@ -91,7 +95,7 @@ export function sailSpeed(p: BoatPerf, twsKn: number, twaDeg: number): number {
   if (p.type === "catamaran") v *= twa < 70 ? 0.92 : 1.15;
   // Reefed hard in a gale.
   if (twsKn > 30) v *= Math.max(0.6, 1 - (twsKn - 30) * 0.03);
-  return v;
+  return p.learned ? v * learnedFactor(p.learned, twsKn, twa) : v;
 }
 
 export type Speed = { stwKn: number; motoring: boolean };

@@ -6,7 +6,7 @@ import { fetchWeather } from "@/lib/weather";
 import { useHelm } from "@/store/helm";
 
 /** Current and wind at the MOB position: saved passage forecast first (offline), then the forecast. */
-async function inputsAt(lat: number, lng: number, at: number): Promise<{ d: DriftInputs; source: string } | null> {
+export async function inputsAt(lat: number, lng: number, at: number): Promise<{ d: DriftInputs; source: string } | null> {
   const saved = await loadActivePassage();
   const field = saved?.fields[0];
   if (field && at >= field.times[0]! && at <= field.times[field.times.length - 1]!) {
