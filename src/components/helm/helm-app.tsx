@@ -22,8 +22,10 @@ import { FirstRunGuide } from "@/components/helm/first-run-guide";
 import { PassageHud } from "@/components/helm/passage-hud";
 import { RadarChip } from "@/components/helm/radar-chip";
 import { MeasureBar } from "@/components/helm/measure-bar";
+import { DepthChip } from "@/components/helm/depth-chip";
 import { PerfChip } from "@/components/helm/perf-chip";
 import { usePolarMonitor } from "@/hooks/polar-monitor";
+import { useTideNow } from "@/hooks/tide-now";
 import { useMobDrift } from "@/hooks/mob-drift";
 import {
   useAnchorWatch,
@@ -40,6 +42,8 @@ import { useHelm, useUnitsKey } from "@/store/helm";
 import { formatMeters, haversineMeters } from "@/lib/geo";
 
 // The passage planner (and its settings, graph and window finder) loads when first opened.
+// The 3D view (MapLibre, ~1 MB) only loads when opened.
+const Reef3D = lazy(() => import("@/components/helm/reef-3d").then((m) => ({ default: m.Reef3D })));
 const RoutePlanner = lazy(() => import("@/components/helm/route-planner").then((m) => ({ default: m.RoutePlanner })));
 
 export function HelmApp() {
@@ -52,6 +56,7 @@ export function HelmApp() {
   useRemoteWatch();
   useMobDrift();
   usePolarMonitor();
+  useTideNow();
 
   useEffect(() => {
     void listPacks().then((p) => useHelm.getState().setOfflinePacks(p));
@@ -71,6 +76,7 @@ export function HelmApp() {
   const look = useHelm((s) => s.look);
   const sunPunch = useHelm((s) => s.sunPunch);
   const clarity = useHelm((s) => s.reefClarity);
+  const reef3d = useHelm((s) => s.reef3d);
   const plannerOn = useHelm((s) => s.panel === "route" || s.tapMode === "route-start" || s.tapMode === "route-finish");
   const textSize = useHelm((s) => s.textSize);
   useEffect(() => {
@@ -115,6 +121,12 @@ export function HelmApp() {
       <Disclaimer />
       <RadarChip />
       <MeasureBar />
+      {reef3d ? (
+        <Suspense fallback={null}>
+          <Reef3D onClose={() => useHelm.setState({ reef3d: false })} />
+        </Suspense>
+      ) : null}
+      <DepthChip />
       <PerfChip />
       <PassageHud />
       {plannerOn ? (

@@ -52,6 +52,8 @@ import { toast } from "sonner";
 import { measure } from "@/lib/measure";
 import { createRadar } from "@/components/helm/radar-layer";
 import { radarAvailable } from "@/lib/radar";
+import { createDepthLayer, type DepthLook } from "@/components/helm/depth-layer";
+import { ATTR_BENTHIC, BENTHIC_LAYERS, BENTHIC_WMS } from "@/lib/imagery";
 
 /** LatLng to put at screen centre so the boat sits just below it. */
 function followCenter(
@@ -658,6 +660,30 @@ export function MapView() {
         });
         let zonesOn = false;
         const radar = createRadar(L, map, MAX_ZOOM);
+        // Seabed overlay: depth shading or too-shallow-for-my-draft at the tide now.
+        const depthLook = (): DepthLook => {
+          const st = useHelm.getState();
+          return {
+            mode: st.depthLayer === "shallow" ? "shallow" : "depth",
+            tideMsl: st.tideNowMsl ?? 0,
+            limitM: st.hull.draftM + 0.5,
+          };
+        };
+        const depthLayer = createDepthLayer(L, MAX_ZOOM, depthLook);
+        let depthStamp = "";
+        // Allen Coral Atlas sand / coral / seagrass, only when the build names its map service.
+        const benthic: TileLayer | null = BENTHIC_WMS
+          ? L.tileLayer.wms(BENTHIC_WMS, {
+              layers: BENTHIC_LAYERS,
+              format: "image/png",
+              transparent: true,
+              version: "1.1.1",
+              maxZoom: MAX_ZOOM,
+              opacity: 0.55,
+              pane: "chartOverlay",
+              attribution: ATTR_BENTHIC,
+            })
+          : null;
         stopRadar = () => radar.destroy();
 
         L.control
@@ -1332,6 +1358,19 @@ export function MapView() {
             zonesOn = false;
           }
           radar.set(s.radar && radarAvailable());
+          const dStamp =
+            s.depthLayer === "off" ? "off" : `${s.depthLayer}|${(s.tideNowMsl ?? 0).toFixed(1)}|${s.hull.draftM.toFixed(1)}`;
+          if (dStamp !== depthStamp) {
+            const was = depthStamp;
+            depthStamp = dStamp;
+            if (dStamp === "off") map.removeLayer(depthLayer);
+            else if (!map.hasLayer(depthLayer)) depthLayer.addTo(map);
+            else if (was !== "off") depthLayer.redraw();
+          }
+          if (benthic) {
+            if (s.benthic && !map.hasLayer(benthic)) benthic.addTo(map);
+            else if (!s.benthic && map.hasLayer(benthic)) map.removeLayer(benthic);
+          }
           if (s.reefOutlines) {
             if (!reefsOn) {
               reefs.addTo(map);

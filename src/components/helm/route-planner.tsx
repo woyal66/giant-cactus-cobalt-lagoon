@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -20,7 +20,8 @@ import type { WindowScan } from "@/lib/routing/plan";
 import { WindowFinder } from "@/components/helm/window-finder";
 import type { Choice, DepartureRow, PlanOutput } from "@/lib/routing/plan";
 import type { RouteMetrics, RouteMode, RoutePoint } from "@/lib/routing/router";
-import { boatPerfOf, useHelm, type LocalDraft } from "@/store/helm";
+import { boatPerfOf, useHelm, useUnitsKey, type LocalDraft } from "@/store/helm";
+import { shallowAlong } from "@/lib/depth";
 
 const H = 3_600_000;
 
@@ -412,6 +413,55 @@ function asDraft(title: string, pts: RoutePoint[]): LocalDraft {
   };
 }
 
+/** Shallow water along the chosen route, from the depth model (approximate). */
+function ShallowCheck({ points }: { points: RoutePoint[] }) {
+  useUnitsKey();
+  const draft = useHelm((s) => s.hull.draftM);
+  const [hits, setHits] = useState<Array<{ lat: number; lng: number; depthM: number }> | null>(null);
+  // At mean sea level; 1 m extra allows for a low tide on the way.
+  const limit = draft + 1.5;
+  useEffect(() => {
+    let live = true;
+    setHits(null);
+    void shallowAlong(points, limit).then((h) => {
+      if (live) setHits(h);
+    });
+    return () => {
+      live = false;
+    };
+  }, [points, limit]);
+  if (hits == null) return <p className="mb-2 text-t13 text-muted-foreground">Checking depths along the route…</p>;
+  if (!hits.length) {
+    return (
+      <p className="mb-2 text-t13 text-muted-foreground">
+        No shallow water found along the route in the depth model (approximate; it doesn't show bommies).
+      </p>
+    );
+  }
+  return (
+    <div className="mb-2 rounded-md border border-amber-400/50 bg-amber-400/10 px-2.5 py-2 text-t14">
+      <p className="font-semibold text-amber-200">Shallow water on the route</p>
+      <ul className="mt-1 grid gap-1">
+        {hits.slice(0, 5).map((h) => (
+          <li key={`${h.lat},${h.lng}`}>
+            <button
+              type="button"
+              className="text-left underline"
+              onClick={() => useHelm.getState().setRouteCursor({ lat: h.lat, lng: h.lng })}
+            >
+              About {formatDepth(Math.max(0, h.depthM))} at mean sea level
+            </button>
+          </li>
+        ))}
+      </ul>
+      <p className="mt-1 text-t13 text-muted-foreground">
+        The planner avoids the coastline and mapped reefs, but these spots look shallower than your draft plus a margin.
+        Tap one to see it on the chart, and plan your own track through there.
+      </p>
+    </div>
+  );
+}
+
 function PickedActions({ picked, ctx, shelter }: { picked: Choice; ctx: PlanContext | null; shelter?: boolean[] }) {
   const end = useHelm((s) => s.endRoutePlan);
   const prefs = useHelm((s) => s.routePrefs);
@@ -451,6 +501,7 @@ function PickedActions({ picked, ctx, shelter }: { picked: Choice; ctx: PlanCont
         </p>
       ) : null}
       <div className="mt-2" />
+      <ShallowCheck points={r.points} />
       {r.warnings.length ? (
         <ul className="mb-2 list-disc space-y-0.5 pl-4 text-t14 leading-snug text-amber-300">
           {r.warnings.map((w) => (

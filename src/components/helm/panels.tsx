@@ -14,7 +14,7 @@ import {
 } from "@/lib/anchor";
 import { bowFromGps, gpsReachM, gpsStationLabel } from "@/lib/boat";
 import { formatMeters, haversineMeters, pathLengthMeters, trackInView, TRACK_CHORD_PRESETS, TRACK_TURN_PRESETS } from "@/lib/geo";
-import { GARMIN_SDK_URL, PARK_ZONES, availableImagery, imageryShort, isImageryId } from "@/lib/imagery";
+import { BENTHIC_WMS, GARMIN_SDK_URL, PARK_ZONES, availableImagery, imageryShort, isImageryId } from "@/lib/imagery";
 import { centreTileSource, getChartBounds } from "@/components/helm/map-view";
 import { SOURCE_NOTE, describePhoto, fetchEsriPhotoInfo } from "@/lib/imagery-info";
 import { AnchorWxCard } from "@/components/helm/weather";
@@ -532,6 +532,10 @@ export function LayersPanel() {
         </Button>
       </div>
       <div className="mb-2 grid gap-1.5">
+        <Button variant="outline" className="h-11" onClick={() => useHelm.setState({ reef3d: true, panel: null })}>
+          3D reef view
+        </Button>
+        <DepthRow />
         <TextSizeRow />
         <PhotoInfoRow />
         <ToggleRow label="Sharp photos (HD, about 4× the data)" on={sharpTiles} onChange={setSharpTiles} />
@@ -1481,6 +1485,51 @@ function TextSizeRow() {
           </Button>
         ))}
       </div>
+    </div>
+  );
+}
+
+/** Seabed overlay choice, and the Allen Coral Atlas layer when this build has it. */
+function DepthRow() {
+  const mode = useHelm((s) => s.depthLayer);
+  const setMode = useHelm((s) => s.setDepthLayer);
+  const benthicOn = useHelm((s) => s.benthic);
+  const setBenthic = useHelm((s) => s.setBenthic);
+  const opts: Array<{ id: "off" | "depth" | "shallow"; label: string }> = [
+    { id: "off", label: "Off" },
+    { id: "depth", label: "Depth" },
+    { id: "shallow", label: "Too shallow" },
+  ];
+  return (
+    <div>
+      <p className="mb-1 text-t13 text-muted-foreground">Seabed (approximate)</p>
+      <div className="grid grid-cols-3 gap-1.5" role="radiogroup" aria-label="Seabed overlay">
+        {opts.map((o) => (
+          <Button
+            key={o.id}
+            role="radio"
+            aria-checked={mode === o.id}
+            variant={mode === o.id ? "default" : "outline"}
+            className="h-11"
+            onClick={() => setMode(o.id)}
+          >
+            {o.label}
+          </Button>
+        ))}
+      </div>
+      {mode !== "off" ? (
+        <p className="mt-1 text-t13 leading-snug text-muted-foreground">
+          {mode === "shallow"
+            ? "Red where the water is shallower than your draft plus 0.5 m at today's tide. "
+            : ""}
+          The depth model shows reefs and drop-offs at a few hundred metres, not bommies.
+        </p>
+      ) : null}
+      {BENTHIC_WMS ? (
+        <div className="mt-1.5">
+          <ToggleRow label="Sand, coral and seagrass (Allen Coral Atlas)" on={benthicOn} onChange={setBenthic} />
+        </div>
+      ) : null}
     </div>
   );
 }

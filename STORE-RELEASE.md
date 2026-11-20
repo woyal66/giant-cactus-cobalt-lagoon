@@ -258,6 +258,21 @@ It hides every map source above that has no licence and saves offline packs from
 MapTiler only. With it on and no keys set, the map has no satellite layer, so
 add at least `VITE_MAPTILER_KEY`.
 
+## 9b. Seabed depth (3D view, depth shading, shallow-water warnings)
+
+The app uses AWS Terrain Tiles by default (open data; credit is shown). Around reefs they
+show the reef and its drop-off at a few hundred metres. For sharper Great Barrier Reef depth,
+convert the free GBR depth models (James Cook University "gbr100", 100 m, or Geoscience
+Australia "AusBathyTopo GBR 30 m", both CC BY) into terrarium-encoded PNG tiles
+(height = R x 256 + G + B / 256 - 32768 m), host them, and build with:
+
+    VITE_DEPTH_TILES=https://your-host/gbr100/{z}/{x}/{y}.png  VITE_DEPTH_MAX_Z=14
+
+GDAL (gdalwarp to EPSG:3857) plus a terrarium tile encoder does the conversion. Credit the
+dataset in the store listing. The sand/coral layer appears only when you set
+`VITE_BENTHIC_WMS` and `VITE_BENTHIC_LAYERS` to an Allen Coral Atlas map service you have
+confirmed you may use.
+
 ## 10. Test before you submit
 
 - **Satellite photos on a real phone:** at a reef you know, compare Sharp photos on and off

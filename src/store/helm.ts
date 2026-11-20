@@ -249,6 +249,14 @@ export type HelmState = {
   sunPunch: 1 | 2 | 3;
   /** Fetch the next zoom level and show it at half size, so photos are sharp on high-density screens. */
   sharpTiles: boolean;
+  /** Seabed overlay: off, depth shading, or "too shallow for my draft at this tide". */
+  depthLayer: "off" | "depth" | "shallow";
+  /** 3D reef view open (not saved). */
+  reef3d: boolean;
+  /** Tide height above mean sea level now (m), for the shallow-water overlay. Not saved. */
+  tideNowMsl: number | null;
+  /** Allen Coral Atlas sand / coral / seagrass overlay (needs VITE_BENTHIC_WMS). */
+  benthic: boolean;
   /** Reader text size: Standard, Large (default) or Extra large. */
   textSize: TextSize;
   /** Extra contrast and colour on the satellite photo for reading water depth. */
@@ -365,6 +373,9 @@ type HelmActions = {
   cycleLook: () => void;
   setSunPunch: (n: 1 | 2 | 3) => void;
   setSharpTiles: (v: boolean) => void;
+  setDepthLayer: (v: "off" | "depth" | "shallow") => void;
+  setTideNowMsl: (v: number | null) => void;
+  setBenthic: (v: boolean) => void;
   addMeasurePt: (p: LatLng) => void;
   undoMeasurePt: () => void;
   endMeasure: () => void;
@@ -473,6 +484,8 @@ function persistSig(state: Record<string, unknown>): string {
     state.radar,
     state.sunlight,
     state.sharpTiles,
+    state.depthLayer,
+    state.benthic,
     state.textSize,
     state.reefClarity,
     state.look,
@@ -807,6 +820,10 @@ export const useHelm = create<HelmState & HelmActions>()(
       lengthUnit: "m",
       sunPunch: 2,
       textSize: "large",
+      depthLayer: "off",
+      reef3d: false,
+      tideNowMsl: null,
+      benthic: false,
       sharpTiles: typeof window !== "undefined" && (window.devicePixelRatio ?? 1) >= 2,
       reefClarity: false,
       rode: DEFAULT_RODE,
@@ -1405,6 +1422,11 @@ export const useHelm = create<HelmState & HelmActions>()(
       },
       setSunPunch: (sunPunch) => set({ sunPunch, sunlight: true, look: "sunlight" }),
       setSharpTiles: (sharpTiles) => set({ sharpTiles }),
+      setDepthLayer: (depthLayer) => set({ depthLayer }),
+      setTideNowMsl: (tideNowMsl) => {
+        if (get().tideNowMsl !== tideNowMsl) set({ tideNowMsl });
+      },
+      setBenthic: (benthic) => set({ benthic }),
       addMeasurePt: (p) => set({ measurePts: [...get().measurePts, { lat: p.lat, lng: p.lng }].slice(-40) }),
       undoMeasurePt: () => set({ measurePts: get().measurePts.slice(0, -1) }),
       endMeasure: () => set({ measurePts: [], tapMode: get().tapMode === "measure" ? "none" : get().tapMode }),
@@ -1590,6 +1612,8 @@ export const useHelm = create<HelmState & HelmActions>()(
         lengthUnit: s.lengthUnit,
         sunPunch: s.sunPunch,
         sharpTiles: s.sharpTiles,
+        depthLayer: s.depthLayer,
+        benthic: s.benthic,
         textSize: s.textSize,
         reefClarity: s.reefClarity,
         drafts: s.drafts,
@@ -1655,6 +1679,9 @@ export const useHelm = create<HelmState & HelmActions>()(
               : null,
           lengthUnit: applyLengthUnit(p.lengthUnit, current.lengthUnit),
           sharpTiles: typeof p.sharpTiles === "boolean" ? p.sharpTiles : current.sharpTiles,
+          depthLayer: p.depthLayer === "depth" || p.depthLayer === "shallow" ? p.depthLayer : "off",
+          benthic: p.benthic === true,
+          tideNowMsl: null,
           textSize: p.textSize === "standard" || p.textSize === "large" || p.textSize === "xl" ? p.textSize : current.textSize,
           reefClarity: typeof p.reefClarity === "boolean" ? p.reefClarity : current.reefClarity,
           look: isLookMode(p.look)

@@ -122,6 +122,14 @@ export const PARK_ZONES = [
   { name: "Marine National Park", color: "#3fa34d", rule: "Green zone: no fishing or collecting." },
   { name: "Preservation", color: "#f4a6c6", rule: "No entry without a permit." },
 ] as const;
+/**
+ * Allen Coral Atlas benthic map (sand, coral, rubble, seagrass, rock). The atlas's map service
+ * address and terms must be confirmed before use, so the layer only appears when the build sets
+ * VITE_BENTHIC_WMS (and VITE_BENTHIC_LAYERS).
+ */
+export const BENTHIC_WMS = ENV.VITE_BENTHIC_WMS || "";
+export const BENTHIC_LAYERS = ENV.VITE_BENTHIC_LAYERS || "";
+export const ATTR_BENTHIC = "Benthic map © Allen Coral Atlas Partnership";
 export const GARMIN_SDK_URL = "https://developer.garmin.com/marine-charts/mobile";
 export const GARMIN_SDK_REQUEST_URL =
   "https://www.garmin.com/en-US/forms/navionics-mobile-sdk/";
@@ -228,4 +236,13 @@ export function autoSatOrder(z: number): SatSource[] {
         ? ["clarity", "maptiler", "google", "bing", "maxar", "sentinel"]
         : ["sentinel", "maptiler", "clarity", "google", "bing", "maxar"];
   return order.filter(sourceReady);
+}
+
+/** Tile URL template ({z}/{x}/{y}) for engines that fill it themselves (the 3D view). Bing uses quadkeys, so it has none. */
+export function satTileTemplate(id: SatSource): string | null {
+  if (id === "bing") return null;
+  if (id === "google") return "https://mt0.google.com/vt/lyrs=s&x={x}&y={y}&z={z}";
+  if (id === "maptiler") return `${MAPTILER_URL}?key=${MAPTILER_KEY}`;
+  if (id === "maxar" && ESRI_KEY) return `${ESRI_KEYED_URL}?token=${ESRI_KEY}`;
+  return id === "maxar" ? ESRI_URL : id === "clarity" ? CLARITY_URL : SENTINEL_URL;
 }
