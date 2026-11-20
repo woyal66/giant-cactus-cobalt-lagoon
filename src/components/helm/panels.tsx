@@ -713,13 +713,18 @@ function OfflinePacks() {
             <Input value={name} onChange={(e) => setName(e.target.value)} className="h-8" />
           </label>
           <p className="text-[10px] tracking-[0.14em] text-muted-foreground uppercase">Close-up zoom</p>
-          <div className="grid grid-cols-4 gap-1">
+          <div className="grid grid-cols-5 gap-1">
             {PACK_ZOOMS.map((z) => (
               <Button key={z} variant={maxZ === z ? "default" : "outline"} size="sm" className="h-8" onClick={() => setMaxZ(z)}>
-                z{z}
+                {z === 20 ? "Max" : `z${z}`}
               </Button>
             ))}
           </div>
+          {maxZ === 20 ? (
+            <p className="text-[11px] text-muted-foreground">
+              Maximum detail: as sharp offline as online with Sharp photos on. About 4× the size of z19; keep the area small.
+            </p>
+          ) : null}
           <p className="text-[11px] tabular-nums text-muted-foreground">
             {est.km.toFixed(1)} km · z16–{est.maxZ} · {est.tiles.toLocaleString()} tiles · {formatBytes(est.bytes)}
             {est.tooWide ? " — too big or too thin. Use z16 for a whole reef." : ""}

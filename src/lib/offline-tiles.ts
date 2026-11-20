@@ -11,7 +11,7 @@ import { nearestReef } from "./reefs.ts";
 
 export type OfflineSource = "maxar" | "sentinel" | "maptiler";
 export type PackQuality = "helm" | "close";
-export type PackZoom = 16 | 17 | 18 | 19;
+export type PackZoom = 16 | 17 | 18 | 19 | 20;
 
 export type BBox = {
   south: number;
@@ -59,7 +59,13 @@ function packSources(): OfflineSource[] {
   return out;
 }
 const SOURCES: OfflineSource[] = packSources();
-export const PACK_ZOOMS: PackZoom[] = [16, 17, 18, 19];
+export const PACK_ZOOMS: PackZoom[] = [16, 17, 18, 19, 20];
+/**
+ * Deepest level worth saving per source. z20 ("maximum detail") suits the sharp-photo mode,
+ * which shows the level one deeper than the map zoom; it is only saved where the source
+ * really has it, so packs don't fill with stretched copies.
+ */
+export const SOURCE_MAX_Z: Record<OfflineSource, number> = { maptiler: 20, maxar: 19, sentinel: 19 };
 
 let abort: AbortController | null = null;
 
@@ -189,7 +195,7 @@ export function estimatePack(b: BBox, quality: PackQuality | PackZoom = 18): Pac
   const km = boxKm(b);
   const maxZ = resolveMaxZ(quality);
   const minZ = 16 as const;
-  const tiles = countTiles(b, minZ, maxZ) * SOURCES.length;
+  const tiles = SOURCES.reduce((n, src) => n + countTiles(b, minZ, Math.min(maxZ, SOURCE_MAX_Z[src])), 0);
   const tooWide = km > 40 || tiles > MAX_TILES || boxShortM(b) < 80;
   return {
     tiles,
@@ -337,7 +343,7 @@ export async function downloadPack(
   const signal = abort.signal;
   const jobs: { source: OfflineSource; z: number; x: number; y: number }[] = [];
   for (const source of SOURCES) {
-    for (let z = est.minZ; z <= est.maxZ; z += 1) {
+    for (let z = est.minZ; z <= Math.min(est.maxZ, SOURCE_MAX_Z[source]); z += 1) {
       const r = tileRange(b, z);
       for (let x = r.x0; x <= r.x1; x += 1) {
         for (let y = r.y0; y <= r.y1; y += 1) {

@@ -20,6 +20,15 @@ describe("offline reef packs", () => {
     assert.equal(y, 37251);
   });
 
+  it("maximum detail saves z20 only where the source has it", () => {
+    const b = boxAround({ lat: -23.904, lng: 152.395 }, 300);
+    const z19 = estimatePack(b, 19);
+    const z20 = estimatePack(b, 20);
+    assert.equal(z20.maxZ, 20);
+    // This build has no MapTiler key, so only Esri and Sentinel are saved, and neither goes past z19.
+    assert.equal(z20.tiles, z19.tiles);
+  });
+
   it("keeps a 2.5 km lagoon under a phone-sized helm pack", () => {
     const b = boxAround({ lat: -23.904, lng: 152.395 }, 1250);
     const est = estimatePack(b, 18);
