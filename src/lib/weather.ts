@@ -8,6 +8,31 @@ import {
 } from "./tides.ts";
 import { fetchBomStationTide, modelTideOrigin } from "./tide-station.ts";
 import { openMeteoUrl } from "./open-meteo.ts";
+import { thunderRisk, type Risk } from "./routing/storm.ts";
+
+function optNum<K extends string>(key: K, v: unknown): Partial<Record<K, number>> {
+  return typeof v === "number" && Number.isFinite(v) ? ({ [key]: v } as Record<K, number>) : {};
+}
+
+/** Thunderstorm risk 0–3 for a forecast hour (same rules as the passage planner). */
+export function stormRiskOf(h: WxHour): Risk {
+  if (h.capeJkg == null && h.code == null) return 0;
+  return thunderRisk({
+    capeJkg: h.capeJkg ?? 0,
+    liftedIndex: h.liftedIndex ?? Number.NaN,
+    cinJkg: Number.NaN,
+    precipMm: h.precipMm,
+    code: h.code ?? 0,
+    gustKn: h.gustKn ?? h.windKn,
+    tempC: h.tempC,
+  });
+}
+
+/** Wind-driven sea from total height and swell (heights add as squares). */
+export function windSeaM(totalM: number, swellM: number | null): number {
+  if (swellM == null) return totalM;
+  return Math.sqrt(Math.max(0, totalM * totalM - swellM * swellM));
+}
 
 export type WxSky =
   | "clear"
@@ -30,6 +55,10 @@ export type WxHour = {
   precipMm: number;
   cloudPct: number;
   sky: WxSky;
+  /** Convective energy (J/kg), lifted index (°C) and WMO weather code, where the model gives them. */
+  capeJkg?: number;
+  liftedIndex?: number;
+  code?: number;
 };
 
 export type CurrentHour = {
@@ -536,6 +565,8 @@ type OpenMeteoPayload = {
     temperature_2m?: (number | null)[];
     precipitation?: (number | null)[];
     cloud_cover?: (number | null)[];
+    cape?: (number | null)[];
+    lifted_index?: (number | null)[];
   };
 };
 
@@ -562,6 +593,9 @@ export function parseOpenMeteo(
       precipMm: num(json.hourly?.precipitation?.[i]),
       cloudPct: Math.round(num(json.hourly?.cloud_cover?.[i])),
       sky: skyFromWmo(num(json.hourly?.weather_code?.[i])),
+      ...optNum("capeJkg", json.hourly?.cape?.[i]),
+      ...optNum("liftedIndex", json.hourly?.lifted_index?.[i]),
+      ...optNum("code", json.hourly?.weather_code?.[i]),
     });
     if (hours.length >= 384) break;
   }
@@ -728,7 +762,7 @@ async function fetchNamedModel(
   url.searchParams.set("longitude", lng.toFixed(4));
   url.searchParams.set(
     "hourly",
-    "wind_speed_10m,wind_direction_10m,wind_gusts_10m,weather_code,temperature_2m,precipitation,cloud_cover",
+    "wind_speed_10m,wind_direction_10m,wind_gusts_10m,weather_code,temperature_2m,precipitation,cloud_cover,cape,lifted_index",
   );
   url.searchParams.set("forecast_days", spec.days);
   url.searchParams.set("wind_speed_unit", "kn");
@@ -754,7 +788,7 @@ async function fetchOpenMeteo(
   url.searchParams.set("longitude", lng.toFixed(4));
   url.searchParams.set(
     "hourly",
-    "wind_speed_10m,wind_direction_10m,wind_gusts_10m,weather_code,temperature_2m,precipitation,cloud_cover",
+    "wind_speed_10m,wind_direction_10m,wind_gusts_10m,weather_code,temperature_2m,precipitation,cloud_cover,cape,lifted_index",
   );
   url.searchParams.set("forecast_days", "16");
   url.searchParams.set("wind_speed_unit", "kn");
@@ -888,3 +922,23 @@ export function graphMaxKn(hours: WxHour[]): number {
   }
   return Math.max(15, Math.ceil(m / 5) * 5);
 }
+
+/** Wind strength colours (knots), dark-background friendly, in Beaufort-like steps. */
+const WIND_SCALE: Array<[number, string, string]> = [
+  [5, "#334155", "#e2e8f0"],
+  [10, "#1d6f8f", "#ffffff"],
+  [15, "#1f9e6e", "#ffffff"],
+  [20, "#c9a227", "#111827"],
+  [25, "#e07b24", "#111827"],
+  [30, "#d63c3c", "#ffffff"],
+  [40, "#b02a8f", "#ffffff"],
+  [Infinity, "#6b2bb0", "#ffffff"],
+];
+
+/** Background and text colour for a wind or gust speed. */
+export function windColor(kn: number): { bg: string; fg: string } {
+  const row = WIND_SCALE.find(([upTo]) => kn < upTo) ?? WIND_SCALE[WIND_SCALE.length - 1]!;
+  return { bg: row[1], fg: row[2] };
+}
+
+export const WIND_SCALE_STEPS = WIND_SCALE.map(([upTo, bg]) => ({ upTo, bg }));

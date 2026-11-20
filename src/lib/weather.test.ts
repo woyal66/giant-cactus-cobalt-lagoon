@@ -16,6 +16,9 @@ import {
   skyFromWmo,
   sliceByHorizon,
   axisMarks,
+  stormRiskOf,
+  windColor,
+  windSeaM,
   dayClock,
   windCardinal,
   reviveForecast,
@@ -286,5 +289,24 @@ describe("offline forecast", () => {
     assert.equal(reviveForecast(base, t0 + WX_SAVE_MAX_AGE_MS + 1), null);
     assert.equal(reviveForecast(base, t0 + 23 * H), null);
     assert.equal(reviveForecast({ ...base, savedAt: undefined }, t0), null);
+  });
+});
+
+describe("forecast table helpers", () => {
+  it("colours wind by strength", () => {
+    assert.notEqual(windColor(8).bg, windColor(27).bg);
+    assert.equal(windColor(27).bg, windColor(29.9).bg);
+    assert.equal(windColor(60).bg, "#6b2bb0");
+  });
+  it("splits wind sea from swell", () => {
+    assert.equal(windSeaM(1.5, null), 1.5);
+    assert.ok(Math.abs(windSeaM(1.0, 0.6) - 0.8) < 1e-9);
+    assert.equal(windSeaM(0.5, 0.9), 0);
+  });
+  it("storm risk from CAPE and thunder codes", () => {
+    const h = { at: 0, windKn: 12, gustKn: 20, dirDeg: 90, tempC: 26, precipMm: 0, cloudPct: 50, sky: "cloud" as const };
+    assert.equal(stormRiskOf(h), 0);
+    assert.ok(stormRiskOf({ ...h, capeJkg: 3200, precipMm: 2 }) >= 2);
+    assert.ok(stormRiskOf({ ...h, code: 95, precipMm: 2 }) >= 2);
   });
 });

@@ -29,6 +29,7 @@ import { MobGuide } from "@/components/helm/mob-guide";
 import { Button } from "@/components/ui/button";
 import { closeInOnBoat } from "@/components/helm/map-view";
 import { WindInstrument } from "@/components/helm/weather";
+import { windCardinal } from "@/lib/weather";
 import { unlockAlarmAudio } from "@/hooks/helm-runtime";
 import { useWx } from "@/hooks/weather";
 import { useHelm, guidePoints, useUnitsKey } from "@/store/helm";
@@ -197,15 +198,39 @@ export function TopHud() {
           >
             <span className="font-display text-[11px] font-bold leading-none">MOB</span>
           </Button>
-          {gust >= 25 ? (
-            <button
-              type="button"
-              onClick={() => setPanel("weather")}
-              className="rounded-md border border-destructive bg-destructive px-1 py-1 text-center text-[10px] font-bold text-white"
-            >
-              Gust {Math.round(gust)}
-            </button>
-          ) : null}
+          {/* Always here (the top bar's wind reading is hidden under the steering bar on phones). */}
+          <button
+            type="button"
+            onClick={() => setPanel("weather")}
+            aria-label={
+              wx.data
+                ? `Forecast. Wind ${Math.round(wx.data.now.windKn)} knots ${windCardinal(wx.data.now.dirDeg)}${gust >= 25 ? `, gusts ${Math.round(gust)}` : ""}`
+                : "Forecast"
+            }
+            className={`w-10 rounded-md border px-0.5 py-1 text-center shadow-[var(--shadow-border)] ${
+              gust >= 25 ? "border-destructive bg-destructive text-white" : "border-border bg-card/95 rp-glass"
+            }`}
+          >
+            {wx.data ? (
+              <>
+                <span
+                  aria-hidden
+                  className="block text-[11px] leading-none"
+                  style={{ transform: `rotate(${wx.data.now.dirDeg + 180}deg)` }}
+                >
+                  ↑
+                </span>
+                <span className="font-display block text-[13px] leading-none font-bold tabular-nums">
+                  {Math.round(gust >= 25 ? gust : wx.data.now.windKn)}
+                </span>
+                <span className="block text-[8px] leading-none tracking-wide uppercase opacity-80">
+                  {gust >= 25 ? "gust" : windCardinal(wx.data.now.dirDeg)}
+                </span>
+              </>
+            ) : (
+              <span className="text-[9px] font-semibold uppercase">Wx</span>
+            )}
+          </button>
         </div>
         <div className="pointer-events-auto flex flex-col gap-1.5">
           <Button

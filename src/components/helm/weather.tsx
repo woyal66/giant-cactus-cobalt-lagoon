@@ -9,6 +9,7 @@ import {
   Sun,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { WeatherTable } from "@/components/helm/weather-table";
 import { toast } from "sonner";
 import { useSpotWx, useWx } from "@/hooks/weather";
 import {
@@ -224,7 +225,7 @@ export function WeatherPanel() {
                 ? fromBoat != null
                   ? `${formatMeters(fromBoat)} · ${brg} from the boat`
                   : `${formatLat(pin.lat)} ${formatLng(pin.lng)}`
-                : "Hold the chart, then tap Forecast on the pin."}
+                : "At the boat"}
               {` · ${horizonLabel(horizonH)}`}
             </p>
           </div>
@@ -382,7 +383,7 @@ function WxBody({
   ];
 
   return (
-    <div className="grid w-full max-w-full gap-3">
+    <div className="grid w-full max-w-full grid-cols-[minmax(0,1fr)] gap-3">
       {strong ? (
         <p className="rounded-md bg-destructive/10 px-2.5 py-1.5 text-sm text-destructive">
           {maxB.label} later — {formatKn(stats.maxWind.windKn)} kn {windCardinal(stats.maxWind.dirDeg)}{" "}
@@ -462,7 +463,15 @@ const PAD_R = 36;
 const PAD_T = 14;
 const PAD_B = 22;
 const DAY_FILL = "#16324a";
-const NIGHT_FILL = "#000000";
+/** Night: a deeper navy, not black, so it reads as "dark hours" without swamping the lines. */
+const NIGHT_FILL = "#0b1828";
+const LANE_H = 120;
+const LANES: Array<{ key: keyof GraphLayers; title: string }> = [
+  { key: "wind", title: "Wind and gusts (kn)" },
+  { key: "waves", title: "Sea" },
+  { key: "tide", title: "Tide" },
+  { key: "current", title: "Current (kn)" },
+];
 const TWILIGHT_MS = 50 * 60_000;
 
 function SeaStack({
@@ -537,27 +546,50 @@ function SeaStack({
   const cur = nearestSample(currentHours, cursor);
   const wave = nearestSample(waveHours, cursor);
 
+  // One lane per layer, each with its own scale, all on one time axis with one cursor.
+  // A single shared graph with two scales and every layer on was unreadable.
+  const lanes = LANES.filter((l) => layers[l.key]).filter(
+    (l) =>
+      l.key === "wind" ||
+      (l.key === "tide" && (tideHours?.length ?? 0) >= 2) ||
+      (l.key === "current" && currentHours.length >= 2) ||
+      (l.key === "waves" && waveHours.length >= 2),
+  );
+  const tideAtCell =
+    tideHours && tideHours.length >= 2
+      ? (at: number) => {
+          const all = windowTide(tideHours, at - 3_600_000, 2);
+          const v = all.length ? tideAt(all, at) : null;
+          return v == null ? null : toLatM(v, datum);
+        }
+      : null;
+
   return (
-    <div className="grid w-full max-w-full gap-3">
-      <ForecastGraph
-        hours={hours}
-        windSeries={windSeries}
-        horizonH={horizonH}
-        tideHours={tideHours}
-        tideTurns={tideTurns}
-        latDatum={datum}
-        layers={layers}
-        currentHours={currentHours}
-        waveHours={waveHours}
-        cursorAt={cursor}
-        onCursor={setCursorAt}
-        windowStart={windowStart}
-        onPan={canPan ? shiftWindow : undefined}
-        onZoom={zoomWindow}
-        height={GRAPH_H}
-        lat={lat}
-        lng={lng}
-      />
+    <div className="grid w-full max-w-full grid-cols-[minmax(0,1fr)] gap-2">
+      {lanes.map((lane) => (
+        <div key={lane.key}>
+          <p className="mb-0.5 text-[10px] font-medium tracking-[0.12em] text-muted-foreground uppercase">{lane.title}</p>
+          <ForecastGraph
+            hours={hours}
+            windSeries={windSeries}
+            horizonH={horizonH}
+            tideHours={tideHours}
+            tideTurns={tideTurns}
+            latDatum={datum}
+            layers={{ wind: false, tide: false, current: false, waves: false, [lane.key]: true }}
+            currentHours={currentHours}
+            waveHours={waveHours}
+            cursorAt={cursor}
+            onCursor={setCursorAt}
+            windowStart={windowStart}
+            onPan={canPan ? shiftWindow : undefined}
+            onZoom={zoomWindow}
+            height={lane.key === "wind" ? GRAPH_H - 28 : LANE_H}
+            lat={lat}
+            lng={lng}
+          />
+        </div>
+      ))}
       <div className="rounded-xl border border-border bg-background px-2.5 py-2">
         <div className="flex items-baseline justify-between gap-2">
           <p className="font-display text-lg leading-none font-semibold tabular-nums">
@@ -654,6 +686,16 @@ function SeaStack({
           </div>
         ) : null}
       </div>
+      <WeatherTable
+        hours={hours}
+        waveHours={waveHours}
+        currentHours={currentHours}
+        tideAt={tideAtCell}
+        windowStart={windowStart}
+        horizonH={horizonH}
+        cursorAt={cursor}
+        onCursor={setCursorAt}
+      />
     </div>
   );
 }
@@ -2000,6 +2042,14 @@ export function AnchorWxCard() {
           </p>
         ) : null}
       </button>
+      <Button
+        variant="outline"
+        size="sm"
+        className="mt-1.5 w-full"
+        onClick={() => useHelm.getState().setPanel("weather")}
+      >
+        Full forecast
+      </Button>
     </div>
   );
 }
