@@ -20,13 +20,13 @@ export function WindowFinder({ scan, onPick }: { scan: WindowScan; onPick: (w: W
   }
   return (
     <div>
-      <p className="mb-1 text-[10px] tracking-[0.14em] text-muted-foreground uppercase">Departures over the next days</p>
+      <p className="mb-1 text-t12 text-muted-foreground">Departures over the next days</p>
       <div className="flex h-6 overflow-hidden rounded-md" role="img" aria-label="Departure suitability: green good, amber caution, red over your limits">
         {scan.slots.map((s) => (
           <span key={s.departAt} className={`flex-1 border-r border-background/40 ${LIGHT[s.light]}`} />
         ))}
       </div>
-      <div className="mt-0.5 flex text-[9px] text-muted-foreground">
+      <div className="mt-0.5 flex text-t11 text-muted-foreground">
         {days.map((d) => (
           <span key={d} className="flex-1 truncate">
             {new Date(d).toLocaleDateString([], { weekday: "short" })}
@@ -34,7 +34,7 @@ export function WindowFinder({ scan, onPick }: { scan: WindowScan; onPick: (w: W
         ))}
       </div>
 
-      <p className="mt-3 mb-1 text-[10px] tracking-[0.14em] text-muted-foreground uppercase">Best windows</p>
+      <p className="mt-3 mb-1 text-t12 text-muted-foreground">Best windows</p>
       {scan.windows.length ? (
         <ul className="grid gap-1.5">
           {scan.windows.map((w, i) => (
@@ -51,11 +51,11 @@ export function WindowFinder({ scan, onPick }: { scan: WindowScan; onPick: (w: W
                     {day(w.from)} {time(w.from)}
                     {w.to > w.from ? ` – ${day(w.to) === day(w.from) ? "" : `${day(w.to)} `}${time(w.to)}` : ""}
                   </span>
-                  <span className="block text-[11px] text-muted-foreground tabular-nums">
+                  <span className="block text-t13 text-muted-foreground tabular-nums">
                     Best {time(w.bestDepart)} · {Math.round(w.hours)} h · wind to {Math.round(w.maxWindKn)} kn · seas {formatDepth(w.maxWaveM)}
                     {w.note ? ` · ${w.note}` : ""}
                   </span>
-                  <span className={`block text-[11px] ${w.confidence === "low" ? "text-amber-300" : "text-muted-foreground"}`}>
+                  <span className={`block text-t13 ${w.confidence === "low" ? "text-amber-300" : "text-muted-foreground"}`}>
                     {w.confidence === "good" ? "Good confidence" : w.confidence === "fair" ? "Fair confidence (4–5 days out)" : "Low confidence: more than 5 days out, check again closer to the day"}
                   </span>
                 </span>
@@ -64,7 +64,7 @@ export function WindowFinder({ scan, onPick }: { scan: WindowScan; onPick: (w: W
           ))}
         </ul>
       ) : (
-        <p className="text-[12px] text-muted-foreground">No departure inside your limits in the next {Math.round((scan.slots[scan.slots.length - 1]!.departAt - t0) / 86_400_000)} days.</p>
+        <p className="text-t14 text-muted-foreground">No departure inside your limits in the next {Math.round((scan.slots[scan.slots.length - 1]!.departAt - t0) / 86_400_000)} days.</p>
       )}
     </div>
   );

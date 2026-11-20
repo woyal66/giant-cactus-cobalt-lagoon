@@ -270,7 +270,7 @@ export function PassageHud() {
           aria-expanded={open}
           className="flex min-h-10 w-full items-center justify-between gap-2 px-3 py-1.5 text-left"
         >
-          <span className="min-w-0 text-[12px] leading-tight">
+          <span className="min-w-0 text-t14 leading-tight">
             <span className={`font-semibold ${progress && Math.abs(progress.behindMin) >= 10 ? "text-amber-300" : "text-primary"}`}>
               {notYet
                 ? `Departs ${new Date(saved.departAt).toLocaleDateString([], { weekday: "short" })} ${clock(saved.departAt)}`
@@ -284,7 +284,7 @@ export function PassageHud() {
         </button>
 
         {update ? (
-          <div className="mx-2 mb-2 rounded-md border border-amber-400/50 bg-amber-400/10 px-2.5 py-2 text-[12px]">
+          <div className="mx-2 mb-2 rounded-md border border-amber-400/50 bg-amber-400/10 px-2.5 py-2 text-t14">
             <p className="font-semibold">Newer forecast changes the plan</p>
             <ul className="mt-0.5 list-disc pl-4">
               {update.reasons.map((r) => (
@@ -311,9 +311,9 @@ export function PassageHud() {
 
         {open ? (
           <div className="border-t border-border px-3 pt-2 pb-2.5">
-            <p className="mb-1 text-[10px] tracking-[0.14em] text-muted-foreground uppercase">Next 3 hours</p>
+            <p className="mb-1 text-t12 text-muted-foreground">Next 3 hours</p>
             {next3.length ? (
-              <ul className="grid gap-0.5 text-[11px] tabular-nums">
+              <ul className="grid gap-0.5 text-t13 tabular-nums">
                 {next3.filter((_, i) => i % Math.max(1, Math.ceil(next3.length / 6)) === 0).map((p) => {
                   const a = apparentWind(p.twsKn, p.twa, p.stwKn);
                   return (
@@ -331,9 +331,9 @@ export function PassageHud() {
                 })}
               </ul>
             ) : (
-              <p className="text-[12px] text-muted-foreground">Nothing planned for the next 3 hours.</p>
+              <p className="text-t14 text-muted-foreground">Nothing planned for the next 3 hours.</p>
             )}
-            <p className="mt-1.5 text-[11px] text-muted-foreground">
+            <p className="mt-1.5 text-t13 text-muted-foreground">
               Forecast {forecastAge(saved.forecastAt)}, saved on the phone. {Date.now() - saved.forecastAt >= STALE_MS ? "A newer one is fetched when there's signal." : ""}
             </p>
             <div className="mt-2 grid grid-cols-2 gap-1.5">
@@ -371,7 +371,7 @@ export function PassageHud() {
             </div>
             <SatPaste />
             {prefs.rules.thunder !== "ignore" && next3.some((p) => p.thunder >= 2) ? (
-              <p className="mt-1.5 text-[12px] text-amber-300">Storms likely in the next 3 hours. Reef early and watch the sky.</p>
+              <p className="mt-1.5 text-t14 text-amber-300">Storms likely in the next 3 hours. Reef early and watch the sky.</p>
             ) : null}
           </div>
         ) : null}

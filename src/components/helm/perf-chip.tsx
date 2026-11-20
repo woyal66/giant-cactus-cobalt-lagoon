@@ -15,10 +15,10 @@ export function PerfChip() {
         title={`Wind from the ${perf.source}`}
       >
         <p className={`font-display text-xl leading-none font-semibold tabular-nums ${tone}`}>{perf.pct}%</p>
-        <p className="text-[10px] tracking-[0.1em] text-muted-foreground uppercase tabular-nums">
+        <p className="text-t12 text-muted-foreground tabular-nums">
           of polar · {perf.stwKn.toFixed(1)}/{perf.polarKn.toFixed(1)} kn
         </p>
-        <p className="text-[10px] text-muted-foreground tabular-nums">
+        <p className="text-t12 text-muted-foreground tabular-nums">
           TWS {Math.round(perf.twsKn)} kn · TWA {Math.round(perf.twaDeg)}°
         </p>
       </div>
@@ -29,7 +29,7 @@ export function PerfChip() {
           const s = useHelm.getState();
           s.setRoutePrefs({ engineOn: !s.routePrefs.engineOn });
         }}
-        className={`rounded-full px-2.5 py-1 text-[10px] font-semibold tracking-[0.1em] uppercase shadow-[var(--shadow-border)] ${engineOn ? "bg-amber-500 text-black" : "bg-card/95 text-muted-foreground"}`}
+        className={`rounded-full px-2.5 py-1 text-t12 font-semibold shadow-[var(--shadow-border)] ${engineOn ? "bg-amber-500 text-black" : "bg-card/95 text-muted-foreground"}`}
       >
         {engineOn ? "Engine on · not learning" : perf.learning ? "Sailing · learning" : "Sailing"}
       </button>

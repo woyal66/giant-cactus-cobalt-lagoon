@@ -43,7 +43,7 @@ export function UnitStepField({
 
   return (
     <div className="rounded-lg border border-border bg-background px-2 py-1.5">
-      <p className="text-[10px] tracking-[0.12em] text-muted-foreground uppercase">
+      <p className="text-t12 text-muted-foreground">
         {label} {suffix}
       </p>
       <div className="mt-0.5 flex items-center gap-1.5">

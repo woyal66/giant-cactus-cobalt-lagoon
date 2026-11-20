@@ -94,11 +94,11 @@ export function FirstRunGuide() {
             Skip
           </Button>
         </div>
-        <p className="mt-4 text-[10px] tracking-[0.18em] text-muted-foreground uppercase">{s.kicker}</p>
+        <p className="mt-4 text-t12 text-muted-foreground">{s.kicker}</p>
         <h2 id="guide-title" className="font-display mt-1 text-3xl leading-tight font-semibold text-balance">
           {s.title}
         </h2>
-        <p className="mt-3 text-[15px] leading-relaxed whitespace-pre-line text-muted-foreground">{s.body}</p>
+        <p className="mt-3 text-t16 leading-relaxed whitespace-pre-line text-muted-foreground">{s.body}</p>
 
         {last ? (
           <div className="mt-4 grid gap-2">

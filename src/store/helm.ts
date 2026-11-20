@@ -147,6 +147,8 @@ function readWxModels(value: unknown, fallback: WxModels): WxModels {
   return next.ecmwf || next.gfs || next.ukmo || next.icon ? next : { ...DEFAULT_WX_MODELS };
 }
 
+export type TextSize = "standard" | "large" | "xl";
+
 export type HelmState = {
   reefId: string;
   flyTo: { lat: number; lng: number; zoom: number; nonce: number; fit?: "track" } | null;
@@ -244,6 +246,8 @@ export type HelmState = {
   sunPunch: 1 | 2 | 3;
   /** Fetch the next zoom level and show it at half size, so photos are sharp on high-density screens. */
   sharpTiles: boolean;
+  /** Reader text size: Standard, Large (default) or Extra large. */
+  textSize: TextSize;
   /** Extra contrast and colour on the satellite photo for reading water depth. */
   reefClarity: boolean;
   rode: RodeSetup;
@@ -358,6 +362,7 @@ type HelmActions = {
   cycleLook: () => void;
   setSunPunch: (n: 1 | 2 | 3) => void;
   setSharpTiles: (v: boolean) => void;
+  setTextSize: (v: TextSize) => void;
   setReefClarity: (v: boolean) => void;
   setRode: (partial: Partial<RodeSetup>) => void;
   setHull: (partial: Partial<BoatSetup>) => void;
@@ -462,6 +467,7 @@ function persistSig(state: Record<string, unknown>): string {
     state.radar,
     state.sunlight,
     state.sharpTiles,
+    state.textSize,
     state.reefClarity,
     state.look,
     state.autoNight,
@@ -793,6 +799,7 @@ export const useHelm = create<HelmState & HelmActions>()(
       routePrefs: DEFAULT_ROUTE_PREFS,
       lengthUnit: "m",
       sunPunch: 2,
+      textSize: "large",
       sharpTiles: typeof window !== "undefined" && (window.devicePixelRatio ?? 1) >= 2,
       reefClarity: false,
       rode: DEFAULT_RODE,
@@ -1391,6 +1398,7 @@ export const useHelm = create<HelmState & HelmActions>()(
       },
       setSunPunch: (sunPunch) => set({ sunPunch, sunlight: true, look: "sunlight" }),
       setSharpTiles: (sharpTiles) => set({ sharpTiles }),
+      setTextSize: (textSize) => set({ textSize }),
       setReefClarity: (reefClarity) => set({ reefClarity }),
       setRode: (partial) => {
         const rode = clampRode({ ...get().rode, ...partial }, get().rode);
@@ -1572,6 +1580,7 @@ export const useHelm = create<HelmState & HelmActions>()(
         lengthUnit: s.lengthUnit,
         sunPunch: s.sunPunch,
         sharpTiles: s.sharpTiles,
+        textSize: s.textSize,
         reefClarity: s.reefClarity,
         drafts: s.drafts,
         lastFix: s.lastFix,
@@ -1636,6 +1645,7 @@ export const useHelm = create<HelmState & HelmActions>()(
               : null,
           lengthUnit: applyLengthUnit(p.lengthUnit, current.lengthUnit),
           sharpTiles: typeof p.sharpTiles === "boolean" ? p.sharpTiles : current.sharpTiles,
+          textSize: p.textSize === "standard" || p.textSize === "large" || p.textSize === "xl" ? p.textSize : current.textSize,
           reefClarity: typeof p.reefClarity === "boolean" ? p.reefClarity : current.reefClarity,
           look: isLookMode(p.look)
             ? p.look

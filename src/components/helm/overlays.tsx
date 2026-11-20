@@ -41,7 +41,7 @@ export function AlarmOverlay() {
           <div className="flex items-start gap-3">
             <Bell className="mt-0.5 size-5 shrink-0" />
             <div className="min-w-0 flex-1">
-              <p className="font-display text-2xl leading-none font-semibold tracking-wide">
+              <p className="font-display text-2xl leading-none font-semibold">
                 Anchor dragging
               </p>
               <p className="mt-1 text-sm text-white/85">
@@ -83,7 +83,7 @@ export function AlarmOverlay() {
           <div className="flex items-start gap-3">
             <Bell className="mt-0.5 size-5 shrink-0" />
             <div className="min-w-0 flex-1">
-              <p className="font-display text-2xl leading-none font-semibold tracking-wide">
+              <p className="font-display text-2xl leading-none font-semibold">
                 GPS lost
               </p>
               <p className="mt-1 text-sm text-white/85">
@@ -157,7 +157,7 @@ export function AlarmOverlay() {
         <div className="flex items-start gap-3">
           <Bell className="mt-0.5 size-5 shrink-0" />
           <div className="min-w-0 flex-1">
-            <p className="font-display text-2xl leading-none font-semibold tracking-wide">
+            <p className="font-display text-2xl leading-none font-semibold">
               Off track
             </p>
             <p className="mt-1 text-sm text-white/85">
@@ -305,7 +305,7 @@ function TurnLine({ turn, markIndex }: { turn: TurnAhead | null; markIndex: numb
       role="status"
       aria-live="polite"
       className={cn(
-        "rp-glass mt-1 flex items-center gap-2 rounded-full px-3 py-1 text-[13px] font-semibold tabular-nums",
+        "rp-glass mt-1 flex items-center gap-2 rounded-full px-3 py-1 text-t15 font-semibold tabular-nums",
         turn.now && side === "S" && "bg-emerald-600 text-white",
         turn.now && side === "P" && "bg-red-600 text-white",
         turn.now && !side && "bg-primary text-primary-foreground",
@@ -336,20 +336,20 @@ function HelmNum({
 }) {
   return (
     <div className={cn("flex min-w-0 flex-col items-center px-1 py-1.5", className)}>
-      <p className="rp-helm-label font-semibold tracking-[0.18em] text-muted-foreground uppercase">
+      <p className="rp-helm-label font-semibold text-muted-foreground">
         {label}
       </p>
-      <p className={cn("rp-helm-num font-display font-bold tabular-nums leading-none", warn && "rp-helm-warn")}>
+      <p className={cn("rp-helm-num font-display font-semibold tabular-nums leading-none", warn && "rp-helm-warn")}>
         {value}
       </p>
-      {unit ? <p className="rp-helm-unit mt-0.5 font-semibold tracking-wide text-muted-foreground uppercase">{unit}</p> : null}
+      {unit ? <p className="rp-helm-unit mt-0.5 font-semibold text-muted-foreground">{unit}</p> : null}
     </div>
   );
 }
 
 export function Disclaimer() {
   return (
-    <p className="pointer-events-none absolute bottom-4 left-3 z-10 hidden max-w-[16rem] text-[10px] leading-snug text-foreground/80 md:block">
+    <p className="pointer-events-none absolute bottom-4 left-3 z-10 hidden max-w-[16rem] text-t12 leading-snug text-foreground/80 md:block">
       Not a carriage chart. Satellite + OpenSeaMap are lookout aids.{" "}
       <Link to="/privacy" className="pointer-events-auto underline-offset-2 hover:underline">
         Privacy

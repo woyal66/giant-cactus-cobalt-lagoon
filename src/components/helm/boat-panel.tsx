@@ -29,7 +29,7 @@ function Sheet({
         <div className="mb-2 flex items-center justify-between gap-2">
           <div className="min-w-0">
             {kicker ? (
-              <p className="text-[10px] tracking-[0.14em] text-muted-foreground uppercase">
+              <p className="text-t12 text-muted-foreground">
                 {kicker}
               </p>
             ) : null}
@@ -73,7 +73,7 @@ function BoatPlan() {
 
   return (
     <div className="rounded-lg border border-border bg-background p-2">
-      <p className="mb-1 text-[10px] tracking-[0.12em] text-muted-foreground uppercase">
+      <p className="mb-1 text-t12 text-muted-foreground">
         Tap where the phone lives
       </p>
       <svg

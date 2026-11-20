@@ -51,6 +51,12 @@ a server function, give the phone build an equivalent or it silently returns `nu
 - Anchor watch: saved immediately on change and restored on relaunch (`isAnchorWatch` in the store). Other state is saved at most every 4 s and flushed on backgrounding.
 - `src/components/legal/terms.tsx`, `src/routes/privacy.tsx`: legal text shown in-app and on the website. Keep in sync with what the stores link to.
 
+## Design for older readers
+
+- Font: Atkinson Hyperlegible Next (bundled via `@fontsource-variable`, works offline) for all text; no condensed display face. Semibold at most.
+- Text sizes: use `text-t11` … `text-t16` and the named sizes; they scale with the Text size setting (`textSize` → `html[data-text]` → `--ts`; Large is the default). Don't add fixed `text-[Npx]` sizes, and nothing under 11 px.
+- Labels in sentence case (no `uppercase` or wide letter-spacing). Grey text `--color-muted-foreground` is 7.5:1 on cards; keep it that high.
+
 ## Commands
 
 ```bash

@@ -77,11 +77,11 @@ export function RoutePlanner() {
     return (
       <div className="pointer-events-none absolute inset-x-0 bottom-0 z-40 p-2 pb-[max(0.5rem,env(safe-area-inset-bottom))]">
         <div className="pointer-events-auto mx-auto max-w-lg rounded-xl border border-border bg-card p-3 shadow-[var(--shadow-border)]">
-          <p className="text-[10px] tracking-[0.14em] text-muted-foreground uppercase">Plan a passage</p>
+          <p className="text-t12 text-muted-foreground">Plan a passage</p>
           <p className="font-display mt-1 text-xl leading-tight font-semibold">
             Tap the {picking === "start" ? "start" : "finish"} on the chart
           </p>
-          <p className="mt-0.5 text-[12px] text-muted-foreground">
+          <p className="mt-0.5 text-t14 text-muted-foreground">
             {picking === "start"
               ? "Zoom and pan as needed, then tap where you'll leave from."
               : "Now tap where you're going. Zoom out to see both ends."}
@@ -184,7 +184,7 @@ function PlannerSheet() {
 
   return (
     <Sheet id="route" title="Plan a passage" kicker={`${formatMeters(distM)} · ${formatHeading(bearingDegrees(start, finish))} direct`}>
-      <p className="mb-2 text-[11px] leading-snug text-amber-300">
+      <p className="mb-2 text-t13 leading-snug text-amber-300">
         Planning aid only. Routes avoid land on a simplified coastline but do not know about reefs,
         shoals or bommies. Check every leg against a chart and keep a lookout.
       </p>
@@ -211,7 +211,7 @@ function PlannerSheet() {
         </>
       ) : !out ? (
         <>
-          <p className="mb-1 text-[10px] tracking-[0.14em] text-muted-foreground uppercase">Leave from</p>
+          <p className="mb-1 text-t12 text-muted-foreground">Leave from</p>
           <div className="mb-2 grid grid-cols-4 gap-1.5">
             {START_OFFSETS.map((o) => (
               <Button key={o.h} size="sm" variant={offsetH === o.h ? "default" : "outline"} onClick={() => setOffsetH(o.h)}>
@@ -219,7 +219,7 @@ function PlannerSheet() {
               </Button>
             ))}
           </div>
-          <p className="mb-1 text-[10px] tracking-[0.14em] text-muted-foreground uppercase">Departure window</p>
+          <p className="mb-1 text-t12 text-muted-foreground">Departure window</p>
           <div className="mb-2 grid grid-cols-5 gap-1.5">
             {WINDOWS.map((w) => (
               <Button key={w} size="sm" variant={windowH === w ? "default" : "outline"} onClick={() => setWindowH(w)}>
@@ -233,13 +233,13 @@ function PlannerSheet() {
               Settings
             </Button>
           </div>
-          <p className="mb-2 text-[11px] leading-snug text-muted-foreground">
+          <p className="mb-2 text-t13 leading-snug text-muted-foreground">
             Tide and ocean currents are included (Météo-France SMOC model, about 8 km
             detail): they speed you up or slow you down, change the wind you sail in, and
             make seas stand up where they run against the waves.
           </p>
           {distM < 926 ? (
-            <p className="mb-2 text-[12px] text-destructive">
+            <p className="mb-2 text-t14 text-destructive">
               Start and finish are under half a mile apart. Tap Change start or finish and zoom out.
             </p>
           ) : null}
@@ -332,37 +332,37 @@ function Results({
             >
               <div className="flex items-baseline justify-between gap-2">
                 <p className="font-display text-base font-semibold">{PLAN_LOOK[m].title}</p>
-                <p className="text-[12px] text-muted-foreground tabular-nums">{dur(x.hours)} · {x.distanceNm.toFixed(0)} nm</p>
+                <p className="text-t14 text-muted-foreground tabular-nums">{dur(x.hours)} · {x.distanceNm.toFixed(0)} nm</p>
               </div>
-              <p className="text-[12px] tabular-nums">
+              <p className="text-t14 tabular-nums">
                 Leave {when(c.row.departAt)} → arrive {when(c.result.arriveAt)}
               </p>
-              <p className="text-[11px] text-muted-foreground tabular-nums">
+              <p className="text-t13 text-muted-foreground tabular-nums">
                 Wind to {Math.round(x.maxWindKn)} kn, gusts {Math.round(x.maxGustKn)} · seas to {formatDepth(x.maxWaveM)} ·{" "}
                 {x.hours - x.motorHours >= 0.5 ? `${x.upwindPct}% upwind` : "all under engine"}
                 {x.motorHours >= 0.5 && x.hours - x.motorHours >= 0.5 ? ` · ${dur(x.motorHours)} motoring` : ""} ·{" "}
                 {agreement(c.row)}
               </p>
-              <p className="text-[11px] text-muted-foreground tabular-nums">{tideLine(x)}</p>
-              <p className="mt-0.5 text-[11px] text-muted-foreground">{PLAN_LOOK[m].why}</p>
+              <p className="text-t13 text-muted-foreground tabular-nums">{tideLine(x)}</p>
+              <p className="mt-0.5 text-t13 text-muted-foreground">{PLAN_LOOK[m].why}</p>
             </button>
           );
         })}
       </div>
 
       {out.reefData !== "used" ? (
-        <p className="mt-2 rounded-md border border-amber-500/50 bg-amber-500/10 px-2.5 py-1.5 text-[12px] leading-snug text-amber-200">
+        <p className="mt-2 rounded-md border border-amber-500/50 bg-amber-500/10 px-2.5 py-1.5 text-t14 leading-snug text-amber-200">
           Routes avoid the coastline but not reefs (reef data isn&apos;t installed). Check every leg on the chart
           with reef outlines on.
         </p>
       ) : (
-        <p className="mt-2 text-[11px] text-muted-foreground">
+        <p className="mt-2 text-t13 text-muted-foreground">
           Routes avoid mapped reefs (GBRMPA outlines, generalised). Small gaps and entrances are closed: pilot those yourself.
         </p>
       )}
       {picked ? <PickedActions picked={picked} ctx={ctx} shelter={out.shelter} /> : null}
 
-      <p className="mt-3 mb-1 text-[10px] tracking-[0.14em] text-muted-foreground uppercase">All departures</p>
+      <p className="mt-3 mb-1 text-t12 text-muted-foreground">All departures</p>
       <ul className="grid gap-1">
         {out.rows.map((row) => {
           const r = row.results.fastest;
@@ -378,8 +378,8 @@ function Results({
                   aria-label={row.light}
                   className={`size-2.5 shrink-0 rounded-full ${row.light === "green" ? "bg-emerald-400" : row.light === "amber" ? "bg-amber-400" : "bg-destructive"}`}
                 />
-                <span className="w-24 shrink-0 text-[12px] tabular-nums">{when(row.departAt)}</span>
-                <span className="min-w-0 flex-1 text-[11px] leading-snug text-muted-foreground tabular-nums">
+                <span className="w-24 shrink-0 text-t14 tabular-nums">{when(row.departAt)}</span>
+                <span className="min-w-0 flex-1 text-t13 leading-snug text-muted-foreground tabular-nums">
                   {r.ok
                     ? `${dur(r.metrics.hours)} · ${Math.round(r.metrics.maxWindKn)} kn · ${formatDepth(r.metrics.maxWaveM)} · tide ${signedKn(r.metrics.avgCurrentKn)}${r.metrics.steepSeaHours >= 0.5 ? " · wind over tide" : ""}${r.metrics.arrivesInDark ? " · dark arrival" : ""}`
                     : "Over your limits"}
@@ -446,19 +446,19 @@ function PickedActions({ picked, ctx, shelter }: { picked: Choice; ctx: PlanCont
       <RouteTimeline points={r.points} sails={prefs.sails} maxWindKn={prefs.limits.maxWindKn} />
       {finish ? <ArrivalCard finish={finish} eta={r.arriveAt} shelter={shelter} /> : null}
       {ctx ? (
-        <p className="mt-1 text-[11px] text-muted-foreground">
+        <p className="mt-1 text-t13 text-muted-foreground">
           Forecast {forecastAge(ctx.forecastAt)} ({ctx.models.join(", ").toUpperCase()}). Follow or Save keeps it on the phone for offline re-routing.
         </p>
       ) : null}
       <div className="mt-2" />
       {r.warnings.length ? (
-        <ul className="mb-2 list-disc space-y-0.5 pl-4 text-[12px] leading-snug text-amber-300">
+        <ul className="mb-2 list-disc space-y-0.5 pl-4 text-t14 leading-snug text-amber-300">
           {r.warnings.map((w) => (
             <li key={w}>{w}</li>
           ))}
         </ul>
       ) : (
-        <p className="mb-2 text-[12px] text-muted-foreground">No warnings on this plan.</p>
+        <p className="mb-2 text-t14 text-muted-foreground">No warnings on this plan.</p>
       )}
       <div className="grid grid-cols-4 gap-1.5">
         <Button

@@ -10,7 +10,7 @@ export function Terms() {
   return (
     <main className="h-dvh overflow-y-auto bg-background px-5 py-8 text-foreground">
       <div className="mx-auto max-w-lg">
-        <p className="text-[10px] tracking-[0.18em] text-muted-foreground uppercase">Anchor Mate</p>
+        <p className="text-t12 text-muted-foreground">Anchor Mate</p>
         <h1 className="font-display mt-1 text-4xl font-semibold tracking-tight">Terms of Use</h1>
         <div className="mt-4 space-y-3 text-sm leading-relaxed text-pretty text-muted-foreground">
           <h2 className="font-display pt-2 text-base font-semibold text-foreground">

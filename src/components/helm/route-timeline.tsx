@@ -77,7 +77,7 @@ export function RouteTimeline({ points, sails, maxWindKn }: { points: RoutePoint
 
   return (
     <div className="mt-2 rounded-lg border border-border bg-background px-2 py-2">
-      <div className="mb-1 grid grid-cols-2 gap-x-2 text-[11px] leading-snug tabular-nums">
+      <div className="mb-1 grid grid-cols-2 gap-x-2 text-t13 leading-snug tabular-nums">
         <p className="col-span-2 font-semibold">{clock(cur.at, true)}{cur.day ? "" : " · night"}</p>
         <p>
           True <b>{Math.round(cur.twsKn)} kn</b> {Math.round(cur.twa)}° {cur.tack > 0 ? "S" : cur.tack < 0 ? "P" : ""}
@@ -119,11 +119,11 @@ export function RouteTimeline({ points, sails, maxWindKn }: { points: RoutePoint
         })}
 
         {/* speed band */}
-        <text x={2} y={BANDS.speed[0] + 8} className="fill-muted-foreground text-[8px]">kn</text>
+        <text x={2} y={BANDS.speed[0] + 8} className="fill-muted-foreground text-t11">kn</text>
         {[0, 10, 20, 30, 40].filter((v) => v <= top).map((v) => (
           <g key={v}>
             <line x1={L} x2={W - R} y1={ySpeed(v)} y2={ySpeed(v)} className="stroke-border" strokeWidth={0.5} />
-            <text x={L - 3} y={ySpeed(v) + 3} textAnchor="end" className="fill-muted-foreground text-[8px]">{v}</text>
+            <text x={L - 3} y={ySpeed(v) + 3} textAnchor="end" className="fill-muted-foreground text-t11">{v}</text>
           </g>
         ))}
         <line x1={L} x2={W - R} y1={ySpeed(maxWindKn)} y2={ySpeed(maxWindKn)} className="stroke-destructive" strokeDasharray="3 3" strokeWidth={0.8} />
@@ -136,16 +136,16 @@ export function RouteTimeline({ points, sails, maxWindKn }: { points: RoutePoint
         <rect x={L} y={yAngle(55)} width={W - L - R} height={yAngle(135) - yAngle(55)} className="fill-emerald-400/10" />
         <rect x={L} y={yAngle(135)} width={W - L - R} height={yAngle(180) - yAngle(135)} className="fill-sky-400/10" />
         {[0, 90, 180].map((v) => (
-          <text key={v} x={L - 3} y={yAngle(v) + 3} textAnchor="end" className="fill-muted-foreground text-[8px]">{v}°</text>
+          <text key={v} x={L - 3} y={yAngle(v) + 3} textAnchor="end" className="fill-muted-foreground text-t11">{v}°</text>
         ))}
-        <text x={L + 2} y={yAngle(28)} className="fill-muted-foreground text-[7px]">upwind</text>
-        <text x={L + 2} y={yAngle(95)} className="fill-muted-foreground text-[7px]">reach</text>
-        <text x={L + 2} y={yAngle(160)} className="fill-muted-foreground text-[7px]">downwind</text>
+        <text x={L + 2} y={yAngle(28)} className="fill-muted-foreground text-t11">upwind</text>
+        <text x={L + 2} y={yAngle(95)} className="fill-muted-foreground text-t11">reach</text>
+        <text x={L + 2} y={yAngle(160)} className="fill-muted-foreground text-t11">downwind</text>
         <path d={line((s) => yAngle(s.twa))} className="stroke-primary" fill="none" strokeWidth={1.8} />
         <path d={line((s) => yAngle(s.awa))} className="stroke-foreground" fill="none" strokeWidth={1.2} strokeDasharray="4 2" />
 
         {/* sea + current */}
-        <text x={L - 3} y={BANDS.sea[0] + 6} textAnchor="end" className="fill-muted-foreground text-[8px]">sea</text>
+        <text x={L - 3} y={BANDS.sea[0] + 6} textAnchor="end" className="fill-muted-foreground text-t11">sea</text>
         {samples.map((s, i) => {
           const next = samples[i + 1]?.at ?? t1;
           const h = (s.waveM / waveTop) * (BANDS.sea[1] - BANDS.sea[0]);
@@ -164,7 +164,7 @@ export function RouteTimeline({ points, sails, maxWindKn }: { points: RoutePoint
         <path d={line((s) => yCur(s.curAlongKn))} className="stroke-emerald-300" fill="none" strokeWidth={1.2} />
 
         {/* storm */}
-        <text x={L - 3} y={BANDS.storm[1]} textAnchor="end" className="fill-muted-foreground text-[8px]">storm</text>
+        <text x={L - 3} y={BANDS.storm[1]} textAnchor="end" className="fill-muted-foreground text-t11">storm</text>
         {samples.map((s, i) => {
           const next = samples[i + 1]?.at ?? t1;
           const cls =
@@ -173,14 +173,14 @@ export function RouteTimeline({ points, sails, maxWindKn }: { points: RoutePoint
         })}
 
         {/* sails */}
-        <text x={L - 3} y={BANDS.sails[1] - 4} textAnchor="end" className="fill-muted-foreground text-[8px]">sails</text>
+        <text x={L - 3} y={BANDS.sails[1] - 4} textAnchor="end" className="fill-muted-foreground text-t11">sails</text>
         {plan.segments.map((g, i) => {
           const w = x(g.to) - x(g.from);
           return (
             <g key={`g${i}`}>
               <rect x={x(g.from)} y={BANDS.sails[0]} width={Math.max(0.8, w - 1)} height={BANDS.sails[1] - BANDS.sails[0]} rx={2} className={g.motoring ? "fill-muted" : i % 2 ? "fill-primary/30" : "fill-primary/50"} />
               {w > 40 ? (
-                <text x={x(g.from) + 3} y={BANDS.sails[1] - 5} className="fill-foreground text-[7px]">
+                <text x={x(g.from) + 3} y={BANDS.sails[1] - 5} className="fill-foreground text-t11">
                   {g.motoring ? "Engine" : `${g.main.replace("Main ", "").replace("Full main", "Full")} ${g.head.replace("Asymmetric spinnaker", "Asym").replace("Symmetric spinnaker", "Spin").replace("Genoa furled ~70%", "Genoa 70%")}`}
                 </text>
               ) : null}
@@ -190,18 +190,18 @@ export function RouteTimeline({ points, sails, maxWindKn }: { points: RoutePoint
 
         {/* time axis + cursor */}
         {ticks.map((t) => (
-          <text key={t} x={x(t)} y={HEIGHT - 0.5} textAnchor="middle" className="fill-muted-foreground text-[7px]">{clock(t)}</text>
+          <text key={t} x={x(t)} y={HEIGHT - 0.5} textAnchor="middle" className="fill-muted-foreground text-t11">{clock(t)}</text>
         ))}
         <line x1={x(cur.at)} x2={x(cur.at)} y1={0} y2={BANDS.sails[1]} className="stroke-amber-300" strokeWidth={1} />
       </svg>
-      <p className="mt-1 text-[10px] text-muted-foreground">
+      <p className="mt-1 text-t12 text-muted-foreground">
         Solid: true wind · dashed: apparent wind · red bars: seas raised by wind over tide · green line: tide (+ fair) · shaded: night
       </p>
 
       {plan.changes.length ? (
         <div className="mt-2">
-          <p className="mb-1 text-[10px] tracking-[0.14em] text-muted-foreground uppercase">Sail plan</p>
-          <ul className="grid gap-0.5 text-[12px] tabular-nums">
+          <p className="mb-1 text-t12 text-muted-foreground">Sail plan</p>
+          <ul className="grid gap-0.5 text-t14 tabular-nums">
             {plan.changes.map((c) => {
               const p = samples.find((s) => s.at >= c.at) ?? samples[samples.length - 1]!;
               return (

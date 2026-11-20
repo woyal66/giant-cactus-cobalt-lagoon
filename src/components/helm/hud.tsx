@@ -114,10 +114,10 @@ export function TopHud() {
       <div className="pointer-events-auto mx-auto hidden max-w-6xl items-center gap-2 md:flex">
         <div className="flex min-w-0 items-center gap-3 rounded-xl border border-border bg-card/95 px-3 py-2 shadow-[var(--shadow-border)] rp-glass">
           <div className="min-w-0">
-            <p className="font-display text-lg leading-none font-semibold tracking-wide text-foreground">
+            <p className="font-display text-lg leading-none font-semibold text-foreground">
               Anchor Mate
             </p>
-            <p className="mt-0.5 text-[11px] tracking-wide text-muted-foreground uppercase">
+            <p className="mt-0.5 text-t13 text-muted-foreground">
               Satellite helm
             </p>
           </div>
@@ -161,15 +161,15 @@ export function TopHud() {
             }}
           >
             {tracking ? (
-              <span className="font-display text-[10px] font-bold leading-none">
+              <span className="font-display text-t12 font-semibold leading-none">
                 {following ? "ON" : "GO"}
               </span>
             ) : !follow ? (
               <LocateFixed />
             ) : chartUp === "heading" ? (
-              <span className="font-display text-lg font-bold leading-none">↑</span>
+              <span className="font-display text-lg font-semibold leading-none">↑</span>
             ) : (
-              <span className="font-display text-sm font-bold leading-none">N</span>
+              <span className="font-display text-sm font-semibold leading-none">N</span>
             )}
           </Button>
           <button
@@ -178,10 +178,10 @@ export function TopHud() {
             aria-label="Helm scale"
             className="rounded-md border border-border bg-card/95 px-1 py-1 text-center shadow-[var(--shadow-border)] rp-glass"
           >
-            <p className="font-display text-[11px] leading-none font-semibold tabular-nums">
+            <p className="font-display text-t13 leading-none font-semibold tabular-nums">
               {scale}
             </p>
-            <p className="mt-0.5 text-[8px] leading-none tracking-wide text-muted-foreground uppercase">
+            <p className="mt-0.5 text-t11 leading-none text-muted-foreground">
               {imageryShort(imagery)}
             </p>
           </button>
@@ -193,7 +193,7 @@ export function TopHud() {
                 const next = useHelm.getState().flipImagery(centreTileSource());
                 toast(`Showing ${imageryShort(next)}. Tap ⇄ to flip back.`, { duration: 2500 });
               }}
-              className="rounded-md border border-border bg-card/95 py-1 text-center text-[13px] leading-none font-bold shadow-[var(--shadow-border)] rp-glass"
+              className="rounded-md border border-border bg-card/95 py-1 text-center text-t15 leading-none font-semibold shadow-[var(--shadow-border)] rp-glass"
             >
               ⇄
             </button>
@@ -209,7 +209,7 @@ export function TopHud() {
               if (!dropMob()) toast("Need a GPS fix before MOB.");
             }}
           >
-            <span className="font-display text-[11px] font-bold leading-none">MOB</span>
+            <span className="font-display text-t13 font-semibold leading-none">MOB</span>
           </Button>
           {/* Always here (the top bar's wind reading is hidden under the steering bar on phones). */}
           <button
@@ -228,20 +228,20 @@ export function TopHud() {
               <>
                 <span
                   aria-hidden
-                  className="block text-[11px] leading-none"
+                  className="block text-t13 leading-none"
                   style={{ transform: `rotate(${wx.data.now.dirDeg + 180}deg)` }}
                 >
                   ↑
                 </span>
-                <span className="font-display block text-[13px] leading-none font-bold tabular-nums">
+                <span className="font-display block text-t15 leading-none font-semibold tabular-nums">
                   {Math.round(gust >= 25 ? gust : wx.data.now.windKn)}
                 </span>
-                <span className="block text-[8px] leading-none tracking-wide uppercase opacity-80">
+                <span className="block text-t11 leading-none opacity-80">
                   {gust >= 25 ? "gust" : windCardinal(wx.data.now.dirDeg)}
                 </span>
               </>
             ) : (
-              <span className="text-[9px] font-semibold uppercase">Wx</span>
+              <span className="text-t11 font-semibold">Wx</span>
             )}
           </button>
         </div>
@@ -322,13 +322,13 @@ export function TopHud() {
       ) : null}
 
       {!boat && !gpsDenied ? (
-        <p className="pointer-events-none mx-auto mt-1.5 max-w-6xl text-center text-[11px] text-muted-foreground">
+        <p className="pointer-events-none mx-auto mt-1.5 max-w-6xl text-center text-t13 text-muted-foreground">
           Locating GPS…
         </p>
       ) : null}
 
       {!boat && gpsDenied ? (
-        <p className="pointer-events-none mx-auto mt-1.5 max-w-6xl text-center text-[11px] text-muted-foreground">
+        <p className="pointer-events-none mx-auto mt-1.5 max-w-6xl text-center text-t13 text-muted-foreground">
           GPS off — Layers → Place boat.
         </p>
       ) : null}
@@ -357,7 +357,7 @@ function Instrument({
           : `px-3 py-2 ${wide ? "min-w-[9.5rem]" : "min-w-[4.5rem]"}`
       }
     >
-      <p className="text-[9px] tracking-[0.12em] text-muted-foreground uppercase">
+      <p className="text-t11 text-muted-foreground">
         {label}
       </p>
       <p
@@ -367,7 +367,7 @@ function Instrument({
       >
         {value}
         {unit ? (
-          <span className="ml-0.5 text-[10px] font-medium text-muted-foreground">
+          <span className="ml-0.5 text-t12 font-medium text-muted-foreground">
             {unit}
           </span>
         ) : null}
@@ -405,24 +405,24 @@ export function MobHud() {
     <div className="pointer-events-none absolute inset-x-0 bottom-[5.2rem] z-30 px-2 md:bottom-[9.2rem] md:px-3">
       <div className="pointer-events-auto mx-auto flex w-full max-w-md items-stretch overflow-hidden rounded-xl border border-destructive bg-card/95 shadow-[var(--shadow-border)] rp-glass">
         <div className="min-w-0 flex-1 px-3 py-2">
-          <p className="truncate text-[10px] tracking-[0.14em] text-destructive uppercase">
+          <p className="truncate text-t12 text-destructive">
             {mob === mark ? "Back to MOB" : "To drift position now"}
           </p>
           <div className="mt-1 grid grid-cols-3 gap-1">
             <div>
-              <p className="text-[9px] tracking-[0.12em] text-muted-foreground uppercase">Brg</p>
+              <p className="text-t11 text-muted-foreground">Brg</p>
               <p className="font-display text-[1.4rem] leading-none font-semibold tabular-nums">
                 {brg}
               </p>
             </div>
             <div>
-              <p className="text-[9px] tracking-[0.12em] text-muted-foreground uppercase">Rng</p>
+              <p className="text-t11 text-muted-foreground">Rng</p>
               <p className="font-display text-[1.4rem] leading-none font-semibold tabular-nums">
                 {rng}
               </p>
             </div>
             <div>
-              <p className="text-[9px] tracking-[0.12em] text-muted-foreground uppercase">Ttg</p>
+              <p className="text-t11 text-muted-foreground">Ttg</p>
               <p className="font-display text-[1.4rem] leading-none font-semibold tabular-nums">
                 {ttg}
               </p>
@@ -433,7 +433,7 @@ export function MobHud() {
           <button
             type="button"
             onClick={() => setGuide(true)}
-            className="flex-1 bg-destructive px-3 text-xs font-semibold tracking-wide text-white uppercase"
+            className="flex-1 bg-destructive px-3 text-xs font-semibold text-white"
           >
             Steps
           </button>
@@ -442,7 +442,7 @@ export function MobHud() {
             onClick={() => {
               if (window.confirm("Clear the man-overboard mark?")) clearMob();
             }}
-            className="flex-1 px-3 text-xs font-semibold tracking-wide text-destructive uppercase"
+            className="flex-1 px-3 text-xs font-semibold text-destructive"
           >
             Clear
           </button>
@@ -510,7 +510,7 @@ export function NavRibbon() {
               {passage.title}
             </p>
             {remaining ? (
-              <p className="mt-0.5 text-[11px] text-muted-foreground">
+              <p className="mt-0.5 text-t13 text-muted-foreground">
                 {toCorner != null ? `${formatMeters(toCorner)} along to the corner · ` : ""}
                 {remaining} left · {xte}
               </p>
@@ -534,14 +534,14 @@ export function NavRibbon() {
               ) : (
                 <>
                   {formatMeters(hook)}
-                  <span className={`ml-1 text-[11px] font-medium ${alarmOn ? "text-white/85" : "text-muted-foreground"}`}>
+                  <span className={`ml-1 text-t13 font-medium ${alarmOn ? "text-white/85" : "text-muted-foreground"}`}>
                     from anchor · circle {formatLength(anchor.radiusM)}
                   </span>
                 </>
               )}
             </p>
             <p
-              className={`mt-0.5 text-[11px] ${
+              className={`mt-0.5 text-t13 ${
                 alarmOn
                   ? "text-white/85"
                   : math.status === "critical"

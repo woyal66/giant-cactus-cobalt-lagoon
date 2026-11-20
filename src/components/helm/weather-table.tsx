@@ -55,7 +55,7 @@ export function WeatherTable({
   const hasCurrent = currentHours.length > 0;
   const hasSwell = waveHours.some((w) => w.swellM != null);
   const anyStorm = cols.some((h) => stormRiskOf(h) > 0);
-  const label = "sticky left-0 z-10 bg-card pr-1.5 text-left text-[10px] font-medium tracking-wide text-muted-foreground uppercase";
+  const label = "sticky left-0 z-10 bg-card pr-1.5 text-left text-t12 font-medium text-muted-foreground";
   const cell = "px-0 py-0.5 text-center tabular-nums";
   type Row = { name: string; render: (h: WxHour) => React.ReactNode; cls?: (h: WxHour) => string; style?: (h: WxHour) => React.CSSProperties };
   const wave = (h: WxHour) => nearestSample(waveHours, h.at);
@@ -64,10 +64,10 @@ export function WeatherTable({
       name: "Wind",
       render: (h) => (
         <span className="inline-flex flex-col items-center leading-none">
-          <span aria-hidden style={{ transform: `rotate(${h.dirDeg + 180}deg)` }} className="inline-block text-[11px]">
+          <span aria-hidden style={{ transform: `rotate(${h.dirDeg + 180}deg)` }} className="inline-block text-t13">
             ↑
           </span>
-          <span className="text-[9px] opacity-80">{windCardinal(h.dirDeg)}</span>
+          <span className="text-t11 opacity-80">{windCardinal(h.dirDeg)}</span>
         </span>
       ),
     },
@@ -152,10 +152,10 @@ export function WeatherTable({
               const c = nearestSample(currentHours, h.at);
               return c ? (
                 <span className="inline-flex flex-col items-center leading-none">
-                  <span aria-hidden style={{ transform: `rotate(${c.dirDeg}deg)` }} className="inline-block text-[11px]">
+                  <span aria-hidden style={{ transform: `rotate(${c.dirDeg}deg)` }} className="inline-block text-t13">
                     ↑
                   </span>
-                  <span className="text-[9px]">{c.kn.toFixed(1)}</span>
+                  <span className="text-t11">{c.kn.toFixed(1)}</span>
                 </span>
               ) : (
                 ""
@@ -171,7 +171,7 @@ export function WeatherTable({
   return (
     <div className="min-w-0 max-w-full overflow-hidden rounded-xl border border-border bg-card">
       <div ref={scroller} className="overflow-x-auto overscroll-x-contain">
-        <table className="border-separate border-spacing-x-px border-spacing-y-0 text-[11px]">
+        <table className="border-separate border-spacing-x-px border-spacing-y-0 text-t13">
           <thead>
             <tr>
               <th className={label} />
@@ -185,7 +185,7 @@ export function WeatherTable({
                     onClick={() => onCursor(h.at)}
                     className={`min-w-[2.15rem] cursor-pointer px-0 pt-1 text-center font-medium tabular-nums ${h.at === cursorCol?.at ? "bg-primary/25" : ""}`}
                   >
-                    <span className="block text-[9px] text-muted-foreground">
+                    <span className="block text-t11 text-muted-foreground">
                       {newDay ? d.toLocaleDateString([], { weekday: "short" }) : " "}
                     </span>
                     {d.toLocaleTimeString([], { hour: "numeric" }).replace(/\s?([AP])M/i, (_, x: string) => x.toLowerCase())}
@@ -215,7 +215,7 @@ export function WeatherTable({
           </tbody>
         </table>
       </div>
-      <div className="flex items-center gap-1 border-t border-border/60 px-2 py-1 text-[9px] text-muted-foreground">
+      <div className="flex items-center gap-1 border-t border-border/60 px-2 py-1 text-t11 text-muted-foreground">
         <span>kn</span>
         {WIND_SCALE_STEPS.map((s, i) => (
           <span key={s.bg} className="flex items-center gap-0.5">

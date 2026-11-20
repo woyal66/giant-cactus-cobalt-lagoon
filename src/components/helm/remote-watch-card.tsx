@@ -54,12 +54,12 @@ export function RemoteWatchCard() {
   if (!pair) {
     return (
       <div className="mb-2 rounded-lg border border-border bg-background px-3 py-2">
-        <p className="text-[10px] tracking-[0.14em] text-muted-foreground uppercase">Remote watch</p>
-        <p className="mt-0.5 text-[12px] leading-snug text-muted-foreground">
+        <p className="text-t12 text-muted-foreground">Remote watch</p>
+        <p className="mt-0.5 text-t14 leading-snug text-muted-foreground">
           Send the anchor alarms to a second phone too: your partner&apos;s, or yours in the cabin.
         </p>
         <label className="mt-2 grid gap-1">
-          <span className="text-[10px] tracking-[0.12em] text-muted-foreground uppercase">Boat name</span>
+          <span className="text-t12 text-muted-foreground">Boat name</span>
           <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Saltwater" className="h-10" maxLength={40} />
         </label>
         <Button className="mt-2 w-full" onClick={() => setPair({ topic: newTopic(), boatName: name.trim() })}>
@@ -72,10 +72,10 @@ export function RemoteWatchCard() {
   return (
     <div className="mb-2 rounded-lg border border-primary/40 bg-background px-3 py-2">
       <div className="flex items-center justify-between">
-        <p className="text-[10px] tracking-[0.14em] text-muted-foreground uppercase">Remote watch on</p>
-        <span className="text-[11px] text-primary">{pair.boatName || "Your boat"}</span>
+        <p className="text-t12 text-muted-foreground">Remote watch on</p>
+        <span className="text-t13 text-primary">{pair.boatName || "Your boat"}</span>
       </div>
-      <ol className="mt-1 list-decimal space-y-0.5 pl-4 text-[12px] leading-snug text-muted-foreground">
+      <ol className="mt-1 list-decimal space-y-0.5 pl-4 text-t14 leading-snug text-muted-foreground">
         <li>On the second phone, install the free <span className="font-semibold text-foreground">ntfy</span> app.</li>
         <li>Scan this code with its camera, or send the link, then tap Subscribe.</li>
         <li>Tap Send test alert below and check it arrives with sound.</li>
@@ -103,12 +103,12 @@ export function RemoteWatchCard() {
           >
             Send test alert
           </Button>
-          <a href={ntfyAppUrl(pair.topic)} className="truncate text-center text-[11px] text-muted-foreground underline">
+          <a href={ntfyAppUrl(pair.topic)} className="truncate text-center text-t13 text-muted-foreground underline">
             Open in ntfy on this phone
           </a>
         </div>
       </div>
-      <p className="mt-2 text-[11px] leading-snug text-muted-foreground">
+      <p className="mt-2 text-t13 leading-snug text-muted-foreground">
         The second phone needs mobile data or Wi-Fi. In ntfy, keep notification sound on for this channel
         (Android: set it to max priority to ring through Do Not Disturb). Alerts include the boat&apos;s position,
         sent only to this private channel.

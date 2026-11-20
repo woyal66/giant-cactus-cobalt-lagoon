@@ -47,8 +47,8 @@ export function ArrivalCard({ finish, eta, shelter }: { finish: LatLng; eta: num
   const sunsetGap = sun ? (sun.set - eta) / 60_000 : null;
 
   return (
-    <div className="mt-2 rounded-lg border border-border bg-background px-3 py-2 text-[12px] leading-snug">
-      <p className="mb-1 text-[10px] tracking-[0.14em] text-muted-foreground uppercase">Arrival</p>
+    <div className="mt-2 rounded-lg border border-border bg-background px-3 py-2 text-t14 leading-snug">
+      <p className="mb-1 text-t12 text-muted-foreground">Arrival</p>
       {wx.isLoading ? <p className="text-muted-foreground">Loading the destination forecast…</p> : null}
       {wx.isError && !data ? <p className="text-muted-foreground">No destination forecast: no signal.</p> : null}
       {at ? (
@@ -86,7 +86,7 @@ export function ArrivalCard({ finish, eta, shelter }: { finish: LatLng; eta: num
           Tide: {turns.map((t) => `${t.kind === "high" ? "HW" : "LW"} ${new Date(t.at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}`).join(" · ")}
         </p>
       ) : null}
-      <p className="mt-1 text-[11px] text-muted-foreground">When you're on the hook, tap Anchor to start the watch.</p>
+      <p className="mt-1 text-t13 text-muted-foreground">When you're on the hook, tap Anchor to start the watch.</p>
     </div>
   );
 }

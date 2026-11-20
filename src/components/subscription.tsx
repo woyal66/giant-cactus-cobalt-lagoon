@@ -72,7 +72,7 @@ export function Paywall() {
         <div className="grid size-14 place-items-center rounded-2xl bg-primary text-primary-foreground">
           <Anchor className="size-7" aria-hidden />
         </div>
-        <p className="mt-5 text-[10px] tracking-[0.18em] text-muted-foreground uppercase">
+        <p className="mt-5 text-t12 text-muted-foreground">
           Anchor Mate Pro
         </p>
         <h1 className="font-display mt-1 text-4xl leading-tight font-semibold tracking-tight text-balance">
@@ -116,7 +116,7 @@ export function Paywall() {
             </div>
           ) : null}
 
-          <p className="mt-4 text-[11px] leading-relaxed text-muted-foreground text-pretty">
+          <p className="mt-4 text-t13 leading-relaxed text-muted-foreground text-pretty">
             {offer?.trial
               ? `No charge during the ${offer.trial.replace(" free trial", "")} trial. `
               : ""}
@@ -146,7 +146,7 @@ export function Paywall() {
             </Link>
           </div>
           {isPreview() ? (
-            <p className="mt-3 text-center text-[10px] text-muted-foreground">
+            <p className="mt-3 text-center text-t12 text-muted-foreground">
               Preview with sample prices. Real prices come from the store.
             </p>
           ) : null}
@@ -181,7 +181,7 @@ export function SubscriptionRow() {
     <div className="flex min-w-0 items-center justify-between gap-2">
       <div className="min-w-0">
         <p className="font-display text-sm leading-none font-semibold">Anchor Mate Pro</p>
-        <p className="mt-0.5 truncate text-[11px] text-muted-foreground">{status}</p>
+        <p className="mt-0.5 truncate text-t13 text-muted-foreground">{status}</p>
       </div>
       <div className="flex shrink-0 gap-1.5">
         <Button variant="ghost" size="sm" disabled={busy} onClick={() => void restore()}>
@@ -252,7 +252,7 @@ function TrialReminder() {
     <div className="pointer-events-none absolute inset-x-0 top-[calc(max(0.4rem,env(safe-area-inset-top))+6.5rem)] z-40 flex justify-center px-3">
       <div className="pointer-events-auto w-full max-w-md rounded-xl border border-primary/40 bg-card/95 p-3 shadow-[var(--shadow-border)]">
         <p className="font-display text-base leading-tight font-semibold">{m.title}</p>
-        <p className="mt-1 text-[12px] leading-snug text-muted-foreground">{m.body}</p>
+        <p className="mt-1 text-t14 leading-snug text-muted-foreground">{m.body}</p>
         <div className="mt-2 grid grid-cols-2 gap-2">
           <Button asChild variant="outline" size="sm">
             <a href={manageUrl()} target="_blank" rel="noreferrer">

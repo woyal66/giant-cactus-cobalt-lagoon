@@ -53,11 +53,11 @@ export function MoonCard({ compact }: { compact?: boolean }) {
         <p className="font-display text-base leading-none font-semibold">
           {m.phaseName} <span className="text-sm font-medium text-muted-foreground">· {pct}% lit</span>
         </p>
-        <p className="mt-1 text-[12px] text-muted-foreground tabular-nums">
+        <p className="mt-1 text-t14 text-muted-foreground tabular-nums">
           Rise {clock(m.nextRise)} · Set {clock(m.nextSet)}
           {m.upNow ? " · up now" : ""}
         </p>
-        {compact ? null : <p className="mt-0.5 text-[11px] text-muted-foreground">{moonNote(m)}</p>}
+        {compact ? null : <p className="mt-0.5 text-t13 text-muted-foreground">{moonNote(m)}</p>}
       </div>
     </div>
   );

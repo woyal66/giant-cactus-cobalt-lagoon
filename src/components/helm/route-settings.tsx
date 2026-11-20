@@ -8,7 +8,7 @@ import type { SailDef } from "@/lib/routing/sails";
 import { ROUTE_PRESETS, useHelm, type RoutePreset } from "@/store/helm";
 import { EMPTY_LEARNED, MIN_SAMPLES, polarInsight } from "@/lib/routing/learned";
 
-const label = "mb-1 text-[10px] tracking-[0.14em] text-muted-foreground uppercase";
+const label = "mb-1 text-t12 text-muted-foreground";
 
 export function Stepper({
   label: name,
@@ -25,7 +25,7 @@ export function Stepper({
 }) {
   return (
     <div className="rounded-md border border-border bg-background px-1.5 py-1 text-center">
-      <p className="text-[10px] tracking-[0.1em] text-muted-foreground uppercase">{name}</p>
+      <p className="text-t12 text-muted-foreground">{name}</p>
       <div className="flex items-center justify-between gap-1">
         <Button size="icon-sm" variant="ghost" aria-label={`Less ${name}`} onClick={() => onChange(Math.max(0, +(value - step).toFixed(2)))}>
           −
@@ -52,7 +52,7 @@ export function SettingsSummary() {
         ? `motor ${p.motorBelowKn ? `<${p.motorBelowKn} kn boat` : ""}${p.motorBelowKn && p.motorWindBelowKn ? " / " : ""}${p.motorWindBelowKn ? `<${p.motorWindBelowKn} kn wind` : ""}`
         : "no engine";
   return (
-    <p className="text-[12px] leading-snug text-muted-foreground">
+    <p className="text-t14 leading-snug text-muted-foreground">
       <span className="font-semibold text-foreground">{preset}</span> · {boat} {hull.loaM.toFixed(1)} m · limits{" "}
       {p.limits.maxWindKn}/{p.limits.maxGustKn} kn, {formatDepth(p.limits.maxWaveM)} · {motor} · storms{" "}
       {TREAT_LABEL[p.rules.thunder].toLowerCase()} · {p.models.length} model{p.models.length === 1 ? "" : "s"}
@@ -64,10 +64,10 @@ function TreatRow({ title, detail, value, onChange }: { title: string; detail: s
   return (
     <div className="rounded-md border border-border bg-background px-3 py-2">
       <p className="text-sm font-medium">{title}</p>
-      <p className="text-[11px] leading-snug text-muted-foreground">{detail}</p>
+      <p className="text-t13 leading-snug text-muted-foreground">{detail}</p>
       <div className="mt-1.5 grid grid-cols-4 gap-1">
         {(["avoid", "penalise", "warn", "ignore"] as Treat[]).map((t) => (
-          <Button key={t} size="sm" className="h-8 px-1 text-[11px]" variant={value === t ? "default" : "outline"} onClick={() => onChange(t)}>
+          <Button key={t} size="sm" className="h-8 px-1 text-t13" variant={value === t ? "default" : "outline"} onClick={() => onChange(t)}>
             {TREAT_LABEL[t]}
           </Button>
         ))}
@@ -102,10 +102,10 @@ export function RouteSettings({ onDone }: { onDone: () => void }) {
               className={`rounded-md border px-3 py-2 text-left ${p.preset === id ? "border-primary bg-primary/10" : "border-border bg-background"}`}
             >
               <p className="text-sm font-semibold">{ROUTE_PRESETS[id].label}</p>
-              <p className="text-[11px] leading-snug text-muted-foreground">{ROUTE_PRESETS[id].detail}</p>
+              <p className="text-t13 leading-snug text-muted-foreground">{ROUTE_PRESETS[id].detail}</p>
             </button>
           ))}
-          {p.preset === "custom" ? <p className="text-[11px] text-muted-foreground">Custom: your own mix of the settings below.</p> : null}
+          {p.preset === "custom" ? <p className="text-t13 text-muted-foreground">Custom: your own mix of the settings below.</p> : null}
         </div>
       </div>
 
@@ -153,12 +153,12 @@ export function RouteSettings({ onDone }: { onDone: () => void }) {
         <p className={label}>Speed or comfort</p>
         <div className="grid grid-cols-5 gap-1">
           {[0, 0.25, 0.5, 0.75, 1].map((w, i) => (
-            <Button key={w} size="sm" className="h-8 px-0 text-[11px]" variant={p.rules.comfortWeight === w ? "default" : "outline"} onClick={() => set({ rules: { ...p.rules, comfortWeight: w } })}>
+            <Button key={w} size="sm" className="h-8 px-0 text-t13" variant={p.rules.comfortWeight === w ? "default" : "outline"} onClick={() => set({ rules: { ...p.rules, comfortWeight: w } })}>
               {["Speed", "", "Balanced", "", "Comfort"][i] || "·"}
             </Button>
           ))}
         </div>
-        <p className="mt-1 text-[11px] text-muted-foreground">Shapes the Most comfortable plan: upwind work, steep seas, gusts and rolling.</p>
+        <p className="mt-1 text-t13 text-muted-foreground">Shapes the Most comfortable plan: upwind work, steep seas, gusts and rolling.</p>
       </div>
 
       <div>
@@ -175,11 +175,11 @@ export function RouteSettings({ onDone }: { onDone: () => void }) {
             >
               <span className="min-w-0">
                 <span className="block text-sm">{s.name}</span>
-                <span className="block text-[11px] text-muted-foreground">
+                <span className="block text-t13 text-muted-foreground">
                   {s.kind === "main" ? "Reefs by apparent wind" : `AWA ${s.awaMin}–${s.awaMax}° · AWS ${s.awsMin}–${s.awsMax} kn`}
                 </span>
               </span>
-              <span className={`text-[11px] font-semibold uppercase ${s.owned ? "text-primary" : "text-muted-foreground"}`}>{s.owned ? "On board" : "No"}</span>
+              <span className={`text-t13 font-semibold ${s.owned ? "text-primary" : "text-muted-foreground"}`}>{s.owned ? "On board" : "No"}</span>
             </button>
           ))}
         </div>
@@ -203,7 +203,7 @@ export function RouteSettings({ onDone }: { onDone: () => void }) {
             ))}
           </div>
         ) : null}
-        <p className="mt-1 text-[11px] text-muted-foreground">Ranges are typical sailmaker figures. Your sailmaker&apos;s chart is the better guide.</p>
+        <p className="mt-1 text-t13 text-muted-foreground">Ranges are typical sailmaker figures. Your sailmaker&apos;s chart is the better guide.</p>
       </div>
 
       <LearnedPolarSettings />
@@ -229,7 +229,7 @@ export function RouteSettings({ onDone }: { onDone: () => void }) {
             );
           })}
         </div>
-        <p className="mt-1 text-[11px] text-muted-foreground">More models give a better sense of confidence but take longer to download.</p>
+        <p className="mt-1 text-t13 text-muted-foreground">More models give a better sense of confidence but take longer to download.</p>
       </div>
 
       <Button size="lg" onClick={onDone}>
@@ -252,7 +252,7 @@ export function MotorSettings() {
     );
   }
   const row = "flex min-h-11 w-full items-center justify-between gap-2 rounded-md border border-border bg-background px-3 py-1.5 text-left text-sm";
-  const pill = (on: boolean) => `text-[11px] font-semibold uppercase ${on ? "text-primary" : "text-muted-foreground"}`;
+  const pill = (on: boolean) => `text-t13 font-semibold ${on ? "text-primary" : "text-muted-foreground"}`;
   return (
     <div>
       <p className={label}>Motoring</p>
@@ -311,7 +311,7 @@ function LearnedPolarSettings() {
   return (
     <div>
       <p className={label}>Your boat&apos;s polar</p>
-      <div className="rounded-md border border-border px-3 py-2 text-[13px] leading-snug">
+      <div className="rounded-md border border-border px-3 py-2 text-t15 leading-snug">
         {p.learned.samples === 0 ? (
           <p className="text-muted-foreground">
             Nothing learned yet. While you sail with the engine off, the app compares your speed with the polar and
@@ -346,7 +346,7 @@ function LearnedPolarSettings() {
           Reset learned
         </Button>
       </div>
-      <p className="mt-1 text-[11px] text-muted-foreground">
+      <p className="mt-1 text-t13 text-muted-foreground">
         Learned bins are used only once they have {MIN_SAMPLES} clean samples; elsewhere the built-in polar is used.
         Wind comes from the forecast, so treat it as a trend, not a trim tool.
       </p>

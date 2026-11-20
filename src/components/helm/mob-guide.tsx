@@ -50,7 +50,7 @@ export function MobGuide({ onClose }: { onClose: () => void }) {
               <button
                 type="button"
                 onClick={() => setDone((d) => new Set(d.has(i) ? [...d].filter((x) => x !== i) : [...d, i]))}
-                className={`flex w-full gap-3 rounded-lg border px-3 py-2.5 text-left text-[15px] leading-snug ${done.has(i) ? "border-border bg-background text-muted-foreground line-through" : "border-destructive/50 bg-destructive/10"}`}
+                className={`flex w-full gap-3 rounded-lg border px-3 py-2.5 text-left text-t16 leading-snug ${done.has(i) ? "border-border bg-background text-muted-foreground line-through" : "border-destructive/50 bg-destructive/10"}`}
               >
                 <span className="font-display text-xl font-semibold">{i + 1}</span>
                 <span>{t}</span>
@@ -60,15 +60,15 @@ export function MobGuide({ onClose }: { onClose: () => void }) {
         </ol>
 
         <div className="mt-3 rounded-lg border-2 border-destructive px-3 py-3">
-          <p className="text-[10px] tracking-[0.14em] text-muted-foreground uppercase">Mayday position (where they fell)</p>
+          <p className="text-t12 text-muted-foreground">Mayday position (where they fell)</p>
           <p className="font-display mt-1 text-2xl leading-tight font-semibold tabular-nums">{formatDmm(mob.lat, mob.lng)}</p>
-          <p className="mt-1 text-[13px] leading-snug">
+          <p className="mt-1 text-t15 leading-snug">
             “Mayday, Mayday, Mayday. This is [boat name]. Man overboard at {formatDmm(mob.lat, mob.lng)}, at{" "}
             {new Date(mob.at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}. [Persons on board]. Request
             assistance. Over.”
           </p>
           {target ? (
-            <p className="mt-2 text-[13px] text-muted-foreground">
+            <p className="mt-2 text-t15 text-muted-foreground">
               Likely drifted to {formatDmm(target.lat, target.lng)} by now ({drift?.source}).
             </p>
           ) : null}
@@ -76,7 +76,7 @@ export function MobGuide({ onClose }: { onClose: () => void }) {
         <Button size="lg" variant="outline" className="mt-3 w-full" onClick={onClose}>
           Back to the chart
         </Button>
-        <p className="mt-2 text-[11px] text-muted-foreground">
+        <p className="mt-2 text-t13 text-muted-foreground">
           Drift is an estimate from current and wind. Search the whole circle. These prompts support your training; they
           don&apos;t replace it.
         </p>

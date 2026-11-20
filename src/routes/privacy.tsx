@@ -7,7 +7,7 @@ export function Privacy() {
   return (
     <main className="h-dvh overflow-y-auto bg-background px-5 py-8 text-foreground">
       <div className="mx-auto max-w-lg">
-        <p className="text-[10px] tracking-[0.18em] text-muted-foreground uppercase">
+        <p className="text-t12 text-muted-foreground">
           Anchor Mate
         </p>
         <h1 className="font-display mt-1 text-4xl font-semibold tracking-tight">Privacy</h1>

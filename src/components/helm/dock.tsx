@@ -77,7 +77,7 @@ export function BottomDock() {
             Discard
           </Button>
         </div>
-        <p className="pointer-events-none mt-1.5 text-center text-[11px] text-foreground">
+        <p className="pointer-events-none mt-1.5 text-center text-t13 text-foreground">
           Recording from the start. Stop marks the end.
         </p>
       </div>
@@ -119,7 +119,7 @@ export function BottomDock() {
             Save {draft.length ? `(${draft.length})` : ""}
           </Button>
         </div>
-        <p className="pointer-events-none mt-1.5 text-center text-[11px] text-foreground">
+        <p className="pointer-events-none mt-1.5 text-center text-t13 text-foreground">
           {drawMode === "draw"
             ? "Tap the water to drop waypoints along the safe colour."
             : "Logging your GPS trail. Reverse follows it back out."}
@@ -219,7 +219,7 @@ function DockBtn({
     <Button
       variant={danger ? "danger" : active || emphasize ? "default" : "ghost"}
       onClick={onClick}
-      className="h-14 flex-col gap-1 rounded-lg px-1 text-[11px] font-semibold tracking-wide uppercase [&_svg]:size-5"
+      className="h-14 flex-col gap-1 rounded-lg px-1 text-t13 font-semibold [&_svg]:size-5"
     >
       {children}
       {label}
@@ -298,7 +298,7 @@ function AnchorSetBar() {
         ) : null}
         {step === "scope" ? (
           <div>
-            <p className="text-[10px] tracking-[0.14em] text-muted-foreground uppercase">Length</p>
+            <p className="text-t12 text-muted-foreground">Length</p>
             <p className="mt-1 font-display text-2xl leading-tight font-semibold">
               This length will be {formatLength(math.laybackM)}
               {astern != null ? `, ${astern}°` : " astern"}.
@@ -344,7 +344,7 @@ function AnchorSetBar() {
         ) : null}
         {step === "watch" ? (
           <div className="max-h-[46dvh] overflow-y-auto">
-            <p className="mb-2 text-[10px] tracking-[0.14em] text-muted-foreground uppercase">
+            <p className="mb-2 text-t12 text-muted-foreground">
               Next 24 h
             </p>
             <AnchorWxCard />
@@ -410,7 +410,7 @@ function RodeDials({
   const depthShort = draftM > atLat + 0.05;
   return (
     <div>
-      <p className="text-[10px] tracking-[0.18em] text-[#9eb0aa] uppercase">Rode</p>
+      <p className="text-t12 text-[#9eb0aa]">Rode</p>
       <div className="mt-2 grid grid-cols-3 gap-1.5">
         <Wheel label="Scope" value={scopeN} values={scopes} step={1} unit=":1" onChange={setScopeN} />
         <Wheel
@@ -506,7 +506,7 @@ function Wheel({
   }, [value, values]);
   return (
     <div>
-      <p className="mb-1 text-center text-[10px] tracking-[0.2em] text-[#9eb0aa] uppercase">{label}</p>
+      <p className="mb-1 text-center text-t12 text-[#9eb0aa]">{label}</p>
       <div className="relative overflow-hidden rounded-lg bg-[#07141a] shadow-[inset_0_0_0_1px_rgba(215,230,225,0.18)]">
         <div
           className="pointer-events-none absolute inset-y-3 left-1 z-10 flex w-1.5 flex-col justify-between"
@@ -542,7 +542,7 @@ function Wheel({
               }`}
             >
               {v.toFixed(places)}
-              <span className="ml-0.5 text-[10px] font-medium tracking-wide text-[#9eb0aa]">{unit}</span>
+              <span className="ml-0.5 text-t12 font-medium text-[#9eb0aa]">{unit}</span>
             </div>
           ))}
           <div style={{ height: item * 1.5 }} />
@@ -563,7 +563,7 @@ function Prompt({
 }) {
   return (
     <div>
-      <p className="text-[10px] tracking-[0.14em] text-muted-foreground uppercase">{kicker}</p>
+      <p className="text-t12 text-muted-foreground">{kicker}</p>
       <p className="mt-1 text-sm">{title}</p>
       <Row cancel="Cancel" ok="" onCancel={onCancel} onOk={() => {}} hideOk />
     </div>

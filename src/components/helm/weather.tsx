@@ -152,7 +152,7 @@ function NowChip({ hour }: { hour: WxHour }) {
           {formatKn(hour.windKn)}
           <span className="ml-1 text-xs font-medium text-muted-foreground">kn</span>
         </p>
-        <p className="text-[10px] tracking-wide text-muted-foreground uppercase">
+        <p className="text-t12 text-muted-foreground">
           {windCardinal(hour.dirDeg)} · {b.label}
         </p>
       </div>
@@ -178,7 +178,7 @@ function HourCol({
         max ? "bg-primary/15" : now ? "bg-muted/60" : ""
       }`}
     >
-      <span className="text-[10px] tracking-wide text-muted-foreground uppercase">
+      <span className="text-t12 text-muted-foreground">
         {now ? "Now" : hourLabel(hour.at)}
       </span>
       <span
@@ -220,7 +220,7 @@ export function WeatherPanel() {
             <h2 className="font-display text-lg font-semibold tracking-tight">
               {pin ? "Forecast at pin" : "Forecast"}
             </h2>
-            <p className="truncate text-[11px] text-muted-foreground">
+            <p className="truncate text-t13 text-muted-foreground">
               {pin
                 ? fromBoat != null
                   ? `${formatMeters(fromBoat)} · ${brg} from the boat`
@@ -568,7 +568,7 @@ function SeaStack({
     <div className="grid w-full max-w-full grid-cols-[minmax(0,1fr)] gap-2">
       {lanes.map((lane) => (
         <div key={lane.key}>
-          <p className="mb-0.5 text-[10px] font-medium tracking-[0.12em] text-muted-foreground uppercase">{lane.title}</p>
+          <p className="mb-0.5 text-t12 font-medium text-muted-foreground">{lane.title}</p>
           <ForecastGraph
             hours={hours}
             windSeries={windSeries}
@@ -595,7 +595,7 @@ function SeaStack({
           <p className="font-display text-lg leading-none font-semibold tabular-nums">
             {clockLabel(cursor)}
           </p>
-          <p className="truncate text-[11px] text-muted-foreground">
+          <p className="truncate text-t13 text-muted-foreground">
             {[when.label, when.hint, isDaylight(lat, lng, cursor) ? "Day" : "Night"]
               .filter(Boolean)
               .join(" · ")}
@@ -621,7 +621,7 @@ function SeaStack({
               const look = WIND_LOOK[s.id];
               return (
                 <div key={s.id} className="min-w-0">
-                  <p className={`flex items-center gap-0.5 text-[10px] tracking-wide uppercase ${look.wind}`}>
+                  <p className={`flex items-center gap-0.5 text-t12 ${look.wind}`}>
                     <MiniArrow deg={sample.dirDeg + 180} className={warn ? "text-destructive" : look.wind} />
                     {look.label}
                   </p>
@@ -632,7 +632,7 @@ function SeaStack({
                   >
                     {formatKn(gust ?? sample.windKn)}
                   </p>
-                  <p className="truncate text-[10px] text-muted-foreground">
+                  <p className="truncate text-t12 text-muted-foreground">
                     {gust != null ? `${formatKn(sample.windKn)} · ` : ""}
                     {windCardinal(sample.dirDeg)}
                   </p>
@@ -644,43 +644,43 @@ function SeaStack({
         {layers.tide || layers.waves || layers.current ? (
           <div className="mt-2 flex gap-2 border-t border-border/70 pt-1.5">
             {layers.tide && tideM != null ? (
-              <p className="min-w-0 flex-1 text-[11px] leading-tight">
-                <span className="text-[10px] tracking-wide text-muted-foreground uppercase">
+              <p className="min-w-0 flex-1 text-t13 leading-tight">
+                <span className="text-t12 text-muted-foreground">
                   {tideOrigin?.kind === "station" ? "Tide" : "Tide est"}
                 </span>
                 <span className="mt-0.5 block font-display text-base leading-none font-semibold tabular-nums">
                   {formatDepth(tideM)}
                 </span>
-                <span className="text-[10px] text-muted-foreground">
+                <span className="text-t12 text-muted-foreground">
                   {rising == null ? "Slack" : rising ? "Rising" : "Falling"}
                 </span>
               </p>
             ) : null}
             {layers.waves && wave ? (
-              <p className="min-w-0 flex-1 text-[11px] leading-tight text-cyan-300">
-                <span className="flex items-center gap-0.5 text-[10px] tracking-wide uppercase">
+              <p className="min-w-0 flex-1 text-t13 leading-tight text-cyan-300">
+                <span className="flex items-center gap-0.5 text-t12">
                   <MiniArrow deg={wave.dirDeg + 180} className="text-cyan-300" />
                   Waves
                 </span>
                 <span className="mt-0.5 block font-display text-base leading-none font-semibold text-foreground tabular-nums">
                   {formatDepth(wave.heightM, { unit: getUnits().depth === "fm" ? "ft" : undefined })}
                 </span>
-                <span className="text-[10px] text-muted-foreground">
+                <span className="text-t12 text-muted-foreground">
                   {wave.periodS ? `${wave.periodS} s · ` : ""}
                   {windCardinal((wave.dirDeg + 180) % 360)}
                 </span>
               </p>
             ) : null}
             {layers.current && cur ? (
-              <p className="min-w-0 flex-1 text-[11px] leading-tight text-amber-300">
-                <span className="flex items-center gap-0.5 text-[10px] tracking-wide uppercase">
+              <p className="min-w-0 flex-1 text-t13 leading-tight text-amber-300">
+                <span className="flex items-center gap-0.5 text-t12">
                   <MiniArrow deg={cur.dirDeg} className="text-amber-300" />
                   Current
                 </span>
                 <span className="mt-0.5 block font-display text-base leading-none font-semibold text-foreground tabular-nums">
                   {formatKn(cur.kn)} kn
                 </span>
-                <span className="text-[10px] text-muted-foreground">{windCardinal(cur.dirDeg)}</span>
+                <span className="text-t12 text-muted-foreground">{windCardinal(cur.dirDeg)}</span>
               </p>
             ) : null}
           </div>
@@ -888,11 +888,11 @@ function ReadoutCell({
         </svg>
       ) : null}
       <div className="min-w-0">
-        <p className="text-[10px] tracking-[0.12em] text-muted-foreground uppercase">{label}</p>
+        <p className="text-t12 text-muted-foreground">{label}</p>
         <p className={cn("font-display text-xl leading-none font-semibold tabular-nums", valueClass)}>
           {value}
         </p>
-        {hint ? <p className="mt-0.5 text-[11px] text-muted-foreground">{hint}</p> : null}
+        {hint ? <p className="mt-0.5 text-t13 text-muted-foreground">{hint}</p> : null}
       </div>
     </div>
   );
@@ -919,7 +919,7 @@ function CurrentNow({ sea }: { sea: SeaState }) {
       : `${formatKn(Math.abs(vs.acrossKn))} kn set ${vs.acrossKn > 0 ? "stb" : "port"}`;
   return (
     <div className="mt-3 rounded-md border border-border bg-card/60 px-2.5 py-2">
-      <p className="text-[10px] tracking-[0.12em] text-muted-foreground uppercase">Current</p>
+      <p className="text-t12 text-muted-foreground">Current</p>
       <p className="font-display text-2xl leading-none font-semibold tabular-nums">
         {formatKn(sea.currentKn)}
         <span className="ml-1 text-xs font-medium text-muted-foreground">kn</span>
@@ -928,12 +928,12 @@ function CurrentNow({ sea }: { sea: SeaState }) {
         </span>
       </p>
       {along ? (
-        <p className="mt-1 text-[12px] text-muted-foreground">
+        <p className="mt-1 text-t14 text-muted-foreground">
           {along}
           {across ? ` · ${across}` : ""}
         </p>
       ) : (
-        <p className="mt-1 text-[12px] text-muted-foreground">Place heading to see with / against.</p>
+        <p className="mt-1 text-t14 text-muted-foreground">Place heading to see with / against.</p>
       )}
     </div>
   );
@@ -1851,14 +1851,14 @@ function TideNow({
     hw ? Math.max(0, Math.round((hw.m - now.m) * 10) / 10) : 0;
   return (
     <div className="mt-3 rounded-md border border-border bg-card/60 px-2.5 py-2">
-      <p className="text-[10px] tracking-[0.12em] text-muted-foreground uppercase">
+      <p className="text-t12 text-muted-foreground">
         Tide LAT
       </p>
       <p className="font-display text-2xl leading-none font-semibold tabular-nums">
         {nowLat.toFixed(2)}
         <span className="ml-1 text-xs font-medium text-muted-foreground">m LAT</span>
       </p>
-      <p className="mt-1 text-[12px] text-muted-foreground">
+      <p className="mt-1 text-t14 text-muted-foreground">
         {hw
           ? `HW ${hwLat != null ? formatDepth(hwLat) : "—"} ${hourLabel(hw.at)} ${hoursUntil(hw.at)} · ${formatDepth(rise, { signed: true })}`
           : "No high in this window"}
@@ -1881,7 +1881,7 @@ export function AnchorWxCard() {
     }
     if (wx.isError) {
       return (
-        <div className="mb-2 rounded-md border border-border bg-background px-3 py-2 text-[12px] leading-snug text-muted-foreground">
+        <div className="mb-2 rounded-md border border-border bg-background px-3 py-2 text-t14 leading-snug text-muted-foreground">
           No forecast here yet: no signal. Set depth and tide by hand; wind and tide load
           when you're back in range.{" "}
           <button type="button" className="underline" onClick={() => void wx.refetch()}>
@@ -1929,7 +1929,7 @@ export function AnchorWxCard() {
   return (
     <div className="mb-2 overflow-hidden rounded-lg border border-border bg-background">
       <div className="flex items-center justify-between px-3 pt-2 pb-1">
-        <p className="text-[10px] tracking-[0.14em] text-muted-foreground uppercase">
+        <p className="text-t12 text-muted-foreground">
           Next 24 h
           {data.savedAt ? (
             <span className="ml-2 rounded-sm bg-amber-500/20 px-1.5 py-0.5 tracking-normal text-amber-300 normal-case">
@@ -1942,13 +1942,13 @@ export function AnchorWxCard() {
           aria-label="Where this data comes from"
           aria-expanded={showSource}
           onClick={() => setShowSource((v) => !v)}
-          className="flex size-6 items-center justify-center rounded-full border border-border text-[12px] leading-none font-semibold text-muted-foreground"
+          className="flex size-6 items-center justify-center rounded-full border border-border text-t14 leading-none font-semibold text-muted-foreground"
         >
           i
         </button>
       </div>
       {showSource ? (
-        <div className="mx-3 mb-2 rounded-md bg-card px-2.5 py-2 text-[11px] leading-snug text-muted-foreground">
+        <div className="mx-3 mb-2 rounded-md bg-card px-2.5 py-2 text-t13 leading-snug text-muted-foreground">
           <p>Wind and gust: {windModel}, 10 m, via Open-Meteo.</p>
           <p className="mt-1">{tideOriginLabel(sea?.tideOrigin)}</p>
           <p className="mt-1">
@@ -1961,19 +1961,19 @@ export function AnchorWxCard() {
       ) : null}
 
       <div className="grid grid-cols-[3.4rem_1fr_4.2rem_1.4rem] items-center gap-y-1.5 px-3 pb-2">
-        <p className="col-span-4 text-[10px] tracking-[0.12em] text-muted-foreground uppercase">
+        <p className="col-span-4 text-t12 text-muted-foreground">
           Wind · max
         </p>
-        <span className="text-[11px] text-muted-foreground">Wind</span>
+        <span className="text-t13 text-muted-foreground">Wind</span>
         <span className="font-display text-xl leading-none font-semibold tabular-nums">
           {formatKn(maxWind.windKn)}
-          <span className="ml-1 text-[11px] font-medium text-muted-foreground">
+          <span className="ml-1 text-t13 font-medium text-muted-foreground">
             kn {windCardinal(maxWind.dirDeg)}
           </span>
         </span>
         <span className="text-right text-xs text-muted-foreground">{hourLabel(maxWind.at)}</span>
         <MiniArrow deg={maxWind.dirDeg + 180} className="justify-self-end text-primary" />
-        <span className={gustWarn ? "text-[11px] text-destructive" : "text-[11px] text-muted-foreground"}>
+        <span className={gustWarn ? "text-t13 text-destructive" : "text-t13 text-muted-foreground"}>
           Gust
         </span>
         <span
@@ -1984,7 +1984,7 @@ export function AnchorWxCard() {
           {gustKn != null ? formatKn(gustKn) : "—"}
           {gustKn != null ? (
             <span
-              className={`ml-1 text-[11px] font-medium ${
+              className={`ml-1 text-t13 font-medium ${
                 gustWarn ? "text-destructive" : "text-muted-foreground"
               }`}
             >
@@ -2013,30 +2013,30 @@ export function AnchorWxCard() {
         aria-pressed={showDelta}
         className="grid w-full grid-cols-[3.4rem_1fr_4.2rem_1.4rem] items-center gap-y-1.5 border-t border-border px-3 py-2 text-left"
       >
-        <p className="col-span-4 text-[10px] tracking-[0.12em] text-muted-foreground uppercase">
+        <p className="col-span-4 text-t12 text-muted-foreground">
           {showDelta ? "Tide · change from now" : "Tide · tap for change from now"}
         </p>
-        <span className="text-[11px] text-muted-foreground">Draw</span>
+        <span className="text-t13 text-muted-foreground">Draw</span>
         <span className="font-display text-xl leading-none font-semibold tabular-nums">
           {draftM.toFixed(1)}
-          <span className="ml-1 text-[11px] font-medium text-muted-foreground">m</span>
+          <span className="ml-1 text-t13 font-medium text-muted-foreground">m</span>
         </span>
-        <span className="text-right text-[11px] text-muted-foreground">draft</span>
+        <span className="text-right text-t13 text-muted-foreground">draft</span>
         <span />
-        <span className="text-[11px] text-muted-foreground">HW</span>
+        <span className="text-t13 text-muted-foreground">HW</span>
         <span className="font-display text-xl leading-none font-semibold tabular-nums">
           {tideValue(hwM)}
         </span>
         <span className="text-right text-xs text-muted-foreground">{hw ? hourLabel(hw.at) : ""}</span>
         <span />
-        <span className="text-[11px] text-muted-foreground">LW</span>
+        <span className="text-t13 text-muted-foreground">LW</span>
         <span className="font-display text-xl leading-none font-semibold tabular-nums">
           {tideValue(lwM)}
         </span>
         <span className="text-right text-xs text-muted-foreground">{lw ? hourLabel(lw.at) : ""}</span>
         <span />
         {showDelta && tideNow != null ? (
-          <p className="col-span-4 text-[11px] text-muted-foreground">
+          <p className="col-span-4 text-t13 text-muted-foreground">
             Now {tideNow >= 0 ? "+" : "−"}
             {formatDepth(Math.abs(tideNow))} LAT
           </p>
@@ -2057,7 +2057,7 @@ export function AnchorWxCard() {
 function Stat({ label, value }: { label: string; value: string }) {
   return (
     <div>
-      <p className="text-[10px] tracking-[0.14em] text-muted-foreground uppercase">
+      <p className="text-t12 text-muted-foreground">
         {label}
       </p>
       <p className="font-display text-lg leading-none font-semibold tabular-nums">
@@ -2080,7 +2080,7 @@ export function WindInstrument({ compact }: { compact?: boolean }) {
       className={compact ? "min-w-0 flex-1 px-2 py-1.5 text-left" : "min-w-[5.5rem] px-3 py-2 text-left"}
       aria-label="24 hour wind and weather"
     >
-      <p className="text-[10px] tracking-[0.12em] text-muted-foreground uppercase">
+      <p className="text-t12 text-muted-foreground">
         Wind
       </p>
       <p
@@ -2089,7 +2089,7 @@ export function WindInstrument({ compact }: { compact?: boolean }) {
         } ${strong ? "text-destructive" : ""}`}
       >
         {hour ? formatKn(hour.windKn) : wx.isLoading ? "…" : "—"}
-        <span className="ml-0.5 text-[10px] font-medium text-muted-foreground">
+        <span className="ml-0.5 text-t12 font-medium text-muted-foreground">
           {hour ? `kn ${windCardinal(hour.dirDeg)}` : "kn"}
         </span>
       </p>

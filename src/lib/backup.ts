@@ -40,6 +40,7 @@ export const BACKUP_SETTING_KEYS = [
   "wxHorizonH",
   "radar",
   "sharpTiles",
+  "textSize",
   "reefClarity",
   "routePrefs",
 ] as const;

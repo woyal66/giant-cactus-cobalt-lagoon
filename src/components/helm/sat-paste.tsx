@@ -21,7 +21,7 @@ export function SatPaste() {
   const t = (ms: number) => new Date(ms).toLocaleString([], { weekday: "short", hour: "numeric" });
   return (
     <div className="mt-2 rounded-md border border-border p-2">
-      <p className="mb-1 text-[11px] text-muted-foreground">
+      <p className="mb-1 text-t13 text-muted-foreground">
         Paste the reply from your satellite messenger (lines starting “AM1”). Several messages can go in together.
       </p>
       <textarea
@@ -29,7 +29,7 @@ export function SatPaste() {
         value={text}
         onChange={(e) => setText(e.target.value)}
         rows={3}
-        className="w-full rounded border border-border bg-background p-1.5 font-mono text-[11px]"
+        className="w-full rounded border border-border bg-background p-1.5 font-mono text-t13"
       />
       <div className="mt-1 grid grid-cols-2 gap-1.5">
         <Button
@@ -46,14 +46,14 @@ export function SatPaste() {
           Close
         </Button>
       </div>
-      {err ? <p className="mt-1 text-[12px] text-amber-300">Couldn&apos;t read that. Check it starts with “AM1”.</p> : null}
+      {err ? <p className="mt-1 text-t14 text-amber-300">Couldn&apos;t read that. Check it starts with “AM1”.</p> : null}
       {f
         ? f.points.map((p) => (
             <div key={`${p.lat},${p.lng}`} className="mt-2">
-              <p className="text-[10px] tracking-[0.1em] text-muted-foreground uppercase tabular-nums">
+              <p className="text-t12 text-muted-foreground tabular-nums">
                 {p.lat.toFixed(2)}, {p.lng.toFixed(2)}
               </p>
-              <ul className="grid gap-0.5 text-[12px] tabular-nums">
+              <ul className="grid gap-0.5 text-t14 tabular-nums">
                 {p.steps.map((s) => (
                   <li key={s.at}>
                     {t(s.at)}: {windCardinal(s.windDir)} {s.windKn} kn{s.gustKn != null ? ` (G${s.gustKn})` : ""}
