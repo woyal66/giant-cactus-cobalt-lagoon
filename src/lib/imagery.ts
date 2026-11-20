@@ -108,6 +108,20 @@ export const DEPTH_WMS_LAYERS = "openseamap:contour2,openseamap:contour";
 export const REEF_WMS_URL = "https://maps.eatlas.org.au/maps/wms";
 export const REEF_WMS_LAYERS = "ea:GBR_GBRMPA_GBR-features";
 export const ATTR_REEFS = "Reef outlines © Great Barrier Reef Marine Park Authority (CC BY)";
+/** GBR Marine Park zoning (Zoning Plan 2003, in force since 1 July 2004), via eAtlas. */
+export const ZONING_WMS_LAYERS = "ea:GBR_GBRMPA_Zoning-2003";
+export const ATTR_ZONING = "Zoning © Great Barrier Reef Marine Park Authority. Not an official zoning map.";
+
+/** Zone colours and the plain-English rule of thumb, from GBRMPA's zoning maps. */
+export const PARK_ZONES = [
+  { name: "General Use", color: "#a9d6f5", rule: "Most fishing and collecting allowed." },
+  { name: "Habitat Protection", color: "#3c7fc8", rule: "Fishing allowed. No trawling." },
+  { name: "Conservation Park", color: "#f3e24b", rule: "Limited fishing: one line, one hook." },
+  { name: "Buffer", color: "#8ca33b", rule: "Trolling for pelagic fish only." },
+  { name: "Scientific Research", color: "#f39b3b", rule: "No fishing. Entry may need a permit." },
+  { name: "Marine National Park", color: "#3fa34d", rule: "Green zone: no fishing or collecting." },
+  { name: "Preservation", color: "#f4a6c6", rule: "No entry without a permit." },
+] as const;
 export const GARMIN_SDK_URL = "https://developer.garmin.com/marine-charts/mobile";
 export const GARMIN_SDK_REQUEST_URL =
   "https://www.garmin.com/en-US/forms/navionics-mobile-sdk/";

@@ -4,6 +4,13 @@ import type { Passage, PassageKind, Waypoint } from "@/lib/passages";
 import { DEFAULT_REEF_ID, getReef } from "@/lib/reefs";
 import { isChartUp, type ChartUp, type LatLng, appendTrail, reverseCourse, reverseWaypoints, simplifyTrack, fitTrackView, haversineMeters, type TrackClean } from "@/lib/geo";
 import { HELM_ZOOM, isImageryId, usableImagery, type ImageryId } from "@/lib/imagery";
+import {
+  isDepthUnit,
+  isLengthUnit,
+  setUnits,
+  type DepthUnit,
+  type LengthUnit,
+} from "@/lib/units";
 import { boxShortM, squareFromCorners, type BBox, type OfflinePack } from "@/lib/offline-tiles";
 import {
   clampAlarmRadius,
@@ -144,6 +151,8 @@ export type HelmState = {
   depths: boolean;
   /** GBRMPA reef / cay / rock outlines overlay. */
   reefOutlines: boolean;
+  /** GBR Marine Park zoning overlay. */
+  parkZones: boolean;
   panel: PanelId;
   /** Forecast pin. Null means the forecast is for the boat. */
   wxPin: LatLng | null;
@@ -187,6 +196,8 @@ export type HelmState = {
   look: LookMode;
   /** Switch to night (red) view at sunset and back at sunrise. */
   autoNight: boolean;
+  depthUnit: DepthUnit;
+  lengthUnit: LengthUnit;
   sunPunch: 1 | 2 | 3;
   rode: RodeSetup;
   hull: BoatSetup;
@@ -225,6 +236,7 @@ type HelmActions = {
   setSeamarks: (v: boolean) => void;
   setDepths: (v: boolean) => void;
   setReefOutlines: (v: boolean) => void;
+  setParkZones: (v: boolean) => void;
   setPanel: (panel: PanelId) => void;
   setWxPin: (p: LatLng | null) => void;
   setDrawMode: (mode: DrawMode) => void;
@@ -278,6 +290,8 @@ type HelmActions = {
   setSunlight: (v: boolean) => void;
   setLook: (v: LookMode) => void;
   setAutoNight: (v: boolean) => void;
+  setDepthUnit: (v: DepthUnit) => void;
+  setLengthUnit: (v: LengthUnit) => void;
   cycleLook: () => void;
   setSunPunch: (n: 1 | 2 | 3) => void;
   setRode: (partial: Partial<RodeSetup>) => void;
@@ -379,9 +393,12 @@ function persistSig(state: Record<string, unknown>): string {
     state.seamarks,
     state.depths,
     state.reefOutlines,
+    state.parkZones,
     state.sunlight,
     state.look,
     state.autoNight,
+    state.depthUnit,
+    state.lengthUnit,
     state.sunPunch,
     state.chartUp,
     state.boatLow,
@@ -498,6 +515,19 @@ const helmStorage = {
   },
 };
 
+/** Restore a saved unit and make the formatters use it. */
+function applyDepthUnit(v: unknown, fallback: DepthUnit): DepthUnit {
+  const u = isDepthUnit(v) ? v : fallback;
+  setUnits({ depth: u });
+  return u;
+}
+
+function applyLengthUnit(v: unknown, fallback: LengthUnit): LengthUnit {
+  const u = isLengthUnit(v) ? v : fallback;
+  setUnits({ length: u });
+  return u;
+}
+
 export const useHelm = create<HelmState & HelmActions>()(
   persist(
     (set, get) => ({
@@ -514,6 +544,7 @@ export const useHelm = create<HelmState & HelmActions>()(
       seamarks: false,
       depths: false,
       reefOutlines: false,
+      parkZones: false,
       panel: null,
       drawMode: "idle",
       draft: [],
@@ -546,6 +577,8 @@ export const useHelm = create<HelmState & HelmActions>()(
       sunlight: false,
       look: "normal",
       autoNight: false,
+      depthUnit: "m",
+      lengthUnit: "m",
       sunPunch: 2,
       rode: DEFAULT_RODE,
       hull: DEFAULT_BOAT,
@@ -641,6 +674,7 @@ export const useHelm = create<HelmState & HelmActions>()(
       setSeamarks: (v) => set({ seamarks: v }),
       setDepths: (v) => set({ depths: v }),
       setReefOutlines: (v) => set({ reefOutlines: v }),
+      setParkZones: (v) => set({ parkZones: v }),
       setPanel: (panel) => set({ panel }),
       setWxPin: (wxPin) => set({ wxPin }),
       setDrawMode: (drawMode) => {
@@ -1065,6 +1099,14 @@ export const useHelm = create<HelmState & HelmActions>()(
         set({ sunlight, look: sunlight ? "sunlight" : "normal" }),
       setLook: (look) => set({ look, sunlight: look === "sunlight" }),
       setAutoNight: (autoNight) => set({ autoNight }),
+      setDepthUnit: (depthUnit) => {
+        setUnits({ depth: depthUnit });
+        set({ depthUnit });
+      },
+      setLengthUnit: (lengthUnit) => {
+        setUnits({ length: lengthUnit });
+        set({ lengthUnit });
+      },
       cycleLook: () => {
         const look = nextLook(get().look);
         set({ look, sunlight: look === "sunlight" });
@@ -1240,9 +1282,12 @@ export const useHelm = create<HelmState & HelmActions>()(
         seamarks: s.seamarks,
         depths: s.depths,
         reefOutlines: s.reefOutlines,
+        parkZones: s.parkZones,
         sunlight: s.sunlight,
         look: s.look,
         autoNight: s.autoNight,
+        depthUnit: s.depthUnit,
+        lengthUnit: s.lengthUnit,
         sunPunch: s.sunPunch,
         drafts: s.drafts,
         lastFix: s.lastFix,
@@ -1285,7 +1330,10 @@ export const useHelm = create<HelmState & HelmActions>()(
           depths: typeof p.depths === "boolean" ? p.depths : current.depths,
           reefOutlines:
             typeof p.reefOutlines === "boolean" ? p.reefOutlines : current.reefOutlines,
+          parkZones: typeof p.parkZones === "boolean" ? p.parkZones : current.parkZones,
           autoNight: typeof p.autoNight === "boolean" ? p.autoNight : current.autoNight,
+          depthUnit: applyDepthUnit(p.depthUnit, current.depthUnit),
+          lengthUnit: applyLengthUnit(p.lengthUnit, current.lengthUnit),
           look: isLookMode(p.look)
             ? p.look
             : p.sunlight === true
@@ -1395,4 +1443,9 @@ export function guidePoints(
 
 export function helmBow(s: { boat: BoatFix | null; hull: BoatSetup }): LatLng | null {
   return bowOf(s.boat, s.hull);
+}
+
+/** Re-render on a units change (the formatters read module state, not React state). */
+export function useUnitsKey(): string {
+  return useHelm((s) => `${s.depthUnit}|${s.lengthUnit}`);
 }

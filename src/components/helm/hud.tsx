@@ -19,6 +19,7 @@ import {
   cornerIndexes,
 } from "@/lib/geo";
 import { imageryShort } from "@/lib/imagery";
+import { formatLength } from "@/lib/units";
 import { formatScope, hoursUntil, rodeMath } from "@/lib/anchor";
 import { steerCue, formatTtg, markNav } from "@/lib/steer";
 import { bowFromGps, gpsReachM } from "@/lib/boat";
@@ -28,7 +29,7 @@ import { closeInOnBoat } from "@/components/helm/map-view";
 import { WindInstrument } from "@/components/helm/weather";
 import { unlockAlarmAudio } from "@/hooks/helm-runtime";
 import { useWx } from "@/hooks/weather";
-import { useHelm, guidePoints } from "@/store/helm";
+import { useHelm, guidePoints, useUnitsKey } from "@/store/helm";
 
 function AuthSlot({ compact }: { compact?: boolean }) {
   const { user, isPending } = useCurrentUserState();
@@ -59,6 +60,7 @@ function AuthSlot({ compact }: { compact?: boolean }) {
 }
 
 export function TopHud() {
+  useUnitsKey();
   const boat = useHelm((s) => s.boat);
   const hull = useHelm((s) => s.hull);
   const follow = useHelm((s) => s.followBoat);
@@ -389,6 +391,7 @@ export function MobHud() {
 }
 
 export function NavRibbon() {
+  useUnitsKey();
   const boat = useHelm((s) => s.boat);
   const passage = useHelm((s) => s.activePassage);
   const anchor = useHelm((s) => s.anchor);
@@ -470,7 +473,7 @@ export function NavRibbon() {
                 <>
                   {formatMeters(hook)}
                   <span className={`ml-1 text-[11px] font-medium ${alarmOn ? "text-white/85" : "text-muted-foreground"}`}>
-                    from anchor · circle {Math.round(anchor.radiusM)} m
+                    from anchor · circle {formatLength(anchor.radiusM)}
                   </span>
                 </>
               )}

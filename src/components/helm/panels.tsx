@@ -14,7 +14,7 @@ import {
 } from "@/lib/anchor";
 import { bowFromGps, gpsReachM, gpsStationLabel } from "@/lib/boat";
 import { formatMeters, haversineMeters, pathLengthMeters, trackInView, TRACK_CHORD_PRESETS, TRACK_TURN_PRESETS } from "@/lib/geo";
-import { GARMIN_SDK_URL, availableImagery } from "@/lib/imagery";
+import { GARMIN_SDK_URL, PARK_ZONES, availableImagery } from "@/lib/imagery";
 import { getChartBounds } from "@/components/helm/map-view";
 import { AnchorWxCard } from "@/components/helm/weather";
 import {
@@ -44,13 +44,16 @@ import { STEER_PRESETS, XTE_ALARM_PRESETS } from "@/lib/steer";
 import { SignedIn, SignedOut, UserButton } from "@/lib/auth/gates";
 import { isNativeApp } from "@/lib/native";
 import { shareGpx } from "@/lib/share-gpx";
+import { UnitStepField } from "@/components/helm/unit-field";
+import { MoonCard } from "@/components/helm/moon-card";
+import { formatDepth, formatLength } from "@/lib/units";
 import { criticalAlerts, type CriticalStatus } from "@/lib/critical-alert";
 import { openLocationSettings } from "@/lib/background-gps";
 import { isPreview } from "@/lib/subscription";
 import { SubscriptionRow } from "@/components/subscription";
 import { useCurrentUserState } from "@/lib/auth/use-current-user";
 import { simulateAnchorDrag, startMusgraveDemo, unlockAlarmAudio } from "@/hooks/helm-runtime";
-import { useHelm, type LocalDraft, type PanelId } from "@/store/helm";
+import { useHelm, useUnitsKey, type LocalDraft, type PanelId } from "@/store/helm";
 
 function Sheet({
   id,
@@ -65,6 +68,7 @@ function Sheet({
 }) {
   const panel = useHelm((s) => s.panel);
   const setPanel = useHelm((s) => s.setPanel);
+  useUnitsKey();
   if (panel !== id) return null;
   return (
     <div className="pointer-events-none absolute inset-x-0 bottom-0 z-40 md:inset-y-20 md:right-3 md:bottom-24 md:left-auto md:w-[22rem]">
@@ -91,54 +95,8 @@ function Sheet({
   );
 }
 
-function roundStep(n: number, step: number) {
-  const s = step || 1;
-  return Math.round(n / s) * s;
-}
 
-function formatStep(n: number, step: number) {
-  if (step < 1) return n.toFixed(1);
-  return String(Math.round(n * 10) / 10);
-}
 
-function StepField({
-  label,
-  value,
-  step = 1,
-  onChange,
-}: {
-  label: string;
-  value: number;
-  step?: number;
-  onChange: (n: number) => void;
-}) {
-  return (
-    <div className="rounded-lg border border-border bg-background px-2 py-1.5">
-      <p className="text-[10px] tracking-[0.12em] text-muted-foreground uppercase">{label}</p>
-      <div className="mt-0.5 flex items-center gap-1.5">
-        <Button
-          variant="outline"
-          size="icon-sm"
-          onClick={() => onChange(Math.max(0, roundStep(value - step, step)))}
-          aria-label={`Decrease ${label}`}
-        >
-          −
-        </Button>
-        <p className="font-display flex-1 text-center text-xl font-semibold tabular-nums">
-          {formatStep(value, step)}
-        </p>
-        <Button
-          variant="outline"
-          size="icon-sm"
-          onClick={() => onChange(roundStep(value + step, step))}
-          aria-label={`Increase ${label}`}
-        >
-          +
-        </Button>
-      </div>
-    </div>
-  );
-}
 
 function ToggleRow({
   label,
@@ -265,20 +223,21 @@ export function AnchorPanel() {
         Boat is the fallen-back position. Chain from the bow. Set depth and chain, then drag to the hook.
       </p>
       <div className="mb-2 grid grid-cols-2 gap-2">
-        <StepField label="Depth m" value={rode.depthM} step={0.2} onChange={(n) => setRode({ depthM: n })} />
-        <StepField label="Chain out m" value={rode.chainM} step={5} onChange={(n) => setRode({ chainM: n })} />
+        <UnitStepField label="Depth" kind="depth" valueM={rode.depthM} steps={{ m: 0.2, ft: 1, fm: 0.5 }} onChange={(n) => setRode({ depthM: n })} />
+        <UnitStepField label="Chain out" kind="length" valueM={rode.chainM} steps={{ m: 5, ft: 10 }} onChange={(n) => setRode({ chainM: n })} />
       </div>
       <div className="mb-2 rounded-lg border border-border bg-background px-3 py-2">
         <div className="flex items-baseline justify-between">
           <p className="text-[10px] tracking-[0.12em] text-muted-foreground uppercase">Layback</p>
-          <p className="font-display text-2xl font-semibold tabular-nums">{Math.round(math.laybackM)} m</p>
+          <p className="font-display text-2xl font-semibold tabular-nums">{formatLength(math.laybackM)}</p>
         </div>
         <p className="mt-0.5 text-[11px] text-muted-foreground">
-          Chain on the sand: {rode.chainM} m − {rode.depthM.toFixed(1)} m − {rode.bowM.toFixed(1)} m bow.
-          Taut swing {math.radiusM} m.
+          Chain on the sand: {formatLength(rode.chainM)} − {formatDepth(rode.depthM)} −{" "}
+          {formatDepth(rode.bowM)} bow. Taut swing {formatLength(math.radiusM)}.
         </p>
       </div>
       {boat || anchor ? <AnchorWxCard /> : null}
+      <MoonCard compact />
       {anchor ? (
         <div className="mb-2 grid gap-2">
           <div className="flex items-center justify-between rounded-lg border border-border bg-background px-3 py-2">
@@ -287,7 +246,7 @@ export function AnchorPanel() {
               <p className="font-display text-xl font-semibold tabular-nums">
                 {dist ?? "—"}
                 <span className="ml-1 text-xs font-medium text-muted-foreground">
-                  {Math.abs(distM - math.laybackM) <= 8 ? "on rode" : `want ${Math.round(math.laybackM)} m`}
+                  {Math.abs(distM - math.laybackM) <= 8 ? "on rode" : `want ${formatLength(math.laybackM)}`}
                 </span>
               </p>
             </div>
@@ -385,7 +344,7 @@ export function AnchorPanel() {
           {math.shortHwM > 0.4 ? (
             <p className="text-xs text-destructive">
               Short of {formatScope(rode.scopeTarget)} at HW
-              {letMoreM > 0 ? ` — pay ${letMoreM} m more` : ""}.
+              {letMoreM > 0 ? ` — pay ${formatLength(letMoreM)} more` : ""}.
               {rode.tideHighAt ? ` High ${hoursUntil(rode.tideHighAt)}.` : ""}
             </p>
           ) : null}
@@ -471,6 +430,8 @@ export function LayersPanel() {
   const depths = useHelm((s) => s.depths);
   const setDepths = useHelm((s) => s.setDepths);
   const reefOutlines = useHelm((s) => s.reefOutlines);
+  const parkZones = useHelm((s) => s.parkZones);
+  const setParkZones = useHelm((s) => s.setParkZones);
   const setReefOutlines = useHelm((s) => s.setReefOutlines);
   const crumbOn = useHelm((s) => s.crumbOn);
   const setCrumbOn = useHelm((s) => s.setCrumbOn);
@@ -557,6 +518,8 @@ export function LayersPanel() {
         <ToggleRow label="Seamarks" on={seamarks} onChange={setSeamarks} />
         <ToggleRow label="Depth contours" on={depths} onChange={setDepths} />
         <ToggleRow label="Reef outlines (GBR)" on={reefOutlines} onChange={setReefOutlines} />
+        <ToggleRow label="Marine park zones (GBR)" on={parkZones} onChange={setParkZones} />
+        {parkZones ? <ZoneLegend /> : null}
         <ToggleRow label="Yellow line while recording" on={crumbOn} onChange={setCrumbOn} />
       </div>
       {crumb.length >= 2 ? (
@@ -602,6 +565,7 @@ export function LayersPanel() {
           </Button>
         ))}
       </div>
+      <UnitsPicker />
       {look === "sunlight" ? (
         <div className="mb-2 grid grid-cols-3 gap-2">
           {([1, 2, 3] as const).map((n) => (
@@ -867,7 +831,7 @@ function TrackSteerSettings() {
             className="h-8 px-0"
             onClick={() => setChordM(m)}
           >
-            {m} m
+            {formatLength(m)}
           </Button>
         ))}
       </div>
@@ -878,7 +842,7 @@ function TrackSteerSettings() {
       <div className="mt-1 grid grid-cols-5 gap-1">
         {XTE_ALARM_PRESETS.map((m) => (
           <Button key={m} variant={alarmM === m ? "default" : "outline"} size="sm" className="h-8" onClick={() => setAlarmM(m)}>
-            {m} m
+            {formatLength(m)}
           </Button>
         ))}
       </div>
@@ -1218,6 +1182,85 @@ function AlarmReach() {
           Settings
         </button>
       ) : null}
+    </div>
+  );
+}
+
+function UnitsPicker() {
+  const depthUnit = useHelm((s) => s.depthUnit);
+  const lengthUnit = useHelm((s) => s.lengthUnit);
+  const setDepthUnit = useHelm((s) => s.setDepthUnit);
+  const setLengthUnit = useHelm((s) => s.setLengthUnit);
+  return (
+    <div className="mb-2">
+      <p className="mb-1.5 text-[10px] tracking-[0.14em] text-muted-foreground uppercase">Units</p>
+      <div className="grid grid-cols-[4.5rem_1fr] items-center gap-x-2 gap-y-1.5">
+        <span className="text-[12px] text-muted-foreground">Depth</span>
+        <div className="grid grid-cols-3 gap-1.5">
+          {([
+            ["m", "Metres"],
+            ["ft", "Feet"],
+            ["fm", "Fathoms"],
+          ] as const).map(([id, label]) => (
+            <Button
+              key={id}
+              size="sm"
+              variant={depthUnit === id ? "default" : "outline"}
+              aria-pressed={depthUnit === id}
+              onClick={() => setDepthUnit(id)}
+            >
+              {label}
+            </Button>
+          ))}
+        </div>
+        <span className="text-[12px] text-muted-foreground">Chain, distance</span>
+        <div className="grid grid-cols-2 gap-1.5">
+          {([
+            ["m", "Metres"],
+            ["ft", "Feet"],
+          ] as const).map(([id, label]) => (
+            <Button
+              key={id}
+              size="sm"
+              variant={lengthUnit === id ? "default" : "outline"}
+              aria-pressed={lengthUnit === id}
+              onClick={() => setLengthUnit(id)}
+            >
+              {label}
+            </Button>
+          ))}
+        </div>
+      </div>
+      <p className="mt-1 text-[11px] leading-snug text-muted-foreground">
+        Over 1 km, distances show in nautical miles. Speeds are in knots.
+      </p>
+    </div>
+  );
+}
+
+function ZoneLegend() {
+  return (
+    <div className="rounded-md border border-border bg-background px-3 py-2">
+      <ul className="grid gap-1">
+        {PARK_ZONES.map((z) => (
+          <li key={z.name} className="flex items-start gap-2 text-[12px] leading-snug">
+            <span
+              aria-hidden
+              className="mt-0.5 size-3.5 shrink-0 rounded-sm border border-black/20"
+              style={{ background: z.color }}
+            />
+            <span>
+              <span className="font-semibold">{z.name}</span>
+              <span className="text-muted-foreground"> · {z.rule}</span>
+            </span>
+          </li>
+        ))}
+      </ul>
+      <p className="mt-1.5 text-[11px] leading-snug text-muted-foreground">
+        A guide, not the law. Rules change and some areas have extra limits, including
+        no-anchoring areas in the Whitsundays, Keppels and Hinchinbrook. Check the
+        official GBRMPA zoning maps before you fish or anchor. Anchor on sand, not coral.
+      </p>
     </div>
   );
 }

@@ -58,7 +58,9 @@ import {
 } from "@/lib/tides";
 import { tideOriginChip, tideOriginLabel } from "@/lib/tide-station";
 import { chartedDepthNeededM } from "@/lib/boat";
-import { useHelm } from "@/store/helm";
+import { useHelm, useUnitsKey } from "@/store/helm";
+import { formatDepth, getUnits } from "@/lib/units";
+import { MoonCard } from "@/components/helm/moon-card";
 
 const SKY_ICON: Record<WxSky, ComponentType<{ className?: string }>> = {
   clear: Sun,
@@ -192,6 +194,7 @@ function HourCol({
 }
 
 export function WeatherPanel() {
+  useUnitsKey();
   const panel = useHelm((s) => s.panel);
   const setPanel = useHelm((s) => s.setPanel);
   const pin = useHelm((s) => s.wxPin);
@@ -253,6 +256,7 @@ export function WeatherPanel() {
         </div>
       </div>
       <div className="w-full max-w-full px-3 pt-2">
+        <MoonCard />
         {wx.isLoading && !data ? (
           <p className="text-sm text-muted-foreground">Fetching forecast…</p>
         ) : null}
@@ -627,7 +631,7 @@ function SeaStack({
                   Waves
                 </span>
                 <span className="mt-0.5 block font-display text-base leading-none font-semibold text-foreground tabular-nums">
-                  {wave.heightM.toFixed(1)} m
+                  {formatDepth(wave.heightM, { unit: getUnits().depth === "fm" ? "ft" : undefined })}
                 </span>
                 <span className="text-[10px] text-muted-foreground">
                   {wave.periodS ? `${wave.periodS} s · ` : ""}
@@ -1806,15 +1810,16 @@ function TideNow({
       </p>
       <p className="mt-1 text-[12px] text-muted-foreground">
         {hw
-          ? `HW ${hwLat?.toFixed(1)} m ${hourLabel(hw.at)} ${hoursUntil(hw.at)} · +${rise.toFixed(1)} m`
+          ? `HW ${hwLat != null ? formatDepth(hwLat) : "—"} ${hourLabel(hw.at)} ${hoursUntil(hw.at)} · ${formatDepth(rise, { signed: true })}`
           : "No high in this window"}
-        {lw ? ` · LW ${lwLat?.toFixed(1)} m ${hourLabel(lw.at)}` : ""}
+        {lw ? ` · LW ${lwLat != null ? formatDepth(lwLat) : "—"} ${hourLabel(lw.at)}` : ""}
       </p>
     </div>
   );
 }
 
 export function AnchorWxCard() {
+  useUnitsKey();
   const wx = useWx();
   const draftM = useHelm((s) => s.hull.draftM);
   const [showDelta, setShowDelta] = useState(false);
@@ -1865,10 +1870,10 @@ export function AnchorWxCard() {
   const windModel = WX_MODEL_LABEL[data.source] ?? "Open-Meteo";
   const tideValue = (abs: number | null) => {
     if (abs == null || tideNow == null) return "—";
-    if (!showDelta) return `${abs.toFixed(1)} m`;
+    if (!showDelta) return formatDepth(abs);
     const d = Math.round((abs - tideNow) * 10) / 10;
     const sign = d > 0 ? "+" : d < 0 ? "−" : "";
-    return `${sign}${Math.abs(d).toFixed(1)} m`;
+    return `${sign}${formatDepth(Math.abs(d))}`;
   };
 
   return (
@@ -1897,9 +1902,9 @@ export function AnchorWxCard() {
           <p>Wind and gust: {windModel}, 10 m, via Open-Meteo.</p>
           <p className="mt-1">{tideOriginLabel(sea?.tideOrigin)}</p>
           <p className="mt-1">
-            Draw is the draft you set ({draftM.toFixed(1)} m), not a sounding.
+            Draw is the draft you set ({formatDepth(draftM)}), not a sounding.
             {need != null
-              ? ` Stay in water charted deeper than ${need.toFixed(1)} m. Not a sounder.`
+              ? ` Stay in water charted deeper than ${formatDepth(need)}. Not a sounder.`
               : ""}
           </p>
         </div>
@@ -1983,7 +1988,7 @@ export function AnchorWxCard() {
         {showDelta && tideNow != null ? (
           <p className="col-span-4 text-[11px] text-muted-foreground">
             Now {tideNow >= 0 ? "+" : "−"}
-            {Math.abs(tideNow).toFixed(1)} m LAT
+            {formatDepth(Math.abs(tideNow))} LAT
           </p>
         ) : null}
       </button>

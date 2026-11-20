@@ -20,6 +20,17 @@ import { fetchTideRise, latDatumM, tideRiseAt, toLatM } from "@/lib/tides";
 import type { SeaState } from "@/lib/weather";
 import { AnchorWxCard } from "@/components/helm/weather";
 import { useHelm } from "@/store/helm";
+import {
+  depthSuffix,
+  depthWheel,
+  formatLength,
+  fromDepth,
+  fromLength,
+  lengthSuffix,
+  lengthWheel,
+  toDepth,
+  toLength,
+} from "@/lib/units";
 
 export function BottomDock() {
   const panel = useHelm((s) => s.panel);
@@ -365,12 +376,19 @@ function RodeDials({
   onOk: (depthM: number, chainM: number, scope: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10) => void;
   onCancel: () => void;
 }) {
-  const depths = useMemo(() => wheelValues(0.2, 40, 0.2), []);
-  const chains = useMemo(() => wheelValues(0, 200, 1), []);
+  // Wheels run in the skipper's units; everything is converted back to metres on OK.
+  const depthUnit = useHelm((s) => s.depthUnit);
+  const lengthUnit = useHelm((s) => s.lengthUnit);
+  const dw = depthWheel(depthUnit);
+  const lw = lengthWheel(lengthUnit);
+  const depths = useMemo(() => wheelValues(dw.min, dw.max, dw.step), [dw.min, dw.max, dw.step]);
+  const chains = useMemo(() => wheelValues(lw.min, lw.max, lw.step), [lw.min, lw.max, lw.step]);
   const scopes = useMemo(() => wheelValues(1, 10, 1), []);
-  const [depthM, setDepthM] = useState(() => nearest(depths, depth));
-  const [chainM, setChainM] = useState(() => nearest(chains, chain));
+  const [depthV, setDepthV] = useState(() => nearest(depths, toDepth(depth, depthUnit)));
+  const [chainV, setChainV] = useState(() => nearest(chains, toLength(chain, lengthUnit)));
   const [scopeN, setScopeN] = useState(() => nearest(scopes, scope));
+  const depthM = fromDepth(depthV, depthUnit);
+  const chainM = fromLength(chainV, lengthUnit);
   const rise = Math.max(0, tideM);
   const need = Math.ceil(scopeN * (depthM + bowM + rise));
   const enough = chainM + 0.05 >= need;
@@ -385,23 +403,25 @@ function RodeDials({
         <Wheel label="Scope" value={scopeN} values={scopes} step={1} unit=":1" onChange={setScopeN} />
         <Wheel
           label="Chain"
-          value={chainM}
+          value={chainV}
           values={chains}
-          step={1}
+          step={lw.step}
+          unit={lengthSuffix(lengthUnit)}
           tone={enough ? "ok" : "short"}
-          onChange={setChainM}
+          onChange={setChainV}
         />
         <Wheel
           label="Depth"
-          value={depthM}
+          value={depthV}
           values={depths}
-          step={0.2}
+          step={dw.step}
+          unit={depthSuffix(depthUnit)}
           tone={depthShort ? "short" : "plain"}
-          onChange={setDepthM}
+          onChange={setDepthV}
         />
       </div>
       <p className={`mt-2 text-center text-sm font-medium ${enough ? "text-emerald-300" : "text-destructive"}`}>
-        {enough ? "Enough" : "Short"} · {need} m for {scopeN}:1
+        {enough ? "Enough" : "Short"} · {formatLength(need)} for {scopeN}:1
         {rise > 0.05 ? ` at high water${highWhen(highAt)}` : ""}
       </p>
       <Row

@@ -4,7 +4,8 @@ import {
   gpsStationLabel,
   stationFromTap,
 } from "@/lib/boat";
-import { useHelm, type PanelId } from "@/store/helm";
+import { UnitStepField } from "@/components/helm/unit-field";
+import { useHelm, useUnitsKey, type PanelId } from "@/store/helm";
 
 function Sheet({
   id,
@@ -19,6 +20,7 @@ function Sheet({
 }) {
   const panel = useHelm((s) => s.panel);
   const setPanel = useHelm((s) => s.setPanel);
+  useUnitsKey();
   if (panel !== id) return null;
   return (
     <div className="pointer-events-none absolute inset-x-0 bottom-0 z-40 md:inset-y-20 md:right-3 md:bottom-24 md:left-auto md:w-[22rem]">
@@ -45,56 +47,8 @@ function Sheet({
   );
 }
 
-function roundStep(n: number, step: number) {
-  const s = step || 1;
-  return Math.round(n / s) * s;
-}
 
-function formatStep(n: number, step: number) {
-  if (step < 1) return n.toFixed(1);
-  return String(Math.round(n * 10) / 10);
-}
 
-function StepField({
-  label,
-  value,
-  step = 1,
-  onChange,
-}: {
-  label: string;
-  value: number;
-  step?: number;
-  onChange: (n: number) => void;
-}) {
-  return (
-    <div className="rounded-lg border border-border bg-background px-2 py-1.5">
-      <p className="text-[10px] tracking-[0.12em] text-muted-foreground uppercase">
-        {label}
-      </p>
-      <div className="mt-0.5 flex items-center gap-1.5">
-        <Button
-          variant="outline"
-          size="icon-sm"
-          onClick={() => onChange(Math.max(0, roundStep(value - step, step)))}
-          aria-label={`Decrease ${label}`}
-        >
-          −
-        </Button>
-        <p className="font-display flex-1 text-center text-xl font-semibold tabular-nums">
-          {formatStep(value, step)}
-        </p>
-        <Button
-          variant="outline"
-          size="icon-sm"
-          onClick={() => onChange(roundStep(value + step, step))}
-          aria-label={`Increase ${label}`}
-        >
-          +
-        </Button>
-      </div>
-    </div>
-  );
-}
 
 function BoatPlan() {
   const hull = useHelm((s) => s.hull);
@@ -211,28 +165,32 @@ export function BoatPanel() {
         or the hook and alarm sit 10–15 m off.
       </p>
       <div className="mb-2 grid grid-cols-2 gap-2">
-        <StepField
-          label="Length m"
-          value={hull.loaM}
-          step={0.5}
+        <UnitStepField
+          label="Length"
+          kind="length"
+          valueM={hull.loaM}
+          steps={{ m: 0.5, ft: 1 }}
           onChange={(n) => setHull({ loaM: n })}
         />
-        <StepField
-          label="Draft m"
-          value={hull.draftM}
-          step={0.1}
+        <UnitStepField
+          label="Draft"
+          kind="depth"
+          valueM={hull.draftM}
+          steps={{ m: 0.1, ft: 0.5, fm: 0.1 }}
           onChange={(n) => setHull({ draftM: n })}
         />
-        <StepField
-          label="Beam m"
-          value={hull.beamM}
-          step={0.1}
+        <UnitStepField
+          label="Beam"
+          kind="length"
+          valueM={hull.beamM}
+          steps={{ m: 0.1, ft: 0.5 }}
           onChange={(n) => setHull({ beamM: n })}
         />
-        <StepField
-          label="Bow roller m"
-          value={hull.bowM}
-          step={0.1}
+        <UnitStepField
+          label="Bow roller"
+          kind="length"
+          valueM={hull.bowM}
+          steps={{ m: 0.1, ft: 0.5 }}
           onChange={(n) => setHull({ bowM: n })}
         />
       </div>

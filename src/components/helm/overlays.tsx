@@ -46,7 +46,7 @@ export function AlarmOverlay() {
               <p className="mt-1 text-sm text-white/85">
                 {fenced
                   ? "Outside the barrier"
-                  : `${formatMeters(over)} outside a ${Math.round(anchor.radiusM)} m circle`}
+                  : `${formatMeters(over)} outside a ${formatMeters(anchor.radiusM)} circle`}
               </p>
               <p className="mt-1 font-display text-lg leading-none font-semibold tabular-nums">
                 Anchor bears {formatHeading(bearingDegrees(boat, anchor))} ·{" "}

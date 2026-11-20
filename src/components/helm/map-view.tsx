@@ -38,6 +38,8 @@ import {
   STUB_TILE_BYTES,
   ATTR_MAPTILER,
   ATTR_REEFS,
+  ATTR_ZONING,
+  ZONING_WMS_LAYERS,
   REEF_WMS_LAYERS,
   REEF_WMS_URL,
   autoSatOrder,
@@ -569,6 +571,18 @@ export function MapView() {
           attribution: ATTR_REEFS,
         });
         let reefsOn = false;
+        // Under the reef outlines and seamarks, translucent so the satellite still reads.
+        const zones: TileLayer = L.tileLayer.wms(REEF_WMS_URL, {
+          layers: ZONING_WMS_LAYERS,
+          format: "image/png",
+          transparent: true,
+          version: "1.1.1",
+          maxZoom: MAX_ZOOM,
+          opacity: 0.4,
+          pane: "chartOverlay",
+          attribution: ATTR_ZONING,
+        });
+        let zonesOn = false;
 
         L.control
           .scale({ metric: true, imperial: false, position: "bottomright" })
@@ -1179,6 +1193,16 @@ export function MapView() {
           } else if (depthsOn) {
             map.removeLayer(depths);
             depthsOn = false;
+          }
+          if (s.parkZones) {
+            if (!zonesOn) {
+              zones.addTo(map);
+              zones.bringToBack();
+              zonesOn = true;
+            }
+          } else if (zonesOn) {
+            map.removeLayer(zones);
+            zonesOn = false;
           }
           if (s.reefOutlines) {
             if (!reefsOn) {

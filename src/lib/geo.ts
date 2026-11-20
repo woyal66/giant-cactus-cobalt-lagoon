@@ -1,3 +1,4 @@
+import { formatLength } from "./units.ts";
 export type LatLng = { lat: number; lng: number };
 
 export type ChartUp = "north" | "heading";
@@ -306,7 +307,7 @@ export function msToKnots(ms: number | null | undefined): number {
 
 export function formatMeters(m: number): string {
   const a = Math.abs(m);
-  if (a < 1000) return `${Math.round(a)} m`;
+  if (a < 1000) return formatLength(a);
   const nm = a / 1852;
   return nm < 10 ? `${nm.toFixed(1)} nm` : `${Math.round(nm)} nm`;
 }
