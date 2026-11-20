@@ -2,7 +2,7 @@ import { Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { Bell } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { formatHeading, formatMeters, haversineMeters, msToKnots } from "@/lib/geo";
+import { bearingDegrees, formatHeading, formatMeters, haversineMeters, msToKnots } from "@/lib/geo";
 import { formatXte, markNav, steerCue } from "@/lib/steer";
 import { setAllowance } from "@/lib/weather";
 import { useWx } from "@/hooks/weather";
@@ -48,6 +48,10 @@ export function AlarmOverlay() {
                   ? "Outside the barrier"
                   : `${formatMeters(over)} outside a ${Math.round(anchor.radiusM)} m circle`}
               </p>
+              <p className="mt-1 font-display text-lg leading-none font-semibold tabular-nums">
+                Anchor bears {formatHeading(bearingDegrees(boat, anchor))} ·{" "}
+                {formatMeters(d)}
+              </p>
             </div>
           </div>
           <div className="mt-3 grid grid-cols-2 gap-2">
@@ -63,7 +67,7 @@ export function AlarmOverlay() {
               onClick={weigh}
               className="border-white/40 bg-transparent text-white hover:bg-white/10"
             >
-              Weigh
+              Weigh anchor
             </Button>
           </div>
         </div>

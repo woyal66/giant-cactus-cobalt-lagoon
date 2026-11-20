@@ -76,8 +76,8 @@ export function HelmApp() {
           aria-hidden
         >
           <p
-            className={`absolute top-[max(0.4rem,env(safe-area-inset-top))] left-1/2 -translate-x-1/2 rounded-full px-2 py-0.5 text-[10px] font-semibold tracking-[0.16em] uppercase ${
-              breach ? "bg-destructive text-white" : "bg-primary/15 text-primary"
+            className={`absolute top-[calc(max(0.4rem,env(safe-area-inset-top))+4.1rem)] left-1/2 -translate-x-1/2 rounded-full px-2.5 py-1 text-[11px] font-semibold tracking-[0.16em] uppercase shadow-[var(--shadow-border)] ${
+              breach ? "bg-destructive text-white" : "bg-card/95 text-primary"
             }`}
           >
             {breach ? "Alarm" : "Watch on"}

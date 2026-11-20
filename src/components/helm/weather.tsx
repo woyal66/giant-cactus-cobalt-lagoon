@@ -175,7 +175,7 @@ function HourCol({
         max ? "bg-primary/15" : now ? "bg-muted/60" : ""
       }`}
     >
-      <span className="text-[9px] tracking-wide text-muted-foreground uppercase">
+      <span className="text-[10px] tracking-wide text-muted-foreground uppercase">
         {now ? "Now" : hourLabel(hour.at)}
       </span>
       <span
@@ -246,7 +246,7 @@ export function WeatherPanel() {
                 Boat
               </Button>
             ) : null}
-            <Button variant="ghost" size="sm" className="h-8 px-2" onClick={() => setPanel(null)}>
+            <Button variant="outline" size="sm" className="h-10 min-w-16 px-3" onClick={() => setPanel(null)}>
               Close
             </Button>
           </div>
@@ -585,7 +585,7 @@ function SeaStack({
               const look = WIND_LOOK[s.id];
               return (
                 <div key={s.id} className="min-w-0">
-                  <p className={`flex items-center gap-0.5 text-[9px] tracking-wide uppercase ${look.wind}`}>
+                  <p className={`flex items-center gap-0.5 text-[10px] tracking-wide uppercase ${look.wind}`}>
                     <MiniArrow deg={sample.dirDeg + 180} className={warn ? "text-destructive" : look.wind} />
                     {look.label}
                   </p>
@@ -609,7 +609,7 @@ function SeaStack({
           <div className="mt-2 flex gap-2 border-t border-border/70 pt-1.5">
             {layers.tide && tideM != null ? (
               <p className="min-w-0 flex-1 text-[11px] leading-tight">
-                <span className="text-[9px] tracking-wide text-muted-foreground uppercase">
+                <span className="text-[10px] tracking-wide text-muted-foreground uppercase">
                   {tideOrigin?.kind === "station" ? "Tide" : "Tide est"}
                 </span>
                 <span className="mt-0.5 block font-display text-base leading-none font-semibold tabular-nums">
@@ -622,7 +622,7 @@ function SeaStack({
             ) : null}
             {layers.waves && wave ? (
               <p className="min-w-0 flex-1 text-[11px] leading-tight text-cyan-300">
-                <span className="flex items-center gap-0.5 text-[9px] tracking-wide uppercase">
+                <span className="flex items-center gap-0.5 text-[10px] tracking-wide uppercase">
                   <MiniArrow deg={wave.dirDeg + 180} className="text-cyan-300" />
                   Waves
                 </span>
@@ -637,7 +637,7 @@ function SeaStack({
             ) : null}
             {layers.current && cur ? (
               <p className="min-w-0 flex-1 text-[11px] leading-tight text-amber-300">
-                <span className="flex items-center gap-0.5 text-[9px] tracking-wide uppercase">
+                <span className="flex items-center gap-0.5 text-[10px] tracking-wide uppercase">
                   <MiniArrow deg={cur.dirDeg} className="text-amber-300" />
                   Current
                 </span>
@@ -842,7 +842,7 @@ function ReadoutCell({
         </svg>
       ) : null}
       <div className="min-w-0">
-        <p className="text-[9px] tracking-[0.12em] text-muted-foreground uppercase">{label}</p>
+        <p className="text-[10px] tracking-[0.12em] text-muted-foreground uppercase">{label}</p>
         <p className={cn("font-display text-xl leading-none font-semibold tabular-nums", valueClass)}>
           {value}
         </p>
@@ -873,7 +873,7 @@ function CurrentNow({ sea }: { sea: SeaState }) {
       : `${formatKn(Math.abs(vs.acrossKn))} kn set ${vs.acrossKn > 0 ? "stb" : "port"}`;
   return (
     <div className="mt-3 rounded-md border border-border bg-card/60 px-2.5 py-2">
-      <p className="text-[9px] tracking-[0.12em] text-muted-foreground uppercase">Current</p>
+      <p className="text-[10px] tracking-[0.12em] text-muted-foreground uppercase">Current</p>
       <p className="font-display text-2xl leading-none font-semibold tabular-nums">
         {formatKn(sea.currentKn)}
         <span className="ml-1 text-xs font-medium text-muted-foreground">kn</span>
@@ -1797,7 +1797,7 @@ function TideNow({
     hw ? Math.max(0, Math.round((hw.m - now.m) * 10) / 10) : 0;
   return (
     <div className="mt-3 rounded-md border border-border bg-card/60 px-2.5 py-2">
-      <p className="text-[9px] tracking-[0.12em] text-muted-foreground uppercase">
+      <p className="text-[10px] tracking-[0.12em] text-muted-foreground uppercase">
         Tide LAT
       </p>
       <p className="font-display text-2xl leading-none font-semibold tabular-nums">
@@ -1821,9 +1821,21 @@ export function AnchorWxCard() {
   const [showSource, setShowSource] = useState(false);
   const data = wx.data;
   if (!data) {
-    return wx.isLoading ? (
-      <p className="mb-2 text-xs text-muted-foreground">Loading 24 h wind and tide…</p>
-    ) : null;
+    if (wx.isLoading) {
+      return <p className="mb-2 text-xs text-muted-foreground">Loading 24 h wind and tide…</p>;
+    }
+    if (wx.isError) {
+      return (
+        <div className="mb-2 rounded-md border border-border bg-background px-3 py-2 text-[12px] leading-snug text-muted-foreground">
+          No forecast here yet: no signal. Set depth and tide by hand; wind and tide load
+          when you're back in range.{" "}
+          <button type="button" className="underline" onClick={() => void wx.refetch()}>
+            Try again
+          </button>
+        </div>
+      );
+    }
+    return null;
   }
   const hours = sliceByHorizon(data.hours, 24);
   const maxWind = windowStats(hours).maxWind;
@@ -1894,7 +1906,7 @@ export function AnchorWxCard() {
       ) : null}
 
       <div className="grid grid-cols-[3.4rem_1fr_4.2rem_1.4rem] items-center gap-y-1.5 px-3 pb-2">
-        <p className="col-span-4 text-[9px] tracking-[0.12em] text-muted-foreground uppercase">
+        <p className="col-span-4 text-[10px] tracking-[0.12em] text-muted-foreground uppercase">
           Wind · max
         </p>
         <span className="text-[11px] text-muted-foreground">Wind</span>
@@ -1946,7 +1958,7 @@ export function AnchorWxCard() {
         aria-pressed={showDelta}
         className="grid w-full grid-cols-[3.4rem_1fr_4.2rem_1.4rem] items-center gap-y-1.5 border-t border-border px-3 py-2 text-left"
       >
-        <p className="col-span-4 text-[9px] tracking-[0.12em] text-muted-foreground uppercase">
+        <p className="col-span-4 text-[10px] tracking-[0.12em] text-muted-foreground uppercase">
           {showDelta ? "Tide · change from now" : "Tide · tap for change from now"}
         </p>
         <span className="text-[11px] text-muted-foreground">Draw</span>
@@ -2005,7 +2017,7 @@ export function WindInstrument({ compact }: { compact?: boolean }) {
       className={compact ? "min-w-0 flex-1 px-2 py-1.5 text-left" : "min-w-[5.5rem] px-3 py-2 text-left"}
       aria-label="24 hour wind and weather"
     >
-      <p className="text-[9px] tracking-[0.12em] text-muted-foreground uppercase">
+      <p className="text-[10px] tracking-[0.12em] text-muted-foreground uppercase">
         Wind
       </p>
       <p

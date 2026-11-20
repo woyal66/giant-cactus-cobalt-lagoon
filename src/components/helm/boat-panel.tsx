@@ -21,13 +21,13 @@ function Sheet({
   const setPanel = useHelm((s) => s.setPanel);
   if (panel !== id) return null;
   return (
-    <div className="pointer-events-none absolute inset-x-0 bottom-0 z-30 md:inset-y-20 md:right-3 md:bottom-24 md:left-auto md:w-[22rem]">
+    <div className="pointer-events-none absolute inset-x-0 bottom-0 z-40 md:inset-y-20 md:right-3 md:bottom-24 md:left-auto md:w-[22rem]">
       <div className="pointer-events-auto max-h-[min(58vh,32rem)] overflow-y-auto rounded-t-xl border border-border bg-card px-3 pt-2 pb-[max(0.6rem,env(safe-area-inset-bottom))] shadow-[var(--shadow-border)] md:max-h-[min(72vh,36rem)] md:rounded-xl md:p-4">
         <div className="mx-auto mb-1.5 h-1 w-10 rounded-full bg-border md:hidden" />
         <div className="mb-2 flex items-center justify-between gap-2">
           <div className="min-w-0">
             {kicker ? (
-              <p className="text-[9px] tracking-[0.14em] text-muted-foreground uppercase">
+              <p className="text-[10px] tracking-[0.14em] text-muted-foreground uppercase">
                 {kicker}
               </p>
             ) : null}
@@ -35,7 +35,7 @@ function Sheet({
               {title}
             </h2>
           </div>
-          <Button variant="ghost" size="sm" className="h-8" onClick={() => setPanel(null)}>
+          <Button variant="outline" size="sm" className="h-10 min-w-16 px-3" onClick={() => setPanel(null)}>
             Close
           </Button>
         </div>
@@ -68,7 +68,7 @@ function StepField({
 }) {
   return (
     <div className="rounded-lg border border-border bg-background px-2 py-1.5">
-      <p className="text-[9px] tracking-[0.12em] text-muted-foreground uppercase">
+      <p className="text-[10px] tracking-[0.12em] text-muted-foreground uppercase">
         {label}
       </p>
       <div className="mt-0.5 flex items-center gap-1.5">
@@ -119,7 +119,7 @@ function BoatPlan() {
 
   return (
     <div className="rounded-lg border border-border bg-background p-2">
-      <p className="mb-1 text-[9px] tracking-[0.12em] text-muted-foreground uppercase">
+      <p className="mb-1 text-[10px] tracking-[0.12em] text-muted-foreground uppercase">
         Tap where the phone lives
       </p>
       <svg

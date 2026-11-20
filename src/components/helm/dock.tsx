@@ -33,8 +33,7 @@ export function BottomDock() {
   const canReverse = draft.length >= 2 || crumb.length >= 2;
   const anchorStep = useHelm((s) => s.anchorStep);
   const watching = useHelm((s) => Boolean(s.anchor?.radiusLocked));
-  const weigh = useHelm((s) => s.weighAnchor);
-  const [stopAsk, setStopAsk] = useState(false);
+  const breach = useHelm((s) => s.alarmOn || s.gpsLost);
 
   if (anchorStep) return <AnchorSetBar />;
 
@@ -120,25 +119,6 @@ export function BottomDock() {
   return (
     <nav className="pointer-events-none absolute inset-x-0 bottom-0 z-20 p-2 pb-[max(0.5rem,env(safe-area-inset-bottom))]">
       <div className="pointer-events-auto mx-auto grid max-w-lg grid-cols-5 gap-0.5 rounded-xl border border-border bg-card p-1 shadow-[var(--shadow-border)]">
-        {watching && stopAsk ? (
-          <div className="col-span-5 mb-1 rounded-lg border border-destructive/40 bg-destructive/10 p-2">
-            <p className="text-center text-sm font-medium">Stop the anchor watch?</p>
-            <div className="mt-2 grid grid-cols-2 gap-2">
-              <Button variant="outline" onClick={() => setStopAsk(false)}>
-                Keep
-              </Button>
-              <Button
-                variant="danger"
-                onClick={() => {
-                  setStopAsk(false);
-                  weigh();
-                }}
-              >
-                Stop
-              </Button>
-            </div>
-          </div>
-        ) : null}
         <DockBtn
           active={panel === "atlas"}
           label="Atlas"
@@ -155,16 +135,12 @@ export function BottomDock() {
         </DockBtn>
         <DockBtn
           active={panel === "anchor"}
-          label={watching ? "Stop" : "Anchor"}
-          emphasize={!watching}
-          danger={watching}
+          label={breach ? "Alarm" : watching ? "Watch" : "Anchor"}
+          emphasize
+          danger={breach}
           onClick={() => {
             const s = useHelm.getState();
-            if (s.anchor?.radiusLocked) {
-              setStopAsk(true);
-              setPanel(null);
-              return;
-            }
+            // On watch: open the anchor sheet (settings, test, stop with a confirm).
             if (s.anchor) {
               toggle("anchor");
               return;
@@ -220,7 +196,7 @@ function DockBtn({
     <Button
       variant={danger ? "danger" : active || emphasize ? "default" : "ghost"}
       onClick={onClick}
-      className="h-12 flex-col gap-0.5 rounded-lg px-1 text-[9px] font-medium tracking-wide uppercase"
+      className="h-14 flex-col gap-1 rounded-lg px-1 text-[11px] font-semibold tracking-wide uppercase [&_svg]:size-5"
     >
       {children}
       {label}
@@ -254,14 +230,18 @@ function AnchorSetBar() {
     const [lat, lng] = tideKey.split(",").map(Number);
     if (lat == null || lng == null) return;
     let stop = false;
-    void fetchTideRise(lat, lng).then((d) => {
-      if (stop || !d.highAt) return;
-      useHelm.getState().setRode({
-        tideRiseM: d.riseM,
-        tideHighAt: d.highAt,
-        tideManual: false,
+    fetchTideRise(lat, lng)
+      .then((d) => {
+        if (stop || !d.highAt) return;
+        useHelm.getState().setRode({
+          tideRiseM: d.riseM,
+          tideHighAt: d.highAt,
+          tideManual: false,
+        });
+      })
+      .catch(() => {
+        /* no signal: keep the tide the skipper entered */
       });
-    });
     return () => {
       stop = true;
     };

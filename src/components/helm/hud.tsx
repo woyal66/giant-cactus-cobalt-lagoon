@@ -349,7 +349,7 @@ export function MobHud() {
     boat && rangeM != null && sog >= 0.4 ? formatTtg(rangeM / (boat.speedMs || 1)) : "—";
 
   return (
-    <div className="pointer-events-none absolute inset-x-0 bottom-[4.6rem] z-30 px-2 md:bottom-[9.2rem] md:px-3">
+    <div className="pointer-events-none absolute inset-x-0 bottom-[5.2rem] z-30 px-2 md:bottom-[9.2rem] md:px-3">
       <div className="pointer-events-auto mx-auto flex w-full max-w-md items-stretch overflow-hidden rounded-xl border border-destructive bg-card/95 shadow-[var(--shadow-border)] rp-glass">
         <div className="min-w-0 flex-1 px-3 py-2">
           <p className="truncate text-[10px] tracking-[0.14em] text-destructive uppercase">
@@ -433,7 +433,7 @@ export function NavRibbon() {
   const fenced = Boolean(anchor?.fence && anchor.fence.length >= 3);
 
   return (
-    <div className="pointer-events-none absolute inset-x-0 bottom-[4.6rem] z-20 px-2 md:bottom-[9.2rem] md:px-3">
+    <div className="pointer-events-none absolute inset-x-0 bottom-[5.2rem] z-20 px-2 md:bottom-[9.2rem] md:px-3">
       <div className="mx-auto flex max-w-6xl flex-wrap gap-1.5">
         {passage ? (
           <button
@@ -456,16 +456,24 @@ export function NavRibbon() {
           <button
             type="button"
             onClick={() => setPanel("anchor")}
-            className={`pointer-events-auto rounded-md border px-2 py-1 text-left shadow-[var(--shadow-border)] ${
+            aria-label="Anchor watch settings"
+            className={`pointer-events-auto min-h-11 rounded-md border px-2.5 py-1.5 text-left shadow-[var(--shadow-border)] ${
               alarmOn
                 ? "border-destructive bg-destructive text-white"
                 : "border-border bg-card/95"
             }`}
           >
-            <p className="font-display text-sm leading-none font-semibold tabular-nums">
-              {fenced
-                ? "Barrier"
-                : `${formatMeters(hook)} / ${Math.round(anchor.radiusM)} m`}
+            <p className="font-display text-base leading-none font-semibold tabular-nums">
+              {fenced ? (
+                "Barrier"
+              ) : (
+                <>
+                  {formatMeters(hook)}
+                  <span className={`ml-1 text-[11px] font-medium ${alarmOn ? "text-white/85" : "text-muted-foreground"}`}>
+                    from anchor · circle {Math.round(anchor.radiusM)} m
+                  </span>
+                </>
+              )}
             </p>
             <p
               className={`mt-0.5 text-[11px] ${

@@ -67,13 +67,13 @@ function Sheet({
   const setPanel = useHelm((s) => s.setPanel);
   if (panel !== id) return null;
   return (
-    <div className="pointer-events-none absolute inset-x-0 bottom-0 z-30 md:inset-y-20 md:right-3 md:bottom-24 md:left-auto md:w-[22rem]">
+    <div className="pointer-events-none absolute inset-x-0 bottom-0 z-40 md:inset-y-20 md:right-3 md:bottom-24 md:left-auto md:w-[22rem]">
       <div className="pointer-events-auto max-h-[min(46vh,24rem)] overflow-y-auto rounded-t-xl border border-border bg-card px-3 pt-2 pb-[max(0.6rem,env(safe-area-inset-bottom))] shadow-[var(--shadow-border)] md:max-h-[min(72vh,36rem)] md:rounded-xl md:p-4">
         <div className="mx-auto mb-1.5 h-1 w-10 rounded-full bg-border md:hidden" />
         <div className="mb-2 flex items-center justify-between gap-2">
           <div className="min-w-0">
             {kicker ? (
-              <p className="text-[9px] tracking-[0.14em] text-muted-foreground uppercase">
+              <p className="text-[10px] tracking-[0.14em] text-muted-foreground uppercase">
                 {kicker}
               </p>
             ) : null}
@@ -81,7 +81,7 @@ function Sheet({
               {title}
             </h2>
           </div>
-          <Button variant="ghost" size="sm" className="h-8" onClick={() => setPanel(null)}>
+          <Button variant="outline" size="sm" className="h-10 min-w-16 px-3" onClick={() => setPanel(null)}>
             Close
           </Button>
         </div>
@@ -114,7 +114,7 @@ function StepField({
 }) {
   return (
     <div className="rounded-lg border border-border bg-background px-2 py-1.5">
-      <p className="text-[9px] tracking-[0.12em] text-muted-foreground uppercase">{label}</p>
+      <p className="text-[10px] tracking-[0.12em] text-muted-foreground uppercase">{label}</p>
       <div className="mt-0.5 flex items-center gap-1.5">
         <Button
           variant="outline"
@@ -152,12 +152,30 @@ function ToggleRow({
   return (
     <button
       type="button"
+      role="switch"
+      aria-checked={on}
       onClick={() => onChange(!on)}
-      className="flex items-center justify-between gap-2 rounded-md border border-border bg-background px-3 py-2 text-left"
+      className="flex min-h-11 items-center justify-between gap-3 rounded-md border border-border bg-background px-3 py-2 text-left"
     >
       <span className="text-sm">{label}</span>
-      <span className={`text-[11px] font-semibold tracking-wide uppercase ${on ? "text-primary" : "text-muted-foreground"}`}>
-        {on ? "On" : "Off"}
+      {/* A real switch reads at a glance in glare; the word stays for colour-blind users. */}
+      <span className="flex shrink-0 items-center gap-2">
+        <span className={`text-[11px] font-semibold tracking-wide uppercase ${on ? "text-primary" : "text-muted-foreground"}`}>
+          {on ? "On" : "Off"}
+        </span>
+        <span
+          aria-hidden
+          className={`relative h-6 w-10 rounded-full transition-colors ${on ? "bg-primary" : "bg-muted"}`}
+        >
+          <span
+            className={`absolute top-0.5 size-5 rounded-full shadow transition-transform ${
+              // No white at night: it would wreck night vision on the red screen.
+              on
+                ? "translate-x-[1.125rem] bg-white in-[.rp-night]:bg-[#1a0904]"
+                : "translate-x-0.5 bg-white in-[.rp-night]:bg-[#9a4318]"
+            }`}
+          />
+        </span>
       </span>
     </button>
   );
@@ -171,6 +189,7 @@ export function AnchorPanel() {
   const gpsAlarmOn = useHelm((s) => s.gpsAlarmOn);
   const setGpsAlarmOn = useHelm((s) => s.setGpsAlarmOn);
   const [gpsOffAsk, setGpsOffAsk] = useState(false);
+  const [stopAsk, setStopAsk] = useState(false);
   const muted = useHelm((s) => s.alarmMuted);
   const weigh = useHelm((s) => s.weighAnchor);
   const startPlaceHook = useHelm((s) => s.startPlaceHook);
@@ -214,9 +233,33 @@ export function AnchorPanel() {
   return (
     <Sheet id="anchor" title="Anchor" kicker="Mark the hook">
       {anchor?.radiusLocked ? (
-        <Button variant="danger" className="mb-2 w-full" onClick={weigh}>
-          Stop watch
-        </Button>
+        stopAsk ? (
+          <div className="mb-2 rounded-lg border border-destructive/50 bg-destructive/10 p-2">
+            <p className="text-center text-sm font-medium">Stop the anchor watch?</p>
+            <p className="mt-0.5 text-center text-[11px] text-muted-foreground">
+              The drag alarm won't sound until you set it again.
+            </p>
+            <div className="mt-2 grid grid-cols-2 gap-2">
+              <Button variant="outline" onClick={() => setStopAsk(false)}>
+                Keep watching
+              </Button>
+              <Button
+                variant="danger"
+                onClick={() => {
+                  setStopAsk(false);
+                  weigh();
+                  setPanel(null);
+                }}
+              >
+                Stop watch
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <Button variant="danger" className="mb-2 w-full" onClick={() => setStopAsk(true)}>
+            Stop watch
+          </Button>
+        )
       ) : null}
       <p className="mb-2 text-xs text-pretty text-muted-foreground">
         Boat is the fallen-back position. Chain from the bow. Set depth and chain, then drag to the hook.
@@ -227,7 +270,7 @@ export function AnchorPanel() {
       </div>
       <div className="mb-2 rounded-lg border border-border bg-background px-3 py-2">
         <div className="flex items-baseline justify-between">
-          <p className="text-[9px] tracking-[0.12em] text-muted-foreground uppercase">Layback</p>
+          <p className="text-[10px] tracking-[0.12em] text-muted-foreground uppercase">Layback</p>
           <p className="font-display text-2xl font-semibold tabular-nums">{Math.round(math.laybackM)} m</p>
         </div>
         <p className="mt-0.5 text-[11px] text-muted-foreground">
@@ -240,7 +283,7 @@ export function AnchorPanel() {
         <div className="mb-2 grid gap-2">
           <div className="flex items-center justify-between rounded-lg border border-border bg-background px-3 py-2">
             <div>
-              <p className="text-[9px] tracking-[0.12em] text-muted-foreground uppercase">Distance</p>
+              <p className="text-[10px] tracking-[0.12em] text-muted-foreground uppercase">Distance</p>
               <p className="font-display text-xl font-semibold tabular-nums">
                 {dist ?? "—"}
                 <span className="ml-1 text-xs font-medium text-muted-foreground">
@@ -286,11 +329,9 @@ export function AnchorPanel() {
           ) : null}
           <ToggleRow label="Swing trail" on={swingTrailOn} onChange={setSwingTrailOn} />
           <p className="text-[11px] leading-snug text-muted-foreground">
-            Screen can sleep. You can use the phone. On the hook it checks about
-            every half minute, faster near the circle. Sleep or a short GPS hole
-            will not alarm. GPS lost only after 60 s with the app actually running.
-            Allow notifications. iPhone may pause GPS when the screen locks — leave
-            Anchor Mate open. Android can keep watching if Chrome is not battery-restricted.
+            {isNativeApp()
+              ? "Lock the phone and sleep: the watch keeps checking the GPS with the screen off. The alarm needs the boat outside the circle for 12 s, and ignores fixes too vague to judge. GPS lost sounds after 60 s without a fix. Keep the phone on charge, and don't swipe Anchor Mate closed."
+              : "In a browser the watch only runs while this page is open and the screen is on. Install the Anchor Mate app to keep watch with the phone locked."}
           </p>
           <div className="grid grid-cols-2 gap-2">
             <Button variant="outline" size="sm" onClick={() => startPlaceHook()}>
@@ -365,7 +406,7 @@ export function AnchorPanel() {
         onClick={() => setPanel("boat")}
         className="mt-2 w-full rounded-lg border border-border bg-background px-3 py-2 text-left"
       >
-        <p className="text-[9px] tracking-[0.12em] text-muted-foreground uppercase">Hull · GPS</p>
+        <p className="text-[10px] tracking-[0.12em] text-muted-foreground uppercase">Hull · GPS</p>
         <p className="font-display text-sm font-semibold">{gpsStationLabel(hull)}</p>
       </button>
     </Sheet>
@@ -643,7 +684,7 @@ function OfflinePacks() {
   return (
     <div className="mb-2 rounded-lg border border-border bg-background px-2.5 py-2">
       <div className="flex items-center justify-between gap-2">
-        <p className="text-[9px] tracking-[0.12em] text-muted-foreground uppercase">Offline packs</p>
+        <p className="text-[10px] tracking-[0.12em] text-muted-foreground uppercase">Offline packs</p>
         {here ? (
           <span className="rounded-full bg-emerald-500/20 px-2 py-0.5 text-[10px] font-semibold tracking-wide text-emerald-400 uppercase">
             On phone
@@ -775,7 +816,7 @@ function TrackSteerSettings() {
 
   return (
     <div className="mb-2 rounded-lg border border-border bg-background px-2.5 py-2">
-      <p className="text-[9px] tracking-[0.12em] text-muted-foreground uppercase">Track steer</p>
+      <p className="text-[10px] tracking-[0.12em] text-muted-foreground uppercase">Track steer</p>
       <div className="mt-1.5 grid grid-cols-3 gap-1.5">
         {(Object.keys(STEER_PRESETS) as Array<keyof typeof STEER_PRESETS>).map((id) => (
           <Button key={id} variant={sense === id ? "default" : "outline"} size="sm" onClick={() => setSense(id)}>
@@ -1100,7 +1141,19 @@ export function PassagesPanel() {
           </div>
         ) : null}
       </SignedIn>
-      <p className="mb-1 text-[10px] tracking-[0.14em] text-muted-foreground uppercase">Library</p>
+      {!drafts.length && !pub.isLoading && !(pub.data ?? []).length ? (
+        <div className="rounded-lg border border-dashed border-border px-3 py-4 text-center">
+          <p className="font-display text-base font-semibold">No tracks yet</p>
+          <p className="mx-auto mt-1 max-w-xs text-[12px] leading-snug text-muted-foreground">
+            Tap <span className="font-semibold text-foreground">Start</span> to record your way in
+            through a cut, or <span className="font-semibold text-foreground">Draw</span> to plan one
+            on the satellite. Saved tracks appear here to follow back out, even at night.
+          </p>
+        </div>
+      ) : null}
+      {(pub.data ?? []).length || pub.isLoading ? (
+        <p className="mb-1 text-[10px] tracking-[0.14em] text-muted-foreground uppercase">Library</p>
+      ) : null}
       {pub.isLoading ? <p className="text-sm text-muted-foreground">Loading cuts…</p> : null}
       <ul className="grid gap-1.5">
         {(pub.data ?? []).map((p) => (
