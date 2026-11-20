@@ -165,9 +165,21 @@ night stretches), bail-out anchorages along the way, and the model-agreement not
 | **H. Reef avoidance** | GBRMPA reef polygons loaded into the phone as obstacles with a safety margin | 1 week |
 | **I. Instruments and learned polars** | NMEA over Wi-Fi, forecast vs actual, polar learning | 3–4 weeks |
 | **J. Live lightning** | Licensed feed and alerts | 1 week plus the licence |
+| **K. Offline passage forecast** | "Save this passage offline", forecast age everywhere, offline re-route (12.1, first tier) | 4–5 days |
+| **L. Satellite top-ups** | Server-built tiny forecasts for low-bandwidth data and text messengers, plus a decoder (12.1) | 2 weeks plus the server |
+| **M. MOB recovery guide** | Drift cone from current and leeway, bearing to predicted position, recovery prompts, Mayday position card (12.2) | 1 week plus safety review |
+| **N. Weather window finder** | 10-day scan, best windows, suitability strip, window alert (12.3) | 1 week |
+| **O. Live re-routing** | New-run detection, meaningful-change rules, accept or keep banner (12.4) | 1 week |
+| **P. Squall radar overlay** | BOM (licensed) or alternative radar, loop, closing-cell alert (12.5) | 1 week plus the licence |
+| **Q. Speed vs polar** | % of polar live and per leg, diagnosis hints, learned polar (12.6, works with phase I) | 1–1.5 weeks |
 
-Recommended order: **A → B → C → D → E → H → F → G**, then I and J. A to E turn the planner into a
-full pre-departure tool. H matters most for reef safety. F turns it into a passage companion.
+Recommended order: **A → B → C → K → M → N → D → E → H → O → F → G**, then P, Q, I, L, J.
+- **First (A–C):** turn the planner into a proper pre-departure tool.
+- **K:** makes everything work offshore without signal.
+- **M:** a cheap, high-value safety feature on top of the existing MOB mark.
+- **N and O:** make the forecast work for you before and during the trip.
+- **H:** the most important item for reef safety.
+- **P, L and J:** depend on data licences or the server, so they come once those are in place.
 
 ## 11. Honest limits to state in the app
 
@@ -175,6 +187,103 @@ full pre-departure tool. H matters most for reef safety. F turns it into a passa
 - Currents are about 8 km detail and miss narrow passages. Tidal streams in a pass can be far stronger.
 - Built-in polars and sail ranges are templates. Results improve with the boat's own polar and sails.
 - Routes are planning aids. The skipper checks charts, keeps a lookout and decides.
+
+## 12. Additions (agreed)
+
+### 12.1 Offline and satellite weather
+
+Offshore there's no mobile signal, so the plan has to keep working without it.
+
+- **Download before leaving (default).** "Save this passage offline" stores the whole forecast for the
+  corridor and the departure window, covering every model plus waves, currents and storm fields, with a
+  margin for delays. The router, the timeline, re-routing from your position and the arrival forecast
+  then all work with no signal. The saved forecast's age shows everywhere ("forecast from 06:00, 9 h old").
+- **Top-up by satellite.** Three tiers, by what the boat carries:
+  - **Starlink or other internet.** Normal download, but compressed: the app only asks for the
+    corridor ahead of the boat for the next 48 h, so a full update costs about 50–150 KB.
+  - **Low-bandwidth data (Iridium GO!, satellite phones).** A *tiny forecast*: a few points along the
+    route, every 3 h, with wind, gust, sea, current and storm score, packed into a compact binary
+    format (a few KB). It needs a small Anchor Mate server that builds the packet from the
+    route the app uploads.
+  - **Text messengers (Garmin inReach and similar, about 160 characters per message).** An
+    email or SMS request to that server, answered by a coded text of a few points, for example
+    `T0 12/135 G18 S1.2/6 C+0.4 R0|T3 15/140 G21 S1.5/6 C-0.2 R1|…`. The app decodes a pasted reply.
+    Garmin also offers its own weather, and the app reads ours alongside it.
+- **Limits:** the satellite tiers need the Anchor Mate server (phase 3 in the planner plan) and an
+  account, so they suit the Pro + Passage tier. Messenger airtime is the user's own.
+
+### 12.2 Man-overboard recovery guide
+
+The MOB mark is already built. This turns it into a recovery tool.
+
+- **Drift prediction.** A person in the water moves almost entirely with the **current** (from the
+  saved or live forecast) plus a small **wind leeway**: roughly a few percent of the wind speed, from
+  published search-and-rescue leeway tables, to be calibrated before release. The chart shows where
+  they're likely to be at +5, +10 and +20 minutes, as a cone that widens with uncertainty, and
+  the bearing and distance to the *predicted* position, not the original mark.
+- **Recovery prompts.** Big-button, step-by-step prompts: *shout, point, throw*; recommended manoeuvre
+  by situation (Williamson turn at night or in poor visibility when going back down your own track
+  matters; quick-stop under sail in daylight); time since MOB; "call Mayday on VHF 16 / DSC distress"
+  with the position read out in large type for the radio call.
+- **Alerts.** Remote watch (built) sends an MOB alert with the position, and the drift cone updates with it.
+- **Limits:** drift is an estimate. The prompts support training and don't replace it. Wording to be
+  reviewed against current safety-at-sea guidance before release.
+
+### 12.3 Weather window finder
+
+- **What:** for a saved passage (or start and finish), look **up to 10 days ahead** and find the best
+  windows against your limits and settings, not only inside a window you picked.
+- **How:** scan departures every 3 h over the forecast range with a fast first pass (straight-line plus
+  tacking estimate per departure, about a millisecond each), then fully route the best 5–8 candidates
+  with all three plans. Forecast confidence falls after day 5, so later windows show a
+  lower confidence (ensemble spread where available).
+- **Output:** a 10-day strip coloured by suitability, the best windows listed ("Sat 06:00–14:00 ★ best,
+  Tue 18:00 good, Thu: front, avoid"), and the "Should I go?" verdict. Tapping a window opens it in the Passage screen.
+- **Optional alert:** "Tell me when a good window opens for this passage", which re-checks after each
+  new model run (uses 12.4).
+
+### 12.4 Live re-routing on new forecasts
+
+- **What:** while a plan is active (before leaving or under way), check for a newer model run every
+  6–12 h, re-route quietly from the boat's current position, and **only speak up when something
+  meaningful changes**.
+- **"Meaningful" means:** ETA moves more than 30 min (or 10%), a limit is now exceeded, storm risk rises
+  to likely or severe, the route shape moves more than a set distance, or the best departure changes.
+  Small changes are logged, not announced.
+- **How:** the cached forecast is replaced by the new run (or a satellite top-up, 12.1). The worker
+  re-plans from the live position. A banner shows the change with **Accept new route / Keep current**,
+  and a reason ("new ECMWF run: SE change 3 h earlier").
+- **Background:** on the phone this needs background fetch (iOS limits how often it runs) or runs when
+  the app is open. During a passage the app is usually open with GPS running, so it works.
+
+### 12.5 Squall radar overlay
+
+- **What:** real-time rain radar on the chart near the coast, showing where squalls actually are,
+  with loop playback of the last hour and direction of travel, so you can see which way a cell is heading.
+- **Source:** the **Bureau of Meteorology radar network** covers the Australian coast (about
+  250 km range per radar). BOM's radar imagery is copyright, and commercial use in an app needs a BOM
+  data licence or service agreement, so add this to the BOM licensing request already in STORE-RELEASE.
+  Alternatives with commercial licences: RainViewer (global composite) and Xweather.
+- **Squall alert:** if a radar cell is moving toward the boat (within X nm and closing), alert
+  "Squall 6 nm SW, closing, about 25 min". Reef early.
+- **Limits:** coastal only (radar range), and offshore falls back to the model storm risk (section 4).
+  Radar needs a connection (Starlink offshore, or mobile signal near the coast).
+
+### 12.6 Speed versus polar (performance monitor)
+
+- **What:** compare the boat's live speed with what its polar predicts for the current wind and angle,
+  as **% of polar**, live and averaged per leg.
+- **Wind source:** instrument wind over NMEA (best, phase I), or else the forecast wind at the boat's
+  position and time (good enough for trends, not for trim).
+- **Insights:**
+  - consistently 10–15% under in all conditions: hull or prop fouling, or the polar is optimistic;
+  - under only upwind: trim or sails;
+  - under at specific angles: wrong sail for that angle (ties into the sail plan);
+  - over polar: the polar is pessimistic.
+- **Learning:** clean samples (sailing, no motor, steady wind, not tacking) tune the boat's own polar
+  over time, which makes every future route more accurate. Learned and built-in polars are
+  shown side by side and the user chooses which to use.
+- **Privacy:** all on the phone, included in backups.
 
 ## Sources
 
