@@ -1,4 +1,4 @@
-import { useRef, useState, type PointerEvent } from "react";
+import { useRef, useState, type PointerEvent, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { WeatherTable } from "@/components/helm/weather-table";
 import { ForecastNow } from "@/components/helm/forecast-now";
@@ -395,8 +395,11 @@ function WxBody({
               </Button>
             ))}
         </div>
-        {layers.wind ? (
-          <div className="flex gap-1">
+      </div>
+
+      <SeaStack
+        modelChips={
+          <div className="flex shrink-0 gap-1">
             {WIND_ORDER.map((id) => {
               const row = available.find((m) => m.id === id);
               const live = Boolean(row && row.hours.length >= 2);
@@ -412,7 +415,7 @@ function WxBody({
                     }
                     toggleModel(id);
                   }}
-                  className={`h-8 min-w-0 flex-1 rounded-md border px-1 text-xs ${
+                  className={`h-9 rounded-md border px-1.5 text-t12 ${
                     on ? WIND_LOOK[id].chip : live ? WIND_LOOK[id].off : `${WIND_LOOK[id].off} opacity-45`
                   }`}
                 >
@@ -421,10 +424,7 @@ function WxBody({
               );
             })}
           </div>
-        ) : null}
-      </div>
-
-      <SeaStack
+        }
         hours={hours}
         windSeries={shown}
         horizonH={horizonH}
@@ -461,7 +461,7 @@ const DAY_FILL = "#16324a";
 const NIGHT_FILL = "#0b1828";
 const LANE_H = 120;
 const LANES: Array<{ key: keyof GraphLayers; title: string }> = [
-  { key: "wind", title: "Wind and gusts (kn)" },
+  { key: "wind", title: "Wind (kn)" },
   { key: "waves", title: "Sea" },
   { key: "tide", title: "Tide" },
   { key: "current", title: "Current (kn)" },
@@ -469,6 +469,7 @@ const LANES: Array<{ key: keyof GraphLayers; title: string }> = [
 const TWILIGHT_MS = 50 * 60_000;
 
 function SeaStack({
+  modelChips,
   hours,
   windSeries,
   horizonH,
@@ -483,6 +484,8 @@ function SeaStack({
   lng,
   onHorizon,
 }: {
+  /** Weather-model on/off buttons, shown in the wind graph's heading (they only affect wind). */
+  modelChips?: ReactNode;
   hours: WxHour[];
   windSeries: Array<{ id: WindModelId; hours: WxHour[] }>;
   horizonH: number;
@@ -659,7 +662,10 @@ function SeaStack({
       </div>
       {lanes.map((lane) => (
         <div key={lane.key}>
-          <p className="mb-0.5 text-t12 font-medium text-muted-foreground">{lane.title}</p>
+          <div className="mb-1 flex items-center justify-between gap-2">
+            <p className="min-w-0 text-t12 font-medium text-muted-foreground">{lane.title}</p>
+            {lane.key === "wind" ? modelChips : null}
+          </div>
           <ForecastGraph
             hours={hours}
             windSeries={windSeries}
