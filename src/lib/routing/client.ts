@@ -7,7 +7,7 @@ import type { WeatherField } from "./field.ts";
 import { ROUTE_MODELS, corridor, fetchField } from "./fetch-field.ts";
 import type { PlanOutput } from "./plan.ts";
 import type { BoatPerf } from "./polar.ts";
-import type { Limits } from "./router.ts";
+import type { Limits, RouteRules } from "./router.ts";
 import type { PlanReply, PlanRequest } from "./worker.ts";
 
 let worker: Worker | null = null;
@@ -25,6 +25,9 @@ export type PlanRun = {
   windowEnd: number;
   boat: BoatPerf;
   limits: Limits;
+  rules?: RouteRules;
+  /** Model ids from ROUTE_MODELS, main first. */
+  models?: string[];
   onStatus?: (s: string) => void;
 };
 
@@ -35,11 +38,14 @@ export async function runPlan(run: PlanRun): Promise<PlanOutput> {
   const grid = corridor(run.start, run.finish);
   const directNm = haversineMeters(run.start, run.finish) / 1852;
   const days = (run.windowEnd - Date.now()) / 86_400_000 + directNm / 4 / 24 + 1;
-  const key = `${grid.south.toFixed(2)},${grid.west.toFixed(2)},${grid.north.toFixed(2)},${grid.east.toFixed(2)},${Math.ceil(days)}`;
+  const models = (run.models?.length ? run.models : ["ecmwf", "gfs"])
+    .map((id) => ROUTE_MODELS.find((m) => m.id === id))
+    .filter((m): m is (typeof ROUTE_MODELS)[number] => Boolean(m));
+  const key = `${grid.south.toFixed(2)},${grid.west.toFixed(2)},${grid.north.toFixed(2)},${grid.east.toFixed(2)},${Math.ceil(days)},${models.map((m) => m.id).join("+")}`;
   let fields = cache.get(key);
   if (!fields || Date.now() - fields.at > 30 * 60_000) {
     run.onStatus?.("Downloading wind, waves and currents…");
-    const got = await Promise.all(ROUTE_MODELS.map((m) => fetchField(grid, m, days).catch(() => null)));
+    const got = await Promise.all(models.map((m) => fetchField(grid, m, days).catch(() => null)));
     const ok = got.filter((f): f is WeatherField => f != null);
     if (!ok.length) throw new Error("Couldn't download the forecast. Check your signal and try again.");
     fields = { at: Date.now(), fields: ok };
@@ -56,6 +62,7 @@ export async function runPlan(run: PlanRun): Promise<PlanOutput> {
     fields: fields.fields,
     boat: run.boat,
     limits: run.limits,
+    rules: run.rules,
     box: grid,
   };
   const w = getWorker();

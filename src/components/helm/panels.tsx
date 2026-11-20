@@ -326,7 +326,14 @@ export function AnchorPanel() {
           <Button variant="outline" size="sm" className="w-full" onClick={() => setMuted(!muted)}>
             {muted ? "Unmute" : "Silence"}
           </Button>
-          <Button variant="ghost" size="sm" onClick={() => simulateAnchorDrag()}>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              simulateAnchorDrag();
+              toast("Test: the alarm sounds in about 12 s. Live GPS pauses for 30 s, then the watch carries on.");
+            }}
+          >
             Test drag alarm
           </Button>
           <p className="text-[10px] tracking-[0.14em] text-muted-foreground uppercase">Alarm</p>

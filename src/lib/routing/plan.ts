@@ -6,7 +6,16 @@
 import type { LatLng } from "../geo.ts";
 import type { WeatherField } from "./field.ts";
 import type { BoatPerf } from "./polar.ts";
-import { route, type IsDay, type Limits, type Obstacle, type RouteMode, type RouteResult } from "./router.ts";
+import {
+  DEFAULT_RULES,
+  route,
+  type IsDay,
+  type Limits,
+  type Obstacle,
+  type RouteMode,
+  type RouteResult,
+  type RouteRules,
+} from "./router.ts";
 
 export type Light = "green" | "amber" | "red";
 
@@ -36,6 +45,7 @@ export type PlanInput = {
   limits: Limits;
   obstacle?: Obstacle;
   isDay?: IsDay;
+  rules?: RouteRules;
   /** Max departures to try (default 13: a 24 h window in 2 h steps). */
   maxDepartures?: number;
 };
@@ -81,10 +91,12 @@ function safetyScore(r: Ok, l: Limits, spreadH: number | null): number {
   );
 }
 
-function lightFor(results: Record<RouteMode, RouteResult>, l: Limits, spreadH: number | null): Light {
+function lightFor(results: Record<RouteMode, RouteResult>, l: Limits, spreadH: number | null, rules: RouteRules): Light {
   const f = results.fastest;
   if (!f.ok) return "red";
   const m = f.metrics;
+  if (rules.thunder !== "ignore" && m.maxThunder >= 3) return "red";
+  if ((rules.thunder !== "ignore" && m.maxThunder >= 2) || (rules.squall !== "ignore" && m.squallHours >= 0.5)) return "amber";
   const near = m.maxWindKn > l.maxWindKn * 0.85 || m.maxGustKn > l.maxGustKn * 0.85 || m.maxWaveM > l.maxWaveM * 0.85;
   if (near || m.arrivesInDark || m.windAgainstCurrentHours >= 1 || (spreadH ?? 0) > 3) return "amber";
   return "green";
@@ -93,6 +105,7 @@ function lightFor(results: Record<RouteMode, RouteResult>, l: Limits, spreadH: n
 export function planPassage(input: PlanInput): PlanOutput {
   const [main, ...others] = input.fields;
   if (!main) throw new Error("No weather to route on.");
+  const rules = input.rules ?? DEFAULT_RULES;
   const rows: DepartureRow[] = [];
   for (const departAt of departureTimes(input.windowStart, input.windowEnd, input.maxDepartures)) {
     const results = {} as Record<RouteMode, RouteResult>;
@@ -108,15 +121,19 @@ export function planPassage(input: PlanInput): PlanOutput {
       }
       if (arrivals.length > 1) spreadH = (Math.max(...arrivals) - Math.min(...arrivals)) / H;
     }
-    rows.push({ departAt, results, spreadH, light: lightFor(results, input.limits, spreadH) });
+    rows.push({ departAt, results, spreadH, light: lightFor(results, input.limits, spreadH, rules) });
   }
+  // Night arrivals: "avoid" skips them when there is any daylight alternative; "penalise" weighs them.
+  const anyDay = (mode: RouteMode) => rows.some((row) => row.results[mode].ok && !(row.results[mode] as Ok).metrics.arrivesInDark);
   const pick = (mode: RouteMode, score: (r: Ok, row: DepartureRow) => number): Choice | null => {
     let best: Choice | null = null;
     let bestScore = Infinity;
+    const dayOnly = rules.night === "avoid" && anyDay(mode);
     for (const row of rows) {
       const r = row.results[mode];
       if (!r.ok) continue;
-      const s = score(r, row);
+      if (dayOnly && r.metrics.arrivesInDark) continue;
+      const s = score(r, row) * (rules.night === "penalise" && r.metrics.arrivesInDark ? 1.25 : 1);
       if (s < bestScore) {
         bestScore = s;
         best = { row, result: r };

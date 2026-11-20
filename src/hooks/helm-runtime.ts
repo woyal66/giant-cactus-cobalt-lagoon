@@ -4,7 +4,7 @@ import { toast } from "sonner";
 import { cornerIndexes, formatMeters, haversineMeters, shouldAppendTrack } from "@/lib/geo";
 import { boatInsideWatch, anchorPollMs, ANCHOR_POLL_FAST_MS, fixPreciseForWatch } from "@/lib/anchor";
 import { HELM_ZOOM } from "@/lib/imagery";
-import { startAlarmTone, stopAlarmTone, unlockAlarmAudio } from "@/lib/alarm";
+import { previewAlarm, startAlarmTone, stopAlarmTone, unlockAlarmAudio } from "@/lib/alarm";
 import { setSteerEar, stopSteerEar } from "@/lib/steer-audio";
 import { markNav, steerCue } from "@/lib/steer";
 import {
@@ -665,6 +665,11 @@ export function useAutoNight() {
  */
 export function runAlarmDemo(): () => void {
   const s = useHelm.getState();
+  // A real watch is running: never fake a drag on it (and never pause its GPS). Just play the sound.
+  if (s.anchor?.radiusLocked && !s.anchor.demo) {
+    previewAlarm(s.alarmSound);
+    return () => stopAlarmTone();
+  }
   const prevBoat = s.boat;
   let madeAnchor = false;
   if (!s.anchor) {

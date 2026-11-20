@@ -16,6 +16,26 @@ import { bearingDegrees, destPoint, haversineMeters, type LatLng } from "../geo.
 import { conditionsAt, fieldEnd, type Conditions, type WeatherField } from "./field.ts";
 import { boatSpeed, noGoDeg, waveFactor, type BoatPerf } from "./polar.ts";
 import { effectiveWave } from "./waves.ts";
+import { isSquall, thunderRisk, type Risk, type Treat } from "./storm.ts";
+
+/** How each hazard is handled. Chosen on the Routing Settings page. */
+export type RouteRules = {
+  thunder: Treat;
+  squall: Treat;
+  windOverTide: Treat;
+  /** Arriving in the dark (applied when choosing departures). */
+  night: Treat;
+  /** 0 = speed matters most, 1 = comfort matters most (scales comfort penalties). */
+  comfortWeight: number;
+};
+
+export const DEFAULT_RULES: RouteRules = {
+  thunder: "penalise",
+  squall: "penalise",
+  windOverTide: "penalise",
+  night: "warn",
+  comfortWeight: 0.5,
+};
 
 export type RouteMode = "fastest" | "comfort" | "safest";
 
@@ -43,6 +63,7 @@ export type RouteInput = {
   limits: Limits;
   obstacle?: Obstacle;
   isDay?: IsDay;
+  rules?: RouteRules;
 };
 
 export type RoutePoint = LatLng & {
@@ -56,10 +77,17 @@ export type RoutePoint = LatLng & {
   waveAmp: number;
   /** Current along the boat's track, knots (+ fair, − foul). */
   curAlongKn: number;
+  /** Thunderstorm risk 0–3 and rain squall flag on this leg. */
+  thunder: Risk;
+  squall: boolean;
   curKn: number;
   curDir: number;
-  /** True wind angle on this leg, 0–180. */
+  /** True wind angle on this leg, 0–180 (wind over the water). */
   twa: number;
+  /** True wind speed over the water, knots. */
+  twsKn: number;
+  /** Which side the wind is on: 1 starboard, -1 port, 0 under engine. */
+  tack: number;
   stwKn: number;
   sogKn: number;
   motoring: boolean;
@@ -80,6 +108,10 @@ export type RouteMetrics = {
   maxWaveAmp: number;
   /** Average current along the track, knots (+ fair, − foul). */
   avgCurrentKn: number;
+  maxThunder: Risk;
+  /** Hours with thunderstorm risk "likely" or worse. */
+  thunderHours: number;
+  squallHours: number;
   arrivesInDark: boolean;
 };
 
@@ -103,7 +135,7 @@ type Node = LatLng & {
   /** Which side the wind is on (-1 / 1), 0 at the start or under engine. */
   side: number;
   /** Leg sailed to reach this node. */
-  leg: Omit<RoutePoint, "lat" | "lng" | "at"> | null;
+  leg: Omit<RoutePoint, "lat" | "lng" | "at" | "tack"> | null;
 };
 
 const H = 3_600_000;
@@ -139,9 +171,12 @@ type Step = {
   stwKn: number;
   motoring: boolean;
   twa: number;
+  twsKn: number;
   waveM: number;
   waveAmp: number;
   curAlongKn: number;
+  thunder: Risk;
+  squall: boolean;
   /** Multiplier ≥ 1 on time for this step, or Infinity if not allowed. */
   penalty: number;
 };
@@ -166,6 +201,7 @@ export function stepOn(
   headingDeg: number,
   mode: RouteMode,
   limits: Limits,
+  rules: RouteRules = DEFAULT_RULES,
 ): Step {
   // The boat sails in the wind over the moving water, not the forecast (ground) wind:
   // a current against the wind adds to the breeze, a current with it takes away.
@@ -184,27 +220,41 @@ export function stepOn(
   const cog = ((Math.atan2(vx, vy) * 180) / Math.PI + 360) % 360;
   const curAlong = c.curKn * Math.cos(((c.curDir - cog) * Math.PI) / 180);
 
+  const thunder = thunderRisk(c);
+  const squall = isSquall(c);
+  const wot = wave.amp >= 1.15 || windAgainstCurrent(c);
+
   const margin = mode === "safest" ? 0.85 : 1;
   const over =
     c.windKn > limits.maxWindKn * margin ||
     c.gustKn > limits.maxGustKn * margin ||
     wave.heightM > limits.maxWaveM * margin ||
-    (mode === "safest" && wave.blocked);
+    (mode === "safest" && wave.blocked) ||
+    (rules.thunder === "avoid" && thunder >= 2) ||
+    (rules.squall === "avoid" && squall) ||
+    (rules.windOverTide === "avoid" && (wave.amp >= 1.3 || wave.blocked));
   let penalty = over ? Infinity : 1;
+  // Hazards the skipper asked to "prefer to avoid" cost time in every plan, more in Safest.
+  if (penalty !== Infinity) {
+    const k = mode === "safest" ? 2 : 1;
+    if (rules.thunder === "penalise" && thunder >= 1) penalty += 0.25 * thunder * k;
+    if (rules.squall === "penalise" && squall) penalty += 0.4 * k;
+    if (rules.windOverTide === "penalise" && wot && mode !== "fastest") penalty += 0.3 * k;
+  }
   if (penalty !== Infinity && mode === "comfort") {
-    if (!sp.motoring && twa < 60) penalty += 0.45;
-    if (wave.heightM > 1.2) penalty += 0.25 * (wave.heightM - 1.2);
+    const w = 0.5 + Math.min(1, Math.max(0, rules.comfortWeight));
+    if (!sp.motoring && twa < 60) penalty += 0.45 * w;
+    if (wave.heightM > 1.2) penalty += 0.25 * (wave.heightM - 1.2) * w;
     // Short, steep wind-over-tide chop is the most uncomfortable sea there is.
-    if (wave.steep > 1.3 && wave.heightM > 0.6) penalty += 0.4 * (wave.steep - 1.3);
-    if (c.gustKn > 22) penalty += 0.03 * (c.gustKn - 22);
+    if (wave.steep > 1.3 && wave.heightM > 0.6) penalty += 0.4 * (wave.steep - 1.3) * w;
+    if (c.gustKn > 22) penalty += 0.03 * (c.gustKn - 22) * w;
     if (norm180(c.waveDir - headingDeg) > 60 && norm180(c.waveDir - headingDeg) < 120 && wave.heightM > 1.5) {
-      penalty += 0.2; // rolling in beam seas
+      penalty += 0.2 * w; // rolling in beam seas
     }
   }
   if (penalty !== Infinity && mode === "safest") {
     penalty += 0.8 * Math.pow(c.windKn / limits.maxWindKn, 4);
     penalty += 0.8 * Math.pow(wave.heightM / limits.maxWaveM, 4);
-    if (wave.amp >= 1.15 || windAgainstCurrent(c)) penalty += 0.5;
     if (wave.blocked) penalty += 2;
   }
   return {
@@ -213,9 +263,12 @@ export function stepOn(
     stwKn: stw,
     motoring: sp.motoring,
     twa,
+    twsKn: ww.kn,
     waveM: wave.heightM,
     waveAmp: wave.amp,
     curAlongKn: curAlong,
+    thunder,
+    squall,
     penalty,
   };
 }
@@ -243,9 +296,13 @@ function toPoints(nodes: Node[]): RoutePoint[] {
       waveM: leg?.waveM ?? 0,
       waveAmp: leg?.waveAmp ?? 1,
       curAlongKn: leg?.curAlongKn ?? 0,
+      thunder: leg?.thunder ?? 0,
+      squall: leg?.squall ?? false,
       curKn: leg?.curKn ?? 0,
       curDir: leg?.curDir ?? 0,
       twa: leg?.twa ?? 0,
+      twsKn: leg?.twsKn ?? 0,
+      tack: nodes[i + 1]?.side ?? n.side,
       stwKn: leg?.stwKn ?? 0,
       sogKn: leg?.sogKn ?? 0,
       motoring: leg?.motoring ?? false,
@@ -262,6 +319,9 @@ export function metricsOf(points: RoutePoint[], isDay?: IsDay): RouteMetrics {
   let steep = 0;
   let maxAmp = 1;
   let curSum = 0;
+  let maxThunder: Risk = 0;
+  let thunderH = 0;
+  let squallH = 0;
   let maxWind = 0;
   let maxGust = 0;
   let maxWave = 0;
@@ -282,6 +342,9 @@ export function metricsOf(points: RoutePoint[], isDay?: IsDay): RouteMetrics {
     if (a.waveAmp >= 1.15) steep += h;
     maxAmp = Math.max(maxAmp, a.waveAmp);
     curSum += a.curAlongKn * h;
+    if (a.thunder > maxThunder) maxThunder = a.thunder;
+    if (a.thunder >= 2) thunderH += h;
+    if (a.squall) squallH += h;
   }
   const first = points[0]!;
   const last = points[points.length - 1]!;
@@ -297,14 +360,31 @@ export function metricsOf(points: RoutePoint[], isDay?: IsDay): RouteMetrics {
     steepSeaHours: steep,
     maxWaveAmp: maxAmp,
     avgCurrentKn: (last.at - first.at) / H > 0 ? curSum / ((last.at - first.at) / H) : 0,
+    maxThunder,
+    thunderHours: thunderH,
+    squallHours: squallH,
     arrivesInDark: isDay ? !isDay(last.lat, last.lng, last.at) : false,
   };
 }
 
-function warningsFor(m: RouteMetrics, limits: Limits): string[] {
+function warningsFor(m: RouteMetrics, limits: Limits, rules: RouteRules = DEFAULT_RULES): string[] {
   const w: string[] = [];
-  if (m.arrivesInDark) w.push("Arrives after dark. Leave earlier or later to see reefs and marks.");
-  if (m.steepSeaHours >= 0.5) {
+  if (rules.thunder !== "ignore" && m.maxThunder >= 1) {
+    w.push(
+      m.maxThunder >= 3
+        ? `Severe thunderstorms possible (${Math.max(1, Math.round(m.thunderHours))} h). Strongly consider another departure.`
+        : m.maxThunder >= 2
+          ? `Thunderstorms likely for about ${Math.max(1, Math.round(m.thunderHours))} h. Reef early and watch the sky.`
+          : "Thunderstorms possible on the way (unstable air).",
+    );
+  }
+  if (rules.squall !== "ignore" && m.squallHours >= 0.5) {
+    w.push(`Rain squalls (heavy rain with gusts over 25 kn) for about ${Math.max(1, Math.round(m.squallHours))} h.`);
+  }
+  if (rules.night !== "ignore" && m.arrivesInDark) w.push("Arrives after dark. Leave earlier or later to see reefs and marks.");
+  if (rules.windOverTide === "ignore") {
+    // no wind-over-tide warnings
+  } else if (m.steepSeaHours >= 0.5) {
     w.push(
       `About ${Math.max(1, Math.round(m.steepSeaHours))} h of wind over tide: seas up to ${Math.round((m.maxWaveAmp - 1) * 100)}% higher and steeper. Try a departure that carries the tide with the wind.`,
     );
@@ -321,6 +401,7 @@ function warningsFor(m: RouteMetrics, limits: Limits): string[] {
 /** Route one departure, one model, one plan. */
 export function route(input: RouteInput): RouteResult {
   const { start, finish, departAt, field, boat, mode, limits, obstacle, isDay } = input;
+  const rules = input.rules ?? DEFAULT_RULES;
   const fail = (reason: string): RouteResult => ({ ok: false, mode, model: field.model, departAt, reason });
   const directM = haversineMeters(start, finish);
   if (directM < 200) return fail("Start and finish are too close together.");
@@ -344,7 +425,7 @@ export function route(input: RouteInput): RouteResult {
       const toFinish = bearingDegrees(n, finish);
       const remainM = haversineMeters(n, finish);
       for (const h of finishHeadings(boat, c, toFinish)) {
-        const s = stepOn(boat, c, h, mode, limits);
+        const s = stepOn(boat, c, h, mode, limits, rules);
         if (!Number.isFinite(s.penalty) || s.sogKn < 0.5) continue;
         // Component of ground speed toward the finish.
         const made = s.sogKn * Math.cos(((s.cogDeg - toFinish) * Math.PI) / 180);
@@ -368,7 +449,7 @@ export function route(input: RouteInput): RouteResult {
         }
       }
       for (let h = 0; h < 360; h += HEADING_STEP) {
-        const s = stepOn(boat, c, h, mode, limits);
+        const s = stepOn(boat, c, h, mode, limits, rules);
         if (!Number.isFinite(s.penalty) || s.sogKn < 0.3) continue;
         const p = destPoint(n, s.cogDeg, s.sogKn * dtH * NM);
         if (haversineMeters(p, finish) > maxRange) continue;
@@ -414,7 +495,7 @@ export function route(input: RouteInput): RouteResult {
     arriveAt: best.at,
     points,
     metrics,
-    warnings: warningsFor(metrics, limits),
+    warnings: warningsFor(metrics, limits, rules),
   };
 }
 
@@ -432,11 +513,14 @@ function legOf(c: Conditions, s: Step): NonNullable<Node["leg"]> {
     curKn: c.curKn,
     curDir: c.curDir,
     twa: s.twa,
+    twsKn: s.twsKn,
     stwKn: s.stwKn,
     sogKn: s.sogKn,
     motoring: s.motoring,
     waveM: s.waveM,
     waveAmp: s.waveAmp,
     curAlongKn: s.curAlongKn,
+    thunder: s.thunder,
+    squall: s.squall,
   };
 }

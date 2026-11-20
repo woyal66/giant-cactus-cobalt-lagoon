@@ -13,7 +13,9 @@ import {
 } from "@/lib/units";
 import { isTopic } from "@/lib/remote-watch";
 import { BOAT_TYPES, type BoatType } from "@/lib/routing/polar";
-import { DEFAULT_LIMITS, type Limits } from "@/lib/routing/router";
+import { DEFAULT_LIMITS, DEFAULT_RULES, type Limits, type RouteRules } from "@/lib/routing/router";
+import { isTreat } from "@/lib/routing/storm";
+import { DEFAULT_SAILS, readSails, type SailDef } from "@/lib/routing/sails";
 import { boxShortM, squareFromCorners, type BBox, type OfflinePack } from "@/lib/offline-tiles";
 import {
   clampAlarmRadius,
@@ -574,6 +576,47 @@ export type RoutePrefs = {
   motorOnNose: boolean;
   motorKn: number;
   limits: Limits;
+  preset: RoutePreset;
+  rules: RouteRules;
+  /** Weather models to route on; the first is the main one. */
+  models: string[];
+  sails: SailDef[];
+};
+
+export type RoutePreset = "family" | "delivery" | "racing" | "custom";
+
+/** Starting points; any change afterwards makes the preset "custom". */
+export const ROUTE_PRESETS: Record<Exclude<RoutePreset, "custom">, { label: string; detail: string; prefs: Partial<RoutePrefs> }> = {
+  family: {
+    label: "Family cruising",
+    detail: "Cautious limits, keeps clear of storms, squalls and wind over tide, daylight arrivals.",
+    prefs: {
+      limits: { maxWindKn: 20, maxGustKn: 28, maxWaveM: 2 },
+      motorBelowKn: 4,
+      motorWindBelowKn: 6,
+      rules: { thunder: "avoid", squall: "avoid", windOverTide: "avoid", night: "avoid", comfortWeight: 0.85 },
+    },
+  },
+  delivery: {
+    label: "Delivery",
+    detail: "Efficient and tolerant, prefers to avoid hazards, motors through calms.",
+    prefs: {
+      limits: { maxWindKn: 28, maxGustKn: 38, maxWaveM: 3 },
+      motorBelowKn: 4,
+      motorWindBelowKn: 0,
+      rules: { thunder: "penalise", squall: "penalise", windOverTide: "penalise", night: "warn", comfortWeight: 0.3 },
+    },
+  },
+  racing: {
+    label: "Racing",
+    detail: "Fastest route, wide limits, hazards shown as warnings only, no engine.",
+    prefs: {
+      limits: { maxWindKn: 35, maxGustKn: 45, maxWaveM: 4 },
+      motorBelowKn: 0,
+      motorWindBelowKn: 0,
+      rules: { thunder: "warn", squall: "warn", windOverTide: "warn", night: "ignore", comfortWeight: 0 },
+    },
+  },
 };
 
 export const DEFAULT_ROUTE_PREFS: RoutePrefs = {
@@ -583,6 +626,10 @@ export const DEFAULT_ROUTE_PREFS: RoutePrefs = {
   motorOnNose: false,
   motorKn: 6,
   limits: DEFAULT_LIMITS,
+  preset: "custom",
+  rules: DEFAULT_RULES,
+  models: ["ecmwf", "gfs"],
+  sails: DEFAULT_SAILS,
 };
 
 function readRoutePrefs(v: unknown): RoutePrefs {
@@ -601,6 +648,26 @@ function readRoutePrefs(v: unknown): RoutePrefs {
       maxGustKn: num(l.maxGustKn, DEFAULT_LIMITS.maxGustKn, 10, 60),
       maxWaveM: num(l.maxWaveM, DEFAULT_LIMITS.maxWaveM, 0.5, 8),
     },
+    preset: p.preset === "family" || p.preset === "delivery" || p.preset === "racing" ? p.preset : "custom",
+    rules: readRules(p.rules),
+    models: Array.isArray(p.models) && p.models.length && p.models.every((m) => typeof m === "string")
+      ? p.models.slice(0, 4)
+      : DEFAULT_ROUTE_PREFS.models,
+    sails: readSails(p.sails),
+  };
+}
+
+function readRules(v: unknown): RouteRules {
+  const r = (v ?? {}) as Partial<RouteRules>;
+  return {
+    thunder: isTreat(r.thunder) ? r.thunder : DEFAULT_RULES.thunder,
+    squall: isTreat(r.squall) ? r.squall : DEFAULT_RULES.squall,
+    windOverTide: isTreat(r.windOverTide) ? r.windOverTide : DEFAULT_RULES.windOverTide,
+    night: isTreat(r.night) ? r.night : DEFAULT_RULES.night,
+    comfortWeight:
+      typeof r.comfortWeight === "number" && Number.isFinite(r.comfortWeight)
+        ? Math.min(1, Math.max(0, r.comfortWeight))
+        : DEFAULT_RULES.comfortWeight,
   };
 }
 
@@ -1198,7 +1265,19 @@ export const useHelm = create<HelmState & HelmActions>()(
         set({ routeStart, routePreview: null, tapMode: routeStart ? "route-finish" : "route-start" }),
       setRouteFinish: (routeFinish) => set({ routeFinish, routePreview: null, tapMode: "none" }),
       setRoutePreview: (routePreview) => set({ routePreview }),
-      setRoutePrefs: (p) => set({ routePrefs: { ...get().routePrefs, ...p, limits: { ...get().routePrefs.limits, ...(p.limits ?? {}) } } }),
+      setRoutePrefs: (p) => {
+        const cur = get().routePrefs;
+        set({
+          routePrefs: {
+            ...cur,
+            ...p,
+            limits: { ...cur.limits, ...(p.limits ?? {}) },
+            rules: { ...cur.rules, ...(p.rules ?? {}) },
+            // Hand-edits turn a preset into Custom; choosing a preset sets it explicitly.
+            preset: p.preset ?? (Object.keys(p).some((k) => k !== "sails" && k !== "boatType" && k !== "models") ? "custom" : cur.preset),
+          },
+        });
+      },
       endRoutePlan: () =>
         set({
           routeStart: null,

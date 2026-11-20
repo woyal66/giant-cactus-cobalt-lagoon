@@ -13,6 +13,8 @@ export type RouteModel = { id: string; label: string; param: string };
 export const ROUTE_MODELS: RouteModel[] = [
   { id: "ecmwf", label: "ECMWF", param: "ecmwf_ifs025" },
   { id: "gfs", label: "GFS", param: "gfs_global" },
+  { id: "icon", label: "ICON", param: "icon_global" },
+  { id: "ukmo", label: "UKMO", param: "ukmo_global_deterministic_10km" },
 ];
 
 export type CorridorGrid = BBox & { lats: number[]; lngs: number[] };
@@ -71,6 +73,13 @@ export function fieldFromResponses(
     wavePer: layers(),
     curKn: layers(),
     curDir: layers(),
+    capeJkg: layers(),
+    liftedIndex: layers(),
+    cinJkg: layers(),
+    precipMm: layers(),
+    code: layers(),
+    tempC: layers(),
+    fetchedAt: Date.now(),
   };
   const put = (dst: Float32Array[], src: (number | null)[] | undefined, k: number, scale = 1, idx?: Map<number, number>) => {
     if (!src) return;
@@ -86,6 +95,12 @@ export function fieldFromResponses(
     put(f.windKn, w?.wind_speed_10m, k);
     put(f.windDir, w?.wind_direction_10m, k);
     put(f.gustKn, w?.wind_gusts_10m, k);
+    put(f.capeJkg!, w?.cape, k);
+    put(f.liftedIndex!, w?.lifted_index, k);
+    put(f.cinJkg!, w?.convective_inhibition, k);
+    put(f.precipMm!, w?.precipitation, k);
+    put(f.code!, w?.weather_code, k);
+    put(f.tempC!, w?.temperature_2m, k);
     const m = marine?.[k]?.hourly;
     if (m?.time) {
       const idx = new Map(m.time.map((s, i) => [s * 1000, i] as const));
@@ -122,7 +137,10 @@ export async function fetchField(grid: CorridorGrid, model: RouteModel, days: nu
   const w = openMeteoUrl("https://api.open-meteo.com/v1/forecast");
   w.searchParams.set("latitude", lat);
   w.searchParams.set("longitude", lng);
-  w.searchParams.set("hourly", "wind_speed_10m,wind_direction_10m,wind_gusts_10m");
+  w.searchParams.set(
+    "hourly",
+    "wind_speed_10m,wind_direction_10m,wind_gusts_10m,cape,lifted_index,convective_inhibition,precipitation,weather_code,temperature_2m",
+  );
   w.searchParams.set("wind_speed_unit", "kn");
   w.searchParams.set("models", model.param);
   w.searchParams.set("timeformat", "unixtime");

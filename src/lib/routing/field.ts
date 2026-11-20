@@ -27,9 +27,16 @@ export type FieldData = {
   wavePer?: Float32Array[];
   curKn: Float32Array[];
   curDir: Float32Array[];
+  /** Convective fields for storm risk (optional). */
+  capeJkg?: Float32Array[];
+  liftedIndex?: Float32Array[];
+  cinJkg?: Float32Array[];
+  precipMm?: Float32Array[];
+  code?: Float32Array[];
+  tempC?: Float32Array[];
 };
 
-export type WeatherField = Grid & FieldData & { model: string };
+export type WeatherField = Grid & FieldData & { model: string; fetchedAt?: number };
 
 export type Conditions = {
   windKn: number;
@@ -44,6 +51,12 @@ export type Conditions = {
   curKn: number;
   /** Direction the current sets TOWARD. */
   curDir: number;
+  capeJkg: number;
+  liftedIndex: number;
+  cinJkg: number;
+  precipMm: number;
+  code: number;
+  tempC: number;
 };
 
 const DEG = Math.PI / 180;
@@ -150,6 +163,9 @@ export function conditionsAt(f: WeatherField, lat: number, lng: number, at: numb
   const cur = vector(f.curKn, f.curDir, ti, wt);
   const gust = scalar(f.gustKn, ti, wt);
   const per = f.wavePer ? scalar(f.wavePer, ti, wt) : NaN;
+  const opt = (L?: Float32Array[]) => (L ? scalar(L, ti, wt) : NaN);
+  // Weather code is a category: take the nearest cell and hour, never an average.
+  const code = f.code ? f.code[ti.t < 0.5 ? ti.i0 : ti.i1]![wt.idx[wt.w.indexOf(Math.max(...wt.w))]!]! : NaN;
   return {
     windKn: Number.isFinite(wind.speed) ? wind.speed : 0,
     windDir: Number.isFinite(wind.dir) ? wind.dir : 0,
@@ -159,6 +175,12 @@ export function conditionsAt(f: WeatherField, lat: number, lng: number, at: numb
     wavePerS: Number.isFinite(per) ? per : 0,
     curKn: Number.isFinite(cur.speed) ? cur.speed : 0,
     curDir: Number.isFinite(cur.dir) ? cur.dir : 0,
+    capeJkg: opt(f.capeJkg),
+    liftedIndex: opt(f.liftedIndex),
+    cinJkg: opt(f.cinJkg),
+    precipMm: Number.isFinite(opt(f.precipMm)) ? opt(f.precipMm) : 0,
+    code: Number.isFinite(code) ? code : 0,
+    tempC: opt(f.tempC),
   };
 }
 

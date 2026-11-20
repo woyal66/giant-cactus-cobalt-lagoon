@@ -150,3 +150,30 @@ test("foul current is reported", () => {
   assert.ok(r.metrics.avgCurrentKn < -1);
   assert.match(r.warnings.join(" "), /Foul tide/);
 });
+
+test("storm rules: avoid refuses, warn flags, a storm cell to one side is routed around", () => {
+  const stormy = uniformField({ windKn: 14, windDir: 0 }, box, t0, 48);
+  stormy.capeJkg = stormy.windKn.map(() => new Float32Array(9).fill(3500));
+  stormy.precipMm = stormy.windKn.map(() => new Float32Array(9).fill(3));
+  stormy.tempC = stormy.windKn.map(() => new Float32Array(9).fill(27));
+  const avoid = { thunder: "avoid", squall: "avoid", windOverTide: "penalise", night: "warn", comfortWeight: 0.5 } as const;
+  const warn = { ...avoid, thunder: "warn", squall: "warn" } as const;
+  assert.equal(route({ start: A, finish: EAST, departAt: t0, field: stormy, boat, mode: "fastest", limits: DEFAULT_LIMITS, rules: avoid }).ok, false);
+  const w = route({ start: A, finish: EAST, departAt: t0, field: stormy, boat, mode: "fastest", limits: DEFAULT_LIMITS, rules: warn });
+  ok(w);
+  assert.equal(w.metrics.maxThunder, 2);
+  assert.match(w.warnings.join(" "), /Thunderstorms likely/);
+
+  // Storm only in the southern half of the grid (rows 0 and 1 of 3 sit south of -23.5).
+  const cell = uniformField({ windKn: 14, windDir: 0 }, box, t0, 48);
+  const south = () => { const a = new Float32Array(9); a.fill(0); for (let i = 0; i < 3; i++) a[i] = 3500; return a; };
+  cell.capeJkg = cell.windKn.map(south);
+  cell.precipMm = cell.windKn.map(() => new Float32Array(9).fill(3));
+  cell.tempC = cell.windKn.map(() => new Float32Array(9).fill(27));
+  const S = { lat: -23.4, lng: 152.0 };
+  const E2 = { lat: -23.4, lng: 152.5 };
+  const pen = route({ start: S, finish: E2, departAt: t0, field: cell, boat, mode: "safest", limits: DEFAULT_LIMITS });
+  ok(pen);
+  const meanLat = pen.points.reduce((a, p) => a + p.lat, 0) / pen.points.length;
+  assert.ok(meanLat >= -23.42, `route should keep north of the storm, mean lat ${meanLat}`);
+});

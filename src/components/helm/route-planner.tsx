@@ -3,10 +3,10 @@ import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Sheet } from "@/components/helm/panels";
+import { RouteSettings, SettingsSummary } from "@/components/helm/route-settings";
 import { formatHeading, formatMeters, bearingDegrees, haversineMeters } from "@/lib/geo";
 import { formatDepth } from "@/lib/units";
 import { shareGpx } from "@/lib/share-gpx";
-import { BOAT_TYPES } from "@/lib/routing/polar";
 import { runPlan } from "@/lib/routing/client";
 import type { Choice, DepartureRow, PlanOutput } from "@/lib/routing/plan";
 import type { RouteMetrics, RouteMode, RoutePoint } from "@/lib/routing/router";
@@ -48,6 +48,7 @@ export function RoutePlanner() {
   const start = useHelm((s) => s.routeStart);
   const finish = useHelm((s) => s.routeFinish);
   const boatFix = useHelm((s) => s.boat);
+  const anchorAt = useHelm((s) => (s.anchor?.radiusLocked && !s.anchor.demo ? s.anchor : null));
   const setStart = useHelm((s) => s.setRouteStart);
   const end = useHelm((s) => s.endRoutePlan);
 
@@ -66,9 +67,15 @@ export function RoutePlanner() {
               : "Now tap where you're going. Zoom out to see both ends."}
           </p>
           <div className="mt-2 grid grid-cols-2 gap-2">
-            {picking === "start" && boatFix ? (
-              <Button variant="outline" onClick={() => setStart({ lat: boatFix.lat, lng: boatFix.lng })}>
-                From the boat
+            {picking === "start" && (anchorAt || boatFix) ? (
+              <Button
+                variant="outline"
+                onClick={() => {
+                  const at = anchorAt ?? boatFix!;
+                  setStart({ lat: at.lat, lng: at.lng });
+                }}
+              >
+                {anchorAt ? "From the anchorage" : "From the boat"}
               </Button>
             ) : picking === "finish" ? (
               <Button variant="outline" onClick={() => setStart(null)}>
@@ -93,10 +100,10 @@ function PlannerSheet() {
   const start = useHelm((s) => s.routeStart)!;
   const finish = useHelm((s) => s.routeFinish)!;
   const prefs = useHelm((s) => s.routePrefs);
-  const setPrefs = useHelm((s) => s.setRoutePrefs);
   const hull = useHelm((s) => s.hull);
   const setPreview = useHelm((s) => s.setRoutePreview);
   const begin = useHelm((s) => s.beginRoutePlan);
+  const [view, setView] = useState<"plan" | "settings">("plan");
   const [offsetH, setOffsetH] = useState(0);
   const [windowH, setWindowH] = useState(24);
   const [busy, setBusy] = useState<string | null>(null);
@@ -125,6 +132,8 @@ function PlannerSheet() {
         motorKn: prefs.motorKn,
       },
       limits: prefs.limits,
+      rules: prefs.rules,
+      models: prefs.models,
       onStatus: setBusy,
     })
       .then((o) => {
@@ -160,7 +169,9 @@ function PlannerSheet() {
         shoals or bommies. Check every leg against a chart and keep a lookout.
       </p>
 
-      {!out ? (
+      {view === "settings" ? (
+        <RouteSettings onDone={() => setView("plan")} />
+      ) : !out ? (
         <>
           <p className="mb-1 text-[10px] tracking-[0.14em] text-muted-foreground uppercase">Leave from</p>
           <div className="mb-2 grid grid-cols-4 gap-1.5">
@@ -178,21 +189,12 @@ function PlannerSheet() {
               </Button>
             ))}
           </div>
-          <p className="mb-1 text-[10px] tracking-[0.14em] text-muted-foreground uppercase">Boat ({hull.loaM.toFixed(1)} m from the Boat panel)</p>
-          <div className="mb-2 grid grid-cols-2 gap-1.5">
-            {BOAT_TYPES.map((b) => (
-              <Button key={b.id} size="sm" variant={prefs.boatType === b.id ? "default" : "outline"} onClick={() => setPrefs({ boatType: b.id })}>
-                {b.label}
-              </Button>
-            ))}
+          <div className="mb-2 flex items-start justify-between gap-2 rounded-md border border-border bg-background px-3 py-2">
+            <SettingsSummary />
+            <Button size="sm" variant="outline" className="shrink-0" onClick={() => setView("settings")}>
+              Settings
+            </Button>
           </div>
-          <p className="mb-1 text-[10px] tracking-[0.14em] text-muted-foreground uppercase">Your limits</p>
-          <div className="mb-2 grid grid-cols-3 gap-1.5">
-            <Stepper label="Wind kn" value={prefs.limits.maxWindKn} step={1} onChange={(v) => setPrefs({ limits: { ...prefs.limits, maxWindKn: v } })} />
-            <Stepper label="Gust kn" value={prefs.limits.maxGustKn} step={1} onChange={(v) => setPrefs({ limits: { ...prefs.limits, maxGustKn: v } })} />
-            <Stepper label="Waves" value={prefs.limits.maxWaveM} step={0.25} show={(v) => formatDepth(v)} onChange={(v) => setPrefs({ limits: { ...prefs.limits, maxWaveM: v } })} />
-          </div>
-          <MotorSettings />
           <p className="mb-2 text-[11px] leading-snug text-muted-foreground">
             Tide and ocean currents are included (Météo-France SMOC model, about 8 km
             detail): they speed you up or slow you down, change the wind you sail in, and
@@ -218,34 +220,6 @@ function PlannerSheet() {
   );
 }
 
-function Stepper({
-  label,
-  value,
-  step,
-  onChange,
-  show,
-}: {
-  label: string;
-  value: number;
-  step: number;
-  onChange: (v: number) => void;
-  show?: (v: number) => string;
-}) {
-  return (
-    <div className="rounded-md border border-border bg-background px-1.5 py-1 text-center">
-      <p className="text-[10px] tracking-[0.1em] text-muted-foreground uppercase">{label}</p>
-      <div className="flex items-center justify-between gap-1">
-        <Button size="icon-sm" variant="ghost" aria-label={`Less ${label}`} onClick={() => onChange(Math.max(step, value - step))}>
-          −
-        </Button>
-        <span className="font-display text-base font-semibold tabular-nums">{show ? show(value) : value}</span>
-        <Button size="icon-sm" variant="ghost" aria-label={`More ${label}`} onClick={() => onChange(value + step)}>
-          +
-        </Button>
-      </div>
-    </div>
-  );
-}
 
 function agreement(row: DepartureRow): string {
   if (row.spreadH == null) return "One model only";
@@ -384,6 +358,17 @@ function PickedActions({ picked }: { picked: Choice }) {
           onClick={() => {
             const d = asDraft(title, r.points);
             const s = useHelm.getState();
+            // At anchor, following a route would start the off-track alarm: ask first.
+            if (
+              s.anchor?.radiusLocked &&
+              !window.confirm(
+                "You're on anchor watch. Following now starts steering cues and the off-track alarm while you're still at anchor. Follow anyway? (Choose Cancel to keep it saved for when you leave.)",
+              )
+            ) {
+              useHelm.setState({ drafts: [d, ...s.drafts].slice(0, 40) });
+              toast.success("Saved to Tracks. Follow it from Tracks when you weigh anchor.");
+              return;
+            }
             useHelm.setState({ drafts: [d, ...s.drafts].slice(0, 40) });
             s.setActivePassage(d);
             s.setChartUp("heading");
@@ -437,75 +422,3 @@ function tideLine(m: RouteMetrics): string {
   return tide;
 }
 
-/** Motoring rules, as in most routing software. Hidden for motor boats (always motoring). */
-function MotorSettings() {
-  const prefs = useHelm((s) => s.routePrefs);
-  const setPrefs = useHelm((s) => s.setRoutePrefs);
-  if (prefs.boatType === "motor") {
-    return (
-      <div className="mb-2 grid grid-cols-[1fr_8rem] items-center gap-2">
-        <span className="text-sm">Cruising speed</span>
-        <Stepper label="Motor kn" value={prefs.motorKn} step={0.5} onChange={(v) => setPrefs({ motorKn: v })} />
-      </div>
-    );
-  }
-  const row = "flex min-h-11 w-full items-center justify-between gap-2 rounded-md border border-border bg-background px-3 py-1.5 text-left text-sm";
-  const pill = (on: boolean) => `text-[11px] font-semibold uppercase ${on ? "text-primary" : "text-muted-foreground"}`;
-  return (
-    <div className="mb-2">
-      <p className="mb-1 text-[10px] tracking-[0.14em] text-muted-foreground uppercase">Motoring</p>
-      <div className="grid gap-1.5">
-        <div className={row}>
-          <button
-            type="button"
-            role="switch"
-            aria-checked={prefs.motorBelowKn > 0}
-            className="flex flex-1 items-center justify-between gap-2 text-left"
-            onClick={() => setPrefs({ motorBelowKn: prefs.motorBelowKn > 0 ? 0 : 3 })}
-          >
-            <span>Motor if boat speed is below</span>
-            <span className={pill(prefs.motorBelowKn > 0)}>{prefs.motorBelowKn > 0 ? "On" : "Off"}</span>
-          </button>
-          {prefs.motorBelowKn > 0 ? (
-            <div className="w-28 shrink-0">
-              <Stepper label="kn" value={prefs.motorBelowKn} step={0.5} onChange={(v) => setPrefs({ motorBelowKn: v })} />
-            </div>
-          ) : null}
-        </div>
-        <div className={row}>
-          <button
-            type="button"
-            role="switch"
-            aria-checked={prefs.motorWindBelowKn > 0}
-            className="flex flex-1 items-center justify-between gap-2 text-left"
-            onClick={() => setPrefs({ motorWindBelowKn: prefs.motorWindBelowKn > 0 ? 0 : 6 })}
-          >
-            <span>Motor if wind is below</span>
-            <span className={pill(prefs.motorWindBelowKn > 0)}>{prefs.motorWindBelowKn > 0 ? "On" : "Off"}</span>
-          </button>
-          {prefs.motorWindBelowKn > 0 ? (
-            <div className="w-28 shrink-0">
-              <Stepper label="kn" value={prefs.motorWindBelowKn} step={1} onChange={(v) => setPrefs({ motorWindBelowKn: v })} />
-            </div>
-          ) : null}
-        </div>
-        {prefs.motorBelowKn > 0 || prefs.motorWindBelowKn > 0 ? (
-          <>
-            <div className="grid grid-cols-[1fr_8rem] items-center gap-2 px-1">
-              <span className="text-sm">Motoring speed</span>
-              <Stepper label="kn" value={prefs.motorKn} step={0.5} onChange={(v) => setPrefs({ motorKn: v })} />
-            </div>
-            <div className="grid grid-cols-2 gap-1.5">
-              <Button size="sm" variant={!prefs.motorOnNose ? "default" : "outline"} onClick={() => setPrefs({ motorOnNose: false })}>
-                Wind on the nose: tack
-              </Button>
-              <Button size="sm" variant={prefs.motorOnNose ? "default" : "outline"} onClick={() => setPrefs({ motorOnNose: true })}>
-                Wind on the nose: motor
-              </Button>
-            </div>
-          </>
-        ) : null}
-      </div>
-    </div>
-  );
-}

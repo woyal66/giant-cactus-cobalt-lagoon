@@ -31,7 +31,8 @@ import {
 } from "@/hooks/helm-runtime";
 import { getPublicPassage } from "@/lib/passages";
 import { listPacks } from "@/lib/offline-tiles";
-import { useHelm } from "@/store/helm";
+import { useHelm, useUnitsKey } from "@/store/helm";
+import { formatMeters, haversineMeters } from "@/lib/geo";
 
 export function HelmApp() {
   useGpsWatch();
@@ -77,15 +78,8 @@ export function HelmApp() {
           className={`pointer-events-none absolute inset-0 z-40 shadow-[inset_0_0_0_3px_currentColor] ${
             breach ? "text-destructive" : "text-primary"
           }`}
-          aria-hidden
         >
-          <p
-            className={`absolute top-[calc(max(0.4rem,env(safe-area-inset-top))+4.1rem)] left-1/2 -translate-x-1/2 rounded-full px-2.5 py-1 text-[11px] font-semibold tracking-[0.16em] uppercase shadow-[var(--shadow-border)] ${
-              breach ? "bg-destructive text-white" : "bg-card/95 text-primary"
-            }`}
-          >
-            {breach ? "Alarm" : "Watch on"}
-          </p>
+          <WatchBadge breach={breach} gpsLost={gpsLost} />
         </div>
       ) : null}
       <TopHud />
@@ -116,5 +110,36 @@ export function HelmApp() {
         }}
       />
     </div>
+  );
+}
+
+/**
+ * Always-visible anchor watch status, so the skipper can plan, read the forecast
+ * or use any other tool while the watch runs. Tap to open the anchor sheet.
+ */
+function WatchBadge({ breach, gpsLost }: { breach: boolean; gpsLost: boolean }) {
+  const boat = useHelm((s) => s.boat);
+  const anchor = useHelm((s) => s.anchor);
+  useUnitsKey();
+  const dist = boat && anchor ? haversineMeters(boat, anchor) : null;
+  const fresh = boat ? Date.now() - boat.at < 60_000 && boat.source !== "placed" : false;
+  const text = breach
+    ? gpsLost
+      ? "Alarm · GPS lost"
+      : "Alarm · dragging"
+    : dist != null && anchor
+      ? `Watch on · ${formatMeters(dist)} / ${formatMeters(anchor.radiusM)}${fresh ? "" : " · no fix"}`
+      : "Watch on";
+  return (
+    <button
+      type="button"
+      aria-label="Anchor watch status. Opens the anchor settings."
+      onClick={() => useHelm.getState().setPanel("anchor")}
+      className={`pointer-events-auto absolute top-[calc(max(0.4rem,env(safe-area-inset-top))+4.1rem)] left-1/2 min-h-8 -translate-x-1/2 rounded-full px-3 py-1 text-[11px] font-semibold tracking-[0.12em] whitespace-nowrap uppercase tabular-nums shadow-[var(--shadow-border)] ${
+        breach ? "bg-destructive text-white" : "bg-card/95 text-primary"
+      }`}
+    >
+      {text}
+    </button>
   );
 }
