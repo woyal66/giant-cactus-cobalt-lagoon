@@ -147,6 +147,14 @@ function applyInfo(info: CustomerInfo) {
   });
 }
 
+/**
+ * Free app: every feature for everyone, no paywall, trial or purchases (the owner's choice).
+ * Build with VITE_PAID_APP=1 to bring back the annual subscription; the RevenueCat code is kept.
+ */
+export function isFreeApp(): boolean {
+  return import.meta.env?.VITE_PAID_APP !== "1";
+}
+
 export function isPreview(): boolean {
   return import.meta.env?.VITE_PAYWALL_PREVIEW === "1";
 }

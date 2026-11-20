@@ -1,4 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { isFreeApp } from "@/lib/subscription";
 
 export const Route = createFileRoute("/privacy")({ component: Privacy });
 
@@ -37,11 +38,15 @@ export function Privacy() {
             Backups are files you save yourself, for example to iCloud Drive or Google Drive. They
             contain your tracks and settings, not your anchor watch.
           </p>
-          <p>
-            Subscriptions are paid through the App Store or Google Play. We use RevenueCat to
-            check whether your subscription is active. It receives an anonymous app ID and your
-            purchase history from the store, not your name, payment card or location.
-          </p>
+          {isFreeApp() ? (
+            <p>The app is free and has no purchases, so no payment or purchase data is collected.</p>
+          ) : (
+            <p>
+              Subscriptions are paid through the App Store or Google Play. We use RevenueCat to
+              check whether your subscription is active. It receives an anonymous app ID and your
+              purchase history from the store, not your name, payment card or location.
+            </p>
+          )}
           <p>
             This is a lookout aid, not an official chart. You remain responsible for the
             navigation.

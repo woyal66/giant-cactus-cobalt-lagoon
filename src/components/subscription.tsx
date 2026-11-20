@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import {
   buy,
   initSubscription,
+  isFreeApp,
   isPreview,
   loadOffer,
   manageUrl,
@@ -25,6 +26,11 @@ const FEATURES = [
 
 /** Shows the app once the subscription (or free trial) is active, else the paywall. */
 export function SubscriptionGate({ children }: { children: ReactNode }) {
+  if (isFreeApp()) return <>{children}</>;
+  return <PaidGate>{children}</PaidGate>;
+}
+
+function PaidGate({ children }: { children: ReactNode }) {
   const access = useSubscription((s) => s.access);
   useEffect(() => {
     void initSubscription();

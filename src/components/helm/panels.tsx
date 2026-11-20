@@ -53,7 +53,7 @@ import { RemoteWatchCard } from "@/components/helm/remote-watch-card";
 import { formatDepth, formatLength } from "@/lib/units";
 import { criticalAlerts, type CriticalStatus } from "@/lib/critical-alert";
 import { openLocationSettings } from "@/lib/background-gps";
-import { isPreview } from "@/lib/subscription";
+import { isFreeApp, isPreview } from "@/lib/subscription";
 import { radarAvailable } from "@/lib/radar";
 import { SubscriptionRow } from "@/components/subscription";
 import { useCurrentUserState } from "@/lib/auth/use-current-user";
@@ -471,7 +471,7 @@ export function LayersPanel() {
     <Sheet id="layers" title="View" kicker="Map stays up">
       <div className="mb-2 flex items-center justify-between gap-2">
         {isNativeApp() || isPreview() ? (
-          <SubscriptionRow />
+          isFreeApp() ? null : <SubscriptionRow />
         ) : (
           <>
             <SignedIn>
