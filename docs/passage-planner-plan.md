@@ -1,13 +1,19 @@
 # Passage Planner: weather routing for Anchor Mate
 
-A plan for adding PredictWind-style passage planning: tap a start and a finish,
+A plan for adding passage planning to Anchor Mate: tap a start and a finish,
 pick a departure window, and get the best plan for **safety, speed and comfort**.
 
 Status: proposal. Nothing here is built yet.
 
+**Independence:** this is Anchor Mate's own tool, with its own routing engine, public weather
+data and its own boat polars. It has no affiliation with, data from, or connection to
+PredictWind or any other routing service. PredictWind appears below only as an internal
+benchmark of what sailors expect. Don't use its name in the app, store listing or marketing,
+because it's their trademark.
+
 ---
 
-## 1. What PredictWind does (the benchmark)
+## 1. What the market leader does (internal benchmark only)
 
 | Feature | How PredictWind does it |
 | --- | --- |
@@ -21,8 +27,7 @@ Status: proposal. Nothing here is built yet.
 | Price | Routing needs Standard (US$249/yr) or Professional (US$499/yr). |
 | Export | Routes export as GPX. Departure plans don't. |
 
-PredictWind has no public routing API, so we can't put PredictWind itself inside
-Anchor Mate. We can build our own version and import PredictWind's GPX routes.
+Anchor Mate's version is built independently from public data and its own code.
 
 ## 2. What Anchor Mate's version would be
 
@@ -129,16 +134,16 @@ is downloaded. A server only becomes necessary for ocean passages and the own-da
 
 | Phase | What | Rough effort |
 | --- | --- | --- |
-| **0. Quick win** | **Import GPX** (from PredictWind, Navionics or OpenCPN) into Tracks, so PredictWind users can follow their route in Anchor Mate with steering cues and the off-track alarm. | 1–2 days |
+| **0. Quick win** | **Import GPX**, the open standard route and track file format, into Tracks. Any route a skipper has (from a chartplotter, OpenCPN or another app, or shared by a friend) can then be followed with Anchor Mate's steering cues and off-track alarm. | 1–2 days |
 | **1. Departure planner** | Start, finish and window. Straight-line plus simple tacking estimate per departure × 4 models. Green, amber and red table with wind, wave, current and arrival-in-daylight checks. No route shape yet. | 1–2 weeks |
 | **2. Full router** | Isochrone router in the background on the phone, built-in polars plus import, land and reef obstacles, the three plans, a timed route on the chart, and Follow/Export. | 4–6 weeks |
 | **3. Own weather pipeline** | A small server that pulls ECMWF Open Data, GFS and Copernicus currents and waves, cuts them into compact tiles for the app, and allows ocean passages. Removes the Open-Meteo per-call cost. | 3–4 weeks plus hosting (about US$20–50 a month) |
 | **4. Learned polars and instruments** | Read wind and boat speed from onboard instruments (NMEA 2000/0183 over Wi-Fi), tune the polar from real sailing, and compare forecast with actual wind. | 3–4 weeks |
 
-**Where it fits commercially:** PredictWind charges US$249–499 a year for routing. A
+**Where it fits commercially:** dedicated routing services charge about US$249–499 a year. A
 **"Pro + Passage"** tier, or Passage Planner included in the annual subscription with a lower
-price than PredictWind, is a strong reason to subscribe, especially with reef passes and
-anchorage checks that PredictWind doesn't do.
+price than dedicated routing services, is a strong reason to subscribe, especially with reef
+passes and anchorage checks that general routing tools don't do.
 
 ## 6. Risks and how to handle them
 
