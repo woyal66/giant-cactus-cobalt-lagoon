@@ -3,7 +3,7 @@ import { persist } from "zustand/middleware";
 import type { Passage, PassageKind, Waypoint } from "@/lib/passages";
 import { DEFAULT_REEF_ID, getReef } from "@/lib/reefs";
 import { isChartUp, type ChartUp, type LatLng, appendTrail, reverseCourse, reverseWaypoints, simplifyTrack, fitTrackView, haversineMeters, type TrackClean } from "@/lib/geo";
-import { HELM_ZOOM, isImageryId, usableImagery, type ImageryId } from "@/lib/imagery";
+import { HELM_ZOOM, availableImagery, isImageryId, usableImagery, type ImageryId } from "@/lib/imagery";
 import {
   isDepthUnit,
   isLengthUnit,
@@ -157,6 +157,8 @@ export type HelmState = {
   boatLow: boolean;
   chartUp: ChartUp;
   imagery: ImageryId;
+  /** The source before the current one, for the quick compare button. */
+  prevImagery: ImageryId | null;
   labels: boolean;
   /** Latitude and longitude grid. */
   graticule: boolean;
@@ -276,6 +278,8 @@ type HelmActions = {
   followCourse: () => void;
   setChartUp: (v: ChartUp) => void;
   setImagery: (imagery: ImageryId) => void;
+  /** Swap to the previous source (or the next one available) at the same spot. Returns the new source. */
+  flipImagery: (shown?: string | null) => ImageryId;
   setLabels: (v: boolean) => void;
   setGraticule: (v: boolean) => void;
   setSeamarks: (v: boolean) => void;
@@ -736,6 +740,7 @@ export const useHelm = create<HelmState & HelmActions>()(
       boatLow: false,
       chartUp: "north",
       imagery: "auto",
+      prevImagery: null,
       labels: true,
       graticule: false,
       seamarks: false,
@@ -881,7 +886,22 @@ export const useHelm = create<HelmState & HelmActions>()(
         });
       },
       setChartUp: (chartUp) => set({ chartUp }),
-      setImagery: (imagery) => set({ imagery }),
+      setImagery: (imagery) => {
+        const cur = get().imagery;
+        set(imagery === cur ? { imagery } : { imagery, prevImagery: cur });
+      },
+      flipImagery: (shown) => {
+        const cur = get().imagery;
+        const prev = get().prevImagery;
+        // Always compare two real sources: Auto may already be showing the one we'd flip to.
+        const list = availableImagery().map((im) => im.id).filter((id) => id !== "auto");
+        const now = cur === "auto" ? (shown ?? list[0]) : cur;
+        const next = list[(list.indexOf(now as (typeof list)[number]) + 1) % Math.max(1, list.length)] ?? cur;
+        const target = prev && prev !== "auto" && prev !== now && usableImagery(prev) === prev ? prev : next;
+        // From Auto, "back" means the photo Auto was showing.
+        set({ imagery: target, prevImagery: cur === "auto" && now && isImageryId(now) ? now : cur });
+        return target;
+      },
       setLabels: (labels) => set({ labels }),
       setGraticule: (graticule) => set({ graticule }),
       setSeamarks: (v) => set({ seamarks: v }),
@@ -1537,6 +1557,7 @@ export const useHelm = create<HelmState & HelmActions>()(
       storage: helmStorage,
       partialize: (s) => ({
         imagery: s.imagery,
+        prevImagery: s.prevImagery,
         labels: s.labels,
         graticule: s.graticule,
         seamarks: s.seamarks,
@@ -1593,6 +1614,7 @@ export const useHelm = create<HelmState & HelmActions>()(
           ...current,
           ...p,
           imagery: isImageryId(p.imagery) ? usableImagery(p.imagery) : current.imagery,
+          prevImagery: isImageryId(p.prevImagery) ? usableImagery(p.prevImagery) : null,
           depths: typeof p.depths === "boolean" ? p.depths : current.depths,
           reefOutlines:
             typeof p.reefOutlines === "boolean" ? p.reefOutlines : current.reefOutlines,

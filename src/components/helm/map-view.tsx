@@ -147,6 +147,20 @@ export function getChartBounds(): ChartBounds | null {
   return chartBounds;
 }
 
+/** Which satellite source painted the tile under the chart centre (Auto mixes sources). */
+export function centreTileSource(): string | null {
+  const box = document.querySelector<HTMLElement>(".leaflet-container");
+  if (!box) return null;
+  const r = box.getBoundingClientRect();
+  const cx = r.left + r.width / 2;
+  const cy = r.top + r.height / 2;
+  for (const img of document.querySelectorAll<HTMLImageElement>(".leaflet-tile-pane img[data-sat]")) {
+    const t = img.getBoundingClientRect();
+    if (cx >= t.left && cx < t.right && cy >= t.top && cy < t.bottom && img.style.opacity !== "0") return img.dataset.sat ?? null;
+  }
+  return null;
+}
+
 const TRANSPARENT_GIF =
   "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==";
 

@@ -14,8 +14,9 @@ import {
 } from "@/lib/anchor";
 import { bowFromGps, gpsReachM, gpsStationLabel } from "@/lib/boat";
 import { formatMeters, haversineMeters, pathLengthMeters, trackInView, TRACK_CHORD_PRESETS, TRACK_TURN_PRESETS } from "@/lib/geo";
-import { GARMIN_SDK_URL, PARK_ZONES, availableImagery } from "@/lib/imagery";
-import { getChartBounds } from "@/components/helm/map-view";
+import { GARMIN_SDK_URL, PARK_ZONES, availableImagery, imageryShort, isImageryId } from "@/lib/imagery";
+import { centreTileSource, getChartBounds } from "@/components/helm/map-view";
+import { SOURCE_NOTE, describePhoto, fetchEsriPhotoInfo } from "@/lib/imagery-info";
 import { AnchorWxCard } from "@/components/helm/weather";
 import {
   boxAround,
@@ -532,6 +533,7 @@ export function LayersPanel() {
         </Button>
       </div>
       <div className="mb-2 grid gap-1.5">
+        <PhotoInfoRow />
         <ToggleRow label="Sharp photos (HD, about 4× the data)" on={sharpTiles} onChange={setSharpTiles} />
         <ToggleRow label="Reef clarity (more contrast to read depth)" on={reefClarity} onChange={setReefClarity} />
         <ToggleRow label="Place names" on={labels} onChange={setLabels} />
@@ -1406,5 +1408,49 @@ function GpxImportRow() {
         }}
       />
     </div>
+  );
+}
+
+/** Photo under the chart centre: source, and for Esri (Maxar) the capture date and resolution. */
+function PhotoInfoRow() {
+  const imagery = useHelm((s) => s.imagery);
+  const [text, setText] = useState<string>("…");
+  const [nonce, setNonce] = useState(0);
+  useEffect(() => {
+    let live = true;
+    const t = window.setTimeout(() => {
+      const src = centreTileSource();
+      const view = getChartBounds();
+      const name = src && isImageryId(src) ? imageryShort(src) : imageryShort(imagery);
+      if (!src || !view) {
+        setText(`${name} · no photo loaded here yet`);
+        return;
+      }
+      if (src === "maxar" || src === "clarity") {
+        setText(`${name} · checking date…`);
+        const lat = (view.north + view.south) / 2;
+        const lng = (view.east + view.west) / 2;
+        void fetchEsriPhotoInfo(lat, lng, view.zoom).then((info) => {
+          if (live) setText(`${name} · ${describePhoto(info)}`);
+        });
+      } else {
+        setText(`${name} · ${SOURCE_NOTE[src] ?? "date not published"}`);
+      }
+    }, 300);
+    return () => {
+      live = false;
+      window.clearTimeout(t);
+    };
+  }, [imagery, nonce]);
+  return (
+    <button
+      type="button"
+      onClick={() => setNonce((n) => n + 1)}
+      className="rounded-md border border-border px-2.5 py-1.5 text-left text-[12px] leading-snug"
+      aria-label="Photo at the chart centre. Tap to check again."
+    >
+      <span className="block text-[10px] tracking-[0.12em] text-muted-foreground uppercase">Photo at chart centre</span>
+      {text}
+    </button>
   );
 }

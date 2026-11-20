@@ -19,7 +19,7 @@ import {
   msToKnots,
   cornerIndexes,
 } from "@/lib/geo";
-import { imageryShort } from "@/lib/imagery";
+import { imageryShort, availableImagery } from "@/lib/imagery";
 import { formatLength } from "@/lib/units";
 import { formatScope, hoursUntil, rodeMath } from "@/lib/anchor";
 import { steerCue, formatTtg, markNav } from "@/lib/steer";
@@ -27,7 +27,7 @@ import { bowFromGps, gpsReachM } from "@/lib/boat";
 import { Badge } from "@/components/ui/badge";
 import { MobGuide } from "@/components/helm/mob-guide";
 import { Button } from "@/components/ui/button";
-import { closeInOnBoat } from "@/components/helm/map-view";
+import { centreTileSource, closeInOnBoat } from "@/components/helm/map-view";
 import { WindInstrument } from "@/components/helm/weather";
 import { windCardinal } from "@/lib/weather";
 import { unlockAlarmAudio } from "@/hooks/helm-runtime";
@@ -185,6 +185,19 @@ export function TopHud() {
               {imageryShort(imagery)}
             </p>
           </button>
+          {availableImagery().length > 2 ? (
+            <button
+              type="button"
+              aria-label="Compare: flip to the other satellite photo"
+              onClick={() => {
+                const next = useHelm.getState().flipImagery(centreTileSource());
+                toast(`Showing ${imageryShort(next)}. Tap ⇄ to flip back.`, { duration: 2500 });
+              }}
+              className="rounded-md border border-border bg-card/95 py-1 text-center text-[13px] leading-none font-bold shadow-[var(--shadow-border)] rp-glass"
+            >
+              ⇄
+            </button>
+          ) : null}
           <Button
             variant={mob ? "danger" : "helm"}
             size="icon"

@@ -5,13 +5,34 @@ signing, which only you (the owner) can do. Work through the sections in order.
 Prices and policies below were correct when written. Check the current pages
 before paying for anything.
 
-**How the app makes money:** users download Anchor Mate free, start a free trial
-of **Anchor Mate Pro** (an annual subscription), and are charged when the trial
-ends unless they cancel. Until the trial or subscription is active, the app shows
-the subscription screen. Apple and Google take the payment and pay you out
-(less their commission, normally 15% for small developers). **RevenueCat** sits
-in between so one piece of code works with both stores. It is free until
-you earn about US$2,500 a month.
+**The app is free (current setting).** Every feature is open to everyone: no paywall,
+trial, subscription or ads. List it as **Free** in both stores and create no in-app
+purchases, so you can skip sections 3 and 4 (store subscriptions and RevenueCat). You
+still pay Apple's developer fee (US$99 a year) and Google's one-off fee (US$25).
+
+To charge later, build with `VITE_PAID_APP=1`: the subscription screen, trial and
+RevenueCat code are still in the app, and sections 3 and 4 then apply.
+
+### Being free changes the data licences
+
+"Free" means no money is made, which several providers count as non-commercial. It does
+not make every source usable:
+
+| Source | Free app |
+| --- | --- |
+| Google and Bing satellite | **Still not allowed.** Their terms forbid other apps taking their tiles, whatever the price. Keep `VITE_LICENSED_IMAGERY_ONLY=1` for store builds so they stay hidden. |
+| Esri / Maxar World Imagery | Create a free ArcGIS Location Platform account and set `VITE_ESRI_KEY`; the free tier includes a monthly basemap allowance. Check the current limit, and what happens when many users exceed it. |
+| MapTiler Satellite | The free plan is non-commercial with a monthly request limit; a free app may qualify. Check whether the free plan allows saving tiles offline, and expect to need a paid plan as users grow. |
+| Sentinel-2 cloudless (EOX) | CC BY-NC-SA: usable by a free, non-commercial app with the credit shown. Ask EOX if you want certainty. |
+| Open-Meteo | The free API is for non-commercial use; a free app should qualify. `VITE_OPEN_METEO_KEY` is then optional. |
+| RainViewer radar | The free API is for personal and non-commercial use; confirm with RainViewer that a free app in the stores is fine. |
+| BOM tides and radar | Still ask BOM: free or not, it's redistribution to the public. |
+
+**Checking sharpness before launch (do this, it matters for reef safety):** with your keys
+set, open the app on your phone over three reefs you know well and use the ⇄ compare button
+to flip between MapTiler and Esri at helm zoom. Note which shows bommies and channel edges
+best, and pick that as the store build's main source. Google and Bing will not be in the
+store build, so judge only the licensed sources.
 
 ---
 
@@ -238,6 +259,14 @@ MapTiler only. With it on and no keys set, the map has no satellite layer, so
 add at least `VITE_MAPTILER_KEY`.
 
 ## 10. Test before you submit
+
+- **Satellite photos on a real phone:** at a reef you know, compare Sharp photos on and off
+  (View panel). Check bommies are crisper with it on, and note data use in the phone's
+  settings over 10 minutes each way. Then turn on aeroplane mode over a saved pack: there
+  should be no blank squares at any zoom. Save one "Max" pack and check it stays sharp offline.
+- **Photo date:** in the View panel, "Photo at chart centre" should show a date and
+  resolution over Esri (Maxar) imagery. It couldn't be tested during development; if it
+  always says "date not published", the metadata service reply needs checking.
 
 - **Purchases:** Apple sandbox testers (App Store Connect → Users and Access →
   Sandbox) and Google license testers (Play Console → Settings → License
