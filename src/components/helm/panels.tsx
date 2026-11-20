@@ -486,32 +486,31 @@ export function LayersPanel() {
           </>
         )}
       </div>
-      <div className="mb-2 grid grid-cols-[minmax(0,1fr)] gap-1">
+      {/* Compact picker: tap to flip between photos and compare. */}
+      <div className="mb-2 grid grid-cols-3 gap-1.5" role="radiogroup" aria-label="Satellite photo">
         {availableImagery().map((im) => (
           <button
             key={im.id}
             type="button"
+            role="radio"
+            aria-checked={imagery === im.id}
+            title={im.detail}
             onClick={() => setImagery(im.id)}
-            className={`flex min-h-12 min-w-0 items-center gap-2 rounded-md border px-2 py-1.5 text-left ${
-              imagery === im.id ? "border-primary bg-primary/10" : "border-border bg-background"
+            className={`flex min-h-11 min-w-0 items-center gap-1.5 rounded-md border px-1.5 text-left ${
+              imagery === im.id ? "border-primary bg-primary/15" : "border-border bg-background"
             }`}
           >
             <span
-              className="grid size-7 shrink-0 place-items-center rounded-md font-display text-sm font-semibold"
+              className="grid size-6 shrink-0 place-items-center rounded font-display text-t13 font-semibold"
               style={{ background: im.markBg, color: im.markFg }}
+              aria-hidden
             >
               {im.mark}
             </span>
-            <span className="min-w-0">
-              <span className="block font-display text-sm leading-none font-semibold">{im.name}</span>
-              <span className="mt-0.5 line-clamp-2 block text-t13 leading-snug text-muted-foreground">{im.detail}</span>
-            </span>
+            <span className="min-w-0 truncate text-t14 font-semibold">{imageryShort(im.id)}</span>
           </button>
         ))}
       </div>
-      <p className="mb-2 text-t13 leading-snug text-muted-foreground">
-        The chart button centres the boat. Tap again for heading-up, with the boat just below centre so the water ahead stays on screen. Drag the chart to let go. Tap to come back.
-      </p>
       <OfflinePacks />
       <TrackSteerSettings />
       <div className="mb-2 grid grid-cols-2 gap-2">
@@ -529,7 +528,7 @@ export function LayersPanel() {
           Boat
         </Button>
         <Button variant="outline" size="sm" onClick={() => setPanel("legend")}>
-          Read water
+          Colour guide
         </Button>
       </div>
       <div className="mb-2 grid gap-1.5">
@@ -893,7 +892,7 @@ function TrackSteerSettings() {
 
 export function LegendPanel() {
   return (
-    <Sheet id="legend" title="Read the water" kicker="Colour is the chart">
+    <Sheet id="legend" title="Colour guide" kicker="Reading depth from the photo">
       <ul className="grid gap-3 text-sm">
         <li>
           <p className="font-display text-lg font-semibold">Deep indigo / navy</p>
