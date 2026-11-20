@@ -1,4 +1,5 @@
 import { isNativeApp } from "@/lib/native";
+import { criticalAlerts } from "@/lib/critical-alert";
 
 let lastKey = "";
 let lastShownAt = 0;
@@ -21,8 +22,14 @@ export async function registerWatchWorker(): Promise<void> {
 export async function armWatchAlerts(): Promise<void> {
   if (isNativeApp()) {
     try {
-      const { LocalNotifications } = await import("@capacitor/local-notifications");
-      await LocalNotifications.requestPermissions();
+      const critical = criticalAlerts();
+      if (critical) {
+        // iPhone: asks for alerts plus Critical Alerts (shown once Apple grants it).
+        await critical.requestPermission();
+      } else {
+        const { LocalNotifications } = await import("@capacitor/local-notifications");
+        await LocalNotifications.requestPermissions();
+      }
     } catch {
       /* denied */
     }
@@ -115,6 +122,14 @@ function ensureAlarmChannel(
 function nativeAlarm(kind: "drag" | "xte" | "gps" | "mob", title: string, body: string) {
   if (!isNativeApp()) return;
   const id = kind === "drag" ? 1 : kind === "gps" ? 2 : kind === "xte" ? 3 : 4;
+  const critical = criticalAlerts();
+  if (critical) {
+    // Off-track is a nudge, not an emergency: keep it out of Critical Alerts.
+    if (kind !== "xte") {
+      void critical.notify({ id, title, body }).catch(() => undefined);
+      return;
+    }
+  }
   void import("@capacitor/local-notifications")
     .then(async ({ LocalNotifications }) => {
       await ensureAlarmChannel(LocalNotifications);
@@ -170,6 +185,7 @@ export function clearWatchNotice() {
   lastKey = "";
   post({ type: "clear" });
   if (isNativeApp()) {
+    void criticalAlerts()?.cancel({ ids: [1, 2, 3, 4] }).catch(() => undefined);
     void import("@capacitor/local-notifications")
       .then(({ LocalNotifications }) =>
         LocalNotifications.cancel({ notifications: [{ id: 1 }, { id: 2 }, { id: 3 }, { id: 4 }] }),

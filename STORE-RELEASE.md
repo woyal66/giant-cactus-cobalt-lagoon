@@ -162,6 +162,41 @@ to regenerate every icon and splash size.
 Apple also requires a link to your **Terms of Use (EULA)** in the App
 Description or the EULA field, plus a **Privacy Policy URL**.
 
+## 7a. iPhone Critical Alerts (alarm through silent mode and Do Not Disturb)
+
+The app is already coded for this. It has two levels:
+
+| Level | Breaks through | Apple approval |
+| --- | --- | --- |
+| **Time Sensitive** (on now) | Focus modes and scheduled summaries. **Not** the ringer switch. | None. The capability is already in `App.entitlements`. |
+| **Critical Alerts** | Silent switch, Do Not Disturb, every Focus mode, at full volume. | Yes. Apple grants it to safety apps on request. |
+
+To turn on Critical Alerts:
+
+1. Request the entitlement from Apple. On developer.apple.com, find the
+   **Critical Alerts entitlement request** form (search "Critical Alerts" in the
+   developer account's Contact pages). Choose app ID `com.anchormate.app` and explain:
+   > Anchor Mate is an anchor drag alarm for boats. It wakes the crew at night if
+   > the anchor drags or GPS is lost, when the boat may be about to go aground.
+   > The alarm must sound even if the phone is on silent or in Do Not Disturb.
+   > Critical Alerts are used only for anchor drag, GPS lost and man overboard,
+   > never for marketing or routine notices.
+2. When Apple approves it, open `ios/App/App/App.entitlements` and move the two
+   `critical-alerts` lines out of the comment, so it reads:
+   ```xml
+   <key>com.apple.developer.usernotifications.critical-alerts</key>
+   <true/>
+   ```
+   **Don't do this before approval.** Code signing fails without it.
+3. In the Apple Developer portal, regenerate the provisioning profile (Xcode does
+   this automatically with *Automatically manage signing*), then build again.
+4. On first use of the anchor watch, iPhone asks the user to allow Critical
+   Alerts. The Anchor panel shows "Critical Alerts on" once allowed.
+
+Android has no approval step: the alarm uses a max-priority channel. Users who
+want it to ring through Do Not Disturb can turn on **Override Do Not Disturb**
+for the "Anchor and safety alarms" channel in the phone's app notification settings.
+
 ## 8. Privacy policy and Terms of Use links
 
 The stores need public web addresses for both. The pages already exist in the
@@ -211,9 +246,8 @@ add at least `VITE_MAPTILER_KEY`.
 - **Offline:** turn on aeroplane mode with a subscription active; the app should stay unlocked,
   and the weather panel should show the last forecast with a "No signal" badge.
 - **Alarm volume:** with the ringer switch on silent (iPhone) and in Do Not Disturb,
-  check the drag alarm still sounds. For Do Not Disturb on iPhone, Apple's *Critical
-  Alerts* entitlement is the only option. Request it from Apple (developer site →
-  search "Critical Alerts entitlement") if you want the alarm to override Focus modes.
+  check the drag alarm still sounds (see section 7a). The Anchor panel shows
+  whether the alarm can break through on that phone.
 - **Battery:** an overnight anchor watch uses the GPS once a second. Recommend a charger
   in the app description.
 

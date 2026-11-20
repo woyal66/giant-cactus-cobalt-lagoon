@@ -44,6 +44,8 @@ import { STEER_PRESETS, XTE_ALARM_PRESETS } from "@/lib/steer";
 import { SignedIn, SignedOut, UserButton } from "@/lib/auth/gates";
 import { isNativeApp } from "@/lib/native";
 import { shareGpx } from "@/lib/share-gpx";
+import { criticalAlerts, type CriticalStatus } from "@/lib/critical-alert";
+import { openLocationSettings } from "@/lib/background-gps";
 import { isPreview } from "@/lib/subscription";
 import { SubscriptionRow } from "@/components/subscription";
 import { useCurrentUserState } from "@/lib/auth/use-current-user";
@@ -323,6 +325,7 @@ export function AnchorPanel() {
             Test drag alarm
           </Button>
           <p className="text-[10px] tracking-[0.14em] text-muted-foreground uppercase">Alarm</p>
+          <AlarmReach />
           <div className="grid grid-cols-3 gap-1.5">
             {ALARM_SOUNDS.map((s) => (
               <Button
@@ -1116,5 +1119,52 @@ export function PassagesPanel() {
         ))}
       </ul>
     </Sheet>
+  );
+}
+
+/** iPhone: says whether the drag alarm will sound through silent mode and Focus. */
+function AlarmReach() {
+  const [st, setSt] = useState<CriticalStatus | null>(null);
+  useEffect(() => {
+    const plugin = criticalAlerts();
+    if (!plugin) return;
+    let live = true;
+    const read = () => {
+      void plugin.status().then((v) => {
+        if (live) setSt(v);
+      }).catch(() => undefined);
+    };
+    read();
+    document.addEventListener("visibilitychange", read);
+    return () => {
+      live = false;
+      document.removeEventListener("visibilitychange", read);
+    };
+  }, []);
+  if (!st) return null;
+  const [tone, text] = !st.granted
+    ? (["warn", "Notifications are off. The alarm can't sound with the phone locked."] as const)
+    : st.critical
+      ? (["ok", "Critical Alerts on: sounds through silent mode and Do Not Disturb."] as const)
+      : st.timeSensitive
+        ? (["note", "Breaks through Focus, but not the silent switch. Keep the ringer on."] as const)
+        : (["warn", "Focus and silent mode can mute the alarm. Allow Time Sensitive alerts."] as const);
+  return (
+    <div
+      className={`flex items-start justify-between gap-2 rounded-md border px-2 py-1.5 text-[11px] leading-snug ${
+        tone === "ok"
+          ? "border-primary/40 text-foreground"
+          : tone === "note"
+            ? "border-border text-muted-foreground"
+            : "border-destructive/50 text-destructive"
+      }`}
+    >
+      <span>{text}</span>
+      {tone !== "ok" ? (
+        <button type="button" className="shrink-0 underline" onClick={() => openLocationSettings()}>
+          Settings
+        </button>
+      ) : null}
+    </div>
   );
 }

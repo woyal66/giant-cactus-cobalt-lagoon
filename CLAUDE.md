@@ -25,6 +25,7 @@ a server function, give the phone build an equivalent or it silently returns `nu
 - `src/lib/watch-notify.ts`: alarm notifications (Android channel `anchor-alarm`, max importance).
 - `src/lib/imagery.ts`: map sources and licensing switches (`VITE_MAPTILER_KEY`, `VITE_ESRI_KEY`, `VITE_LICENSED_IMAGERY_ONLY`). `src/lib/open-meteo.ts` adds the commercial Open-Meteo key.
 - `src/lib/weather.ts`: forecasts are saved per ~10 km cell and revived offline (`reviveForecast`).
+- `src/lib/critical-alert.ts` ↔ `ios/App/App/CriticalAlertPlugin.swift` (registered in `MainViewController.swift`): iPhone alarms as Critical Alerts (needs Apple entitlement, see STORE-RELEASE 7a) or Time Sensitive.
 - `src/lib/gpx.ts` / `share-gpx.ts`: GPX export via the share sheet.
 - Anchor watch: saved immediately on change and restored on relaunch (`isAnchorWatch` in the store). Other state is saved at most every 4 s and flushed on backgrounding.
 - `src/components/legal/terms.tsx`, `src/routes/privacy.tsx`: legal text shown in-app and on the website. Keep in sync with what the stores link to.
