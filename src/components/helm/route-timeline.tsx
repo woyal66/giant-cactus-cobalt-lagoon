@@ -1,4 +1,5 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
+import { GLOSSARY, compassPoint, pointOfSail, seaState } from "@/lib/routing/explain";
 import { Moon, Sun } from "lucide-react";
 import { isDaylight } from "@/lib/sun";
 import { formatDepth } from "@/lib/units";
@@ -76,27 +77,9 @@ export function RouteTimeline({ points, sails, maxWindKn }: { points: RoutePoint
   for (let t = Math.ceil(t0 / (stepH * 3_600_000)) * stepH * 3_600_000; t < t1; t += stepH * 3_600_000) ticks.push(t);
 
   return (
-    <div className="mt-2 rounded-lg border border-border bg-background px-2 py-2">
-      <div className="mb-1 grid grid-cols-2 gap-x-2 text-t13 leading-snug tabular-nums">
-        <p className="col-span-2 font-semibold">{clock(cur.at, true)}{cur.day ? "" : " · night"}</p>
-        <p>
-          True <b>{Math.round(cur.twsKn)} kn</b> {Math.round(cur.twa)}° {cur.tack > 0 ? "S" : cur.tack < 0 ? "P" : ""}
-        </p>
-        <p>
-          Apparent <b>{Math.round(cur.aws)} kn</b> {Math.round(cur.awa)}°
-        </p>
-        <p>Gust {Math.round(cur.gustKn)} kn · boat {cur.stwKn.toFixed(1)} kn{cur.motoring ? " (engine)" : ""}</p>
-        <p>
-          Seas {formatDepth(cur.waveM)}
-          {cur.waveAmp >= 1.15 ? ` (+${Math.round((cur.waveAmp - 1) * 100)}% tide)` : ""} · tide{" "}
-          {cur.curAlongKn >= 0 ? "+" : "−"}
-          {Math.abs(cur.curAlongKn).toFixed(1)} kn
-        </p>
-        <p className="col-span-2 text-muted-foreground">
-          Storms {RISK_LABEL[cur.thunder].toLowerCase()}
-          {cur.squall ? " · squalls" : ""} · sails {segAt ? describe(segAt) : "—"}
-        </p>
-      </div>
+    <div className="mt-2">
+      <Readout cur={cur} sails={segAt ? describe(segAt) : null} />
+      <p className="mb-1 text-t13 text-muted-foreground">Drag along the graph to read any moment of the trip.</p>
 
       <svg
         viewBox={`0 0 ${W} ${HEIGHT}`}
@@ -214,6 +197,97 @@ export function RouteTimeline({ points, sails, maxWindKn }: { points: RoutePoint
             })}
           </ul>
         </div>
+      ) : null}
+    </div>
+  );
+}
+
+function Row({ label, value, note }: { label: string; value: ReactNode; note?: string }) {
+  return (
+    <div className="grid grid-cols-[6.5rem_1fr] gap-x-2 py-0.5">
+      <p className="text-t13 text-muted-foreground">{label}</p>
+      <div>
+        <p className="text-t15 leading-snug">{value}</p>
+        {note ? <p className="text-t13 leading-snug text-muted-foreground">{note}</p> : null}
+      </div>
+    </div>
+  );
+}
+
+/** The moment under the slider, in plain words. */
+function Readout({ cur, sails }: { cur: Sample; sails: string | null }) {
+  const [help, setHelp] = useState(false);
+  const side = cur.tack > 0 ? "starboard (right)" : cur.tack < 0 ? "port (left)" : "";
+  const pos = pointOfSail(cur.twa, cur.motoring);
+  const sea = seaState(cur.waveM);
+  const sog = cur.sogKn ?? cur.stwKn;
+  const tide = cur.curAlongKn;
+  return (
+    <div className="mb-2 tabular-nums">
+      <div className="flex items-baseline justify-between gap-2">
+        <p className="text-t16 font-semibold">
+          {clock(cur.at, true)}
+          {cur.day ? "" : " · night"}
+        </p>
+        <button type="button" onClick={() => setHelp((h) => !h)} className="text-t13 text-primary underline" aria-expanded={help}>
+          {help ? "Hide help" : "What do these mean?"}
+        </button>
+      </div>
+      <Row
+        label="Wind"
+        value={
+          <>
+            <b>{Math.round(cur.twsKn)} kn</b> from the {compassPoint(cur.windDir)}, gusts {Math.round(cur.gustKn)} kn
+          </>
+        }
+      />
+      <Row
+        label="On the boat"
+        value={
+          <>
+            <b>{Math.round(cur.aws)} kn</b> at {Math.round(cur.awa)}° {side ? `on the ${side}` : "off the bow"}
+          </>
+        }
+        note="Apparent wind: what you feel and set the sails to."
+      />
+      <Row label="Point of sail" value={pos.name} note={pos.feel} />
+      <Row
+        label="Boat speed"
+        value={
+          <>
+            <b>{sog.toFixed(1)} kn</b> over the ground{cur.motoring ? " (engine)" : ""}
+          </>
+        }
+        note={
+          Math.abs(tide) >= 0.1
+            ? `Current ${tide > 0 ? "helping" : "against you"} by ${Math.abs(tide).toFixed(1)} kn (${cur.stwKn.toFixed(1)} kn through the water).`
+            : `${cur.stwKn.toFixed(1)} kn through the water, no real current.`
+        }
+      />
+      <Row
+        label="Seas"
+        value={
+          <>
+            <b>{formatDepth(cur.waveM)}</b> · {sea.name}
+          </>
+        }
+        note={`${sea.feel}${cur.waveAmp >= 1.15 ? `. Wind over tide makes them about ${Math.round((cur.waveAmp - 1) * 100)}% higher and steeper here.` : "."}`}
+      />
+      <Row
+        label="Storms"
+        value={`${RISK_LABEL[cur.thunder]}${cur.squall ? ", squalls likely" : ""}`}
+        note={cur.thunder >= 2 || cur.squall ? "Reef early and watch the sky." : undefined}
+      />
+      {sails ? <Row label="Sails" value={sails} /> : null}
+      {help ? (
+        <dl className="mt-2 grid gap-1 border-t border-border pt-2">
+          {GLOSSARY.map(([k, v]) => (
+            <div key={k}>
+              <dt className="text-t14 font-semibold">{k}</dt>
+              <dd className="text-t13 leading-snug text-muted-foreground">{v}</dd>
+            </div>
+          ))}
+        </dl>
       ) : null}
     </div>
   );

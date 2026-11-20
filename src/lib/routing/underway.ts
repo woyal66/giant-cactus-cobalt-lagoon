@@ -128,3 +128,25 @@ export function logToCsv(entries: LogEntry[]): string {
   );
   return [head, ...rows].join("\n") + "\n";
 }
+
+/**
+ * Pace against the plan: planned time covered per real time over the recent samples
+ * (1 = on plan, 0.9 = 10% slower). Needs 20 minutes of samples; clamped to 0.4–1.6.
+ */
+export function paceFrom(samples: { at: number; plannedAt: number }[], windowMs = 60 * 60_000): number | null {
+  if (samples.length < 2) return null;
+  const last = samples[samples.length - 1]!;
+  const recent = samples.filter((s) => last.at - s.at <= windowMs);
+  const first = recent[0]!;
+  const real = last.at - first.at;
+  if (real < 20 * 60_000) return null;
+  const pace = (last.plannedAt - first.plannedAt) / real;
+  if (!Number.isFinite(pace)) return null;
+  return Math.min(1.6, Math.max(0.4, pace));
+}
+
+/** Arrival at the current pace: the planned time still to go, stretched or shrunk by the pace. */
+export function etaAtPace(arriveAt: number, plannedAt: number, now: number, pace: number | null): number {
+  const left = Math.max(0, arriveAt - plannedAt);
+  return now + (pace ? left / pace : left);
+}

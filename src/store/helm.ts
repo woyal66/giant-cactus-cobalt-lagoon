@@ -211,7 +211,10 @@ export type HelmState = {
     | "draw-fence"
     | "draw-pack"
     | "route-start"
-    | "route-finish";
+    | "route-finish"
+    | "measure";
+  /** Measuring tool: points tapped on the chart (not saved). */
+  measurePts: LatLng[];
   /** Passage planner: start and finish taps, and the route shown on the chart. Not persisted. */
   routeStart: LatLng | null;
   routeFinish: LatLng | null;
@@ -362,6 +365,9 @@ type HelmActions = {
   cycleLook: () => void;
   setSunPunch: (n: 1 | 2 | 3) => void;
   setSharpTiles: (v: boolean) => void;
+  addMeasurePt: (p: LatLng) => void;
+  undoMeasurePt: () => void;
+  endMeasure: () => void;
   setTextSize: (v: TextSize) => void;
   setReefClarity: (v: boolean) => void;
   setRode: (partial: Partial<RodeSetup>) => void;
@@ -777,6 +783,7 @@ export const useHelm = create<HelmState & HelmActions>()(
       drafts: [],
       gpsDenied: false,
       tapMode: "none",
+      measurePts: [],
       wxPin: null,
       hookPreview: null,
       hookArmed: false,
@@ -1398,6 +1405,9 @@ export const useHelm = create<HelmState & HelmActions>()(
       },
       setSunPunch: (sunPunch) => set({ sunPunch, sunlight: true, look: "sunlight" }),
       setSharpTiles: (sharpTiles) => set({ sharpTiles }),
+      addMeasurePt: (p) => set({ measurePts: [...get().measurePts, { lat: p.lat, lng: p.lng }].slice(-40) }),
+      undoMeasurePt: () => set({ measurePts: get().measurePts.slice(0, -1) }),
+      endMeasure: () => set({ measurePts: [], tapMode: get().tapMode === "measure" ? "none" : get().tapMode }),
       setTextSize: (textSize) => set({ textSize }),
       setReefClarity: (reefClarity) => set({ reefClarity }),
       setRode: (partial) => {

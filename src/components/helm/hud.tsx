@@ -3,6 +3,7 @@ import { Link } from "@tanstack/react-router";
 import { toast } from "sonner";
 import {
   LocateFixed,
+  Ruler,
   Satellite,
 } from "lucide-react";
 import { SignedIn, SignedOut, UserButton } from "@/lib/auth/gates";
@@ -185,6 +186,21 @@ export function TopHud() {
               {imageryShort(imagery)}
             </p>
           </button>
+          <button
+            type="button"
+            aria-label={tapMode === "measure" ? "Stop measuring" : "Measure distance on the chart"}
+            onClick={() => {
+              const st = useHelm.getState();
+              if (st.tapMode === "measure") st.endMeasure();
+              else {
+                st.setPanel(null);
+                st.setTapMode("measure");
+              }
+            }}
+            className={`flex items-center justify-center rounded-md border py-1.5 shadow-[var(--shadow-border)] ${tapMode === "measure" ? "border-primary bg-primary text-primary-foreground" : "border-border bg-card/95 rp-glass"}`}
+          >
+            <Ruler className="size-4" aria-hidden />
+          </button>
           {availableImagery().length > 2 ? (
             <button
               type="button"
@@ -258,7 +274,7 @@ export function TopHud() {
         </div>
       </div>
 
-      {tapMode !== "none" && !tapMode.startsWith("route-") && anchorStep !== "circle" ? (
+      {tapMode !== "none" && tapMode !== "measure" && !tapMode.startsWith("route-") && anchorStep !== "circle" ? (
         <div className="pointer-events-auto mx-auto mt-1.5 flex max-w-6xl items-center gap-1.5 rounded-md bg-card/95 px-2 py-1.5 text-xs text-foreground shadow-[var(--shadow-border)]">
           <p className="min-w-0 flex-1 truncate">
             {tapMode === "place-boat"
@@ -386,7 +402,7 @@ export function MobHud() {
   const [guide, setGuide] = useState(false);
   if (!mark) return null;
   if (guide) return <MobGuide onClose={() => setGuide(false)} />;
-  if (panel || tapMode !== "none") return null;
+  if (panel || (tapMode !== "none" && tapMode !== "measure")) return null;
   // Steer for where they have probably drifted to by now, not the original mark.
   const minsSince = (Date.now() - mark.at) / 60_000;
   const nowPt = drift?.points.reduce<{ lat: number; lng: number; minutes: number } | null>(

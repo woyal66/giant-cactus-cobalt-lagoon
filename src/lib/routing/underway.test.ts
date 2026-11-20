@@ -47,3 +47,15 @@ test("log exports as CSV", () => {
   assert.match(csv, /^time,lat,lon/);
   assert.match(csv, /2026-11-21T00:00:00.000Z,-23.50000,152.00000,6.2,91,14,120,Full main \+ Genoa,"reef, ""early"""/);
 });
+
+test("pace and ETA when sailing slower than planned", async () => {
+  const { paceFrom, etaAtPace } = await import("./underway.ts");
+  const M = 60_000;
+  // 40 real minutes covering 36 planned minutes: 10% slow.
+  const samples = [0, 10, 20, 30, 40].map((m) => ({ at: m * M, plannedAt: m * 0.9 * M }));
+  const pace = paceFrom(samples)!;
+  assert.ok(Math.abs(pace - 0.9) < 1e-9);
+  // 3 h of plan left at 90% pace takes 3 h 20 min.
+  assert.equal(etaAtPace(36 * M + 180 * M, 36 * M, 40 * M, pace), 40 * M + 200 * M);
+  assert.equal(paceFrom(samples.slice(0, 2)), null); // under 20 minutes of data
+});

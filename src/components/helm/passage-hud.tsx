@@ -15,6 +15,8 @@ import { RISK_LABEL } from "@/lib/routing/storm";
 import {
   describeProgress,
   logToCsv,
+  etaAtPace,
+  paceFrom,
   meaningfulChange,
   progressOnPlan,
   upcoming,
@@ -103,6 +105,16 @@ export function PassageHud() {
     [saved, fix, now, notYet],
   );
   if (progress) lastIndex.current = progress.index;
+  // Where the boat is on the plan over time, for the pace (faster or slower than planned).
+  const paceLog = useRef<{ at: number; plannedAt: number }[]>([]);
+  if (progress && progress.offRouteM < 3000) {
+    const log = paceLog.current;
+    if (!log.length || now - log[log.length - 1]!.at >= MIN) {
+      log.push({ at: now, plannedAt: progress.plannedAt });
+      while (log.length && now - log[0]!.at > 90 * MIN) log.shift();
+    }
+  }
+  const pace = progress ? paceFrom(paceLog.current) : null;
   const plan = useMemo(() => (saved ? sailPlan(saved.points, sails) : null), [saved, sails]);
   const shiftMs = progress ? progress.behindMin * MIN : 0;
 
@@ -259,7 +271,10 @@ export function PassageHud() {
   if (!saved || !active) return null;
 
   const next3 = progress ? upcoming(saved.points, progress, now, 3) : [];
-  const eta = saved.arriveAt + shiftMs;
+  // At your recent pace when known (keeps getting later if you stay slow), else plan + lag.
+  const eta = progress && pace ? etaAtPace(saved.arriveAt, progress.plannedAt, now, pace) : saved.arriveAt + shiftMs;
+  const paceNote =
+    pace && Math.abs(pace - 1) >= 0.05 ? ` · ${Math.round(Math.abs(pace - 1) * 100)}% ${pace < 1 ? "slower" : "faster"} than planned` : "";
 
   return (
     <div className="pointer-events-none absolute inset-x-14 top-[calc(max(0.4rem,env(safe-area-inset-top))+4.1rem)] z-30">
@@ -278,7 +293,7 @@ export function PassageHud() {
                   ? describeProgress(progress)
                   : "Waiting for GPS"}
             </span>
-            <span className="text-muted-foreground"> · ETA {new Date(eta).toDateString() === new Date(now).toDateString() ? "" : `${new Date(eta).toLocaleDateString([], { weekday: "short" })} `}{clock(eta)}</span>
+            <span className="text-muted-foreground"> · ETA {new Date(eta).toDateString() === new Date(now).toDateString() ? "" : `${new Date(eta).toLocaleDateString([], { weekday: "short" })} `}{clock(eta)}{paceNote}</span>
           </span>
           {open ? <ChevronUp className="size-4 shrink-0" /> : <ChevronDown className="size-4 shrink-0" />}
         </button>
@@ -370,6 +385,12 @@ export function PassageHud() {
               </Button>
             </div>
             <SatPaste />
+            {Math.abs(eta - saved.arriveAt) >= 45 * MIN ? (
+              <p className="mt-1.5 text-t14 text-amber-300">
+                At this pace you arrive {Math.round(Math.abs(eta - saved.arriveAt) / MIN)} min {eta > saved.arriveAt ? "later" : "earlier"} than
+                planned, so the wind and tide you meet will differ. Tap Re-route from here to plan for the new times.
+              </p>
+            ) : null}
             {prefs.rules.thunder !== "ignore" && next3.some((p) => p.thunder >= 2) ? (
               <p className="mt-1.5 text-t14 text-amber-300">Storms likely in the next 3 hours. Reef early and watch the sky.</p>
             ) : null}

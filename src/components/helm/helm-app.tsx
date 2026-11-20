@@ -22,6 +22,7 @@ import { FirstRunGuide } from "@/components/helm/first-run-guide";
 import { RoutePlanner } from "@/components/helm/route-planner";
 import { PassageHud } from "@/components/helm/passage-hud";
 import { RadarChip } from "@/components/helm/radar-chip";
+import { MeasureBar } from "@/components/helm/measure-bar";
 import { PerfChip } from "@/components/helm/perf-chip";
 import { usePolarMonitor } from "@/hooks/polar-monitor";
 import { useMobDrift } from "@/hooks/mob-drift";
@@ -110,6 +111,7 @@ export function HelmApp() {
       <BottomDock />
       <Disclaimer />
       <RadarChip />
+      <MeasureBar />
       <PerfChip />
       <PassageHud />
       <RoutePlanner />

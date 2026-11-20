@@ -15,7 +15,7 @@ import type {
 } from "leaflet";
 import { useHelm, guidePoints, passagePoints } from "@/store/helm";
 import { getReef } from "@/lib/reefs";
-import { bearingDegrees, destPoint, haversineMeters, chartBearing, hullScreenHeading, lerpBearing, segmentTube, cornerIndexes, TUBE_M } from "@/lib/geo";
+import { bearingDegrees, destPoint, formatHeading, formatMeters, haversineMeters, chartBearing, hullScreenHeading, lerpBearing, segmentTube, cornerIndexes, TUBE_M } from "@/lib/geo";
 import { rodeDropNote, laybackM, snapToLayback, clampAlarmRadius } from "@/lib/anchor";
 import { markNav } from "@/lib/steer";
 import { bowFromGps, type BoatSetup } from "@/lib/boat";
@@ -49,6 +49,7 @@ import {
 } from "@/lib/imagery";
 import { squareFromCorners } from "@/lib/offline-tiles";
 import { toast } from "sonner";
+import { measure } from "@/lib/measure";
 import { createRadar } from "@/components/helm/radar-layer";
 import { radarAvailable } from "@/lib/radar";
 
@@ -960,6 +961,9 @@ export function MapView() {
         // MOB drift: where the person is likely to be at +5 / +10 / +20 min (and now).
         const mobDriftGroup: LayerGroup = L.layerGroup();
         let mobDriftStamp = "";
+        // Measuring tool: line, points and a distance and bearing label on each leg.
+        const measureGroup: LayerGroup = L.layerGroup();
+        let measureStamp = "";
         const tubeGroup: LayerGroup = L.layerGroup();
         routeGlow.addTo(map);
         routeLine.addTo(map);
@@ -1561,6 +1565,36 @@ export function MapView() {
           } else if (map.hasLayer(planCursor)) {
             map.removeLayer(planCursor);
           }
+          const mStamp = `${s.depthUnit}|${s.lengthUnit}|` + s.measurePts.map((p) => `${p.lat.toFixed(6)},${p.lng.toFixed(6)}`).join("|");
+          if (mStamp !== measureStamp) {
+            measureStamp = mStamp;
+            measureGroup.clearLayers();
+            const mp = s.measurePts;
+            if (mp.length) {
+              const ll = mp.map((p) => [p.lat, p.lng] as [number, number]);
+              L.polyline(ll, { color: "#000000", weight: 6, opacity: 0.45, interactive: false }).addTo(measureGroup);
+              L.polyline(ll, { color: "#ffffff", weight: 3, dashArray: "8 6", interactive: false }).addTo(measureGroup);
+              for (const p of mp) {
+                L.circleMarker([p.lat, p.lng], { radius: 6, color: "#000", weight: 2, fillColor: "#fff", fillOpacity: 1, interactive: false }).addTo(measureGroup);
+              }
+              for (const leg of measure(mp).legs) {
+                const mid: [number, number] = [(leg.from.lat + leg.to.lat) / 2, (leg.from.lng + leg.to.lng) / 2];
+                L.marker(mid, {
+                  icon: L.divIcon({
+                    className: "rp-divicon",
+                    html: `<span style="font:600 13px system-ui;color:#fff;background:rgba(0,0,0,.78);padding:2px 6px;border-radius:6px;white-space:nowrap">${formatMeters(leg.distM)} · ${formatHeading(leg.bearing)}</span>`,
+                    iconSize: [120, 22],
+                    iconAnchor: [60, 11],
+                  }),
+                  interactive: false,
+                  keyboard: false,
+                }).addTo(measureGroup);
+              }
+              if (!map.hasLayer(measureGroup)) measureGroup.addTo(map);
+            } else if (map.hasLayer(measureGroup)) {
+              map.removeLayer(measureGroup);
+            }
+          }
           const md = s.mob ? s.mobDrift : null;
           const mdStamp = md ? md.points.map((p) => `${p.minutes.toFixed(0)}:${p.lat.toFixed(5)},${p.lng.toFixed(5)}`).join("|") : "";
           if (mdStamp !== mobDriftStamp) {
@@ -1878,6 +1912,10 @@ export function MapView() {
               ...wp,
               label: `WP ${s.draft.length + 1}`,
             });
+            return;
+          }
+          if (s.tapMode === "measure") {
+            s.addMeasurePt(wp);
             return;
           }
           if (s.tapMode === "route-start") {
