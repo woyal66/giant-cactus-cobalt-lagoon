@@ -1,0 +1,51 @@
+{
+  "url": "http://127.0.0.1:8081/",
+  "viewports": {
+    "desktop": {
+      "width": 1280,
+      "height": 800,
+      "status": 200,
+      "title": "ReefPilot",
+      "hasCanvas": false,
+      "bodyTextLen": 218,
+      "bodyTextHash": "32aea831d32b0649bdac8f6a737af8306d2811e65782fb6d22a8cf8789929346",
+      "bodyTextPrefix": "ReefPilot SATELLITE HELM NO FIX WIND …kn LAT — LON — Sign in N 1",
+      "horizontalOverflow": false,
+      "consoleErrors": [
+        "Failed to load resource: the server responded with a status of 429 (Too Many Requests)",
+        "Failed to load resource: the server responded with a status of 429 (Too Many Requests)",
+        "Failed to load resource: the server responded with a status of 429 (Too Many Requests)"
+      ],
+      "pageErrors": [],
+      "screenshot": "/workspace/screenshots/app-builder-built.png"
+    },
+    "mobile": {
+      "width": 390,
+      "height": 844,
+      "status": 200,
+      "title": "ReefPilot",
+      "hasCanvas": false,
+      "bodyTextLen": 98,
+      "bodyTextHash": "79e2d5b7912133905cbb9dc1bdeb828ee9df450cdeb2c86de7103edf6398a605",
+      "bodyTextPrefix": "WIND …kn NO FIX In N 17890 m/px MOB GPS off — Layers → Place boa",
+      "horizontalOverflow": false,
+      "consoleErrors": [
+        "Failed to load resource: the server responded with a status of 429 (Too Many Requests)",
+        "Failed to load resource: the server responded with a status of 429 (Too Many Requests)",
+        "Failed to load resource: the server responded with a status of 429 (Too Many Requests)"
+      ],
+      "pageErrors": [],
+      "screenshot": "/workspace/screenshots/app-builder-built-mobile.png"
+    }
+  },
+  "brandWarnings": [],
+  "authWarnings": [],
+  "verdictFile": "/workspace/screenshots/app-builder-built.json",
+  "divergesFromBaseline": true,
+  "baselineReasons": [
+    "desktop: console/page errors appeared (3)",
+    "desktop: body text changed (193 -> 218 chars, hash mismatch)",
+    "mobile: console/page errors appeared (3)",
+    "mobile: body text replaced (similar length, page start changed)"
+  ]
+}

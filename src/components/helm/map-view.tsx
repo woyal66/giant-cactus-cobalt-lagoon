@@ -1,0 +1,2025 @@
+import { useEffect, useRef } from "react";
+import type {
+  Coords,
+  DoneCallback,
+  Map as LeafletMap,
+  Marker,
+  Circle,
+  Polyline,
+  Polygon,
+  Rectangle,
+  TileLayer,
+  LayerGroup,
+  TileEvent,
+  TileLayerOptions,
+} from "leaflet";
+import { useHelm, guidePoints, passagePoints } from "@/store/helm";
+import { getReef } from "@/lib/reefs";
+import { bearingDegrees, destPoint, haversineMeters, chartBearing, hullScreenHeading, lerpBearing, segmentTube, cornerIndexes, TUBE_M } from "@/lib/geo";
+import { rodeDropNote, laybackM, snapToLayback, clampAlarmRadius } from "@/lib/anchor";
+import { markNav } from "@/lib/steer";
+import { bowFromGps, type BoatSetup } from "@/lib/boat";
+import { readTile, type OfflineSource } from "@/lib/offline-tiles";
+import { useWx } from "@/hooks/weather";
+import {
+  ATTR_BING,
+  ATTR_ESRI,
+  ATTR_GOOGLE,
+  ATTR_OPENSEAMAP,
+  ATTR_SENTINEL,
+  CLOSE_ZOOM,
+  DEPTH_WMS_LAYERS,
+  DEPTH_WMS_URL,
+  HELM_ZOOM,
+  LABELS_URL,
+  MAX_ZOOM,
+  SEAMARK_URL,
+  SENTINEL_URL,
+  STUB_TILE_BYTES,
+  autoSatOrder,
+  satTileUrl,
+  type ImageryId,
+  type SatSource,
+} from "@/lib/imagery";
+import { squareFromCorners } from "@/lib/offline-tiles";
+import { toast } from "sonner";
+
+/** LatLng to put at screen centre so the boat sits just below it. */
+function followCenter(
+  map: LeafletMap,
+  boat: { lat: number; lng: number },
+  low: boolean,
+): { lat: number; lng: number } {
+  if (!low) return boat;
+  const drop = Math.round(Math.min(150, Math.max(56, map.getSize().y * 0.16)));
+  const pt = map.latLngToContainerPoint([boat.lat, boat.lng]);
+  const ahead = map.containerPointToLatLng([pt.x, pt.y - drop]);
+  return { lat: ahead.lat, lng: ahead.lng };
+}
+
+function cssVar(name: string, fallback: string) {
+  if (typeof window === "undefined") return fallback;
+  const v = getComputedStyle(document.documentElement)
+    .getPropertyValue(name)
+    .trim();
+  return v || fallback;
+}
+
+function boatHtml(heading: number, size: number, gpsX: number, gpsY: number) {
+  const rot = Number.isFinite(heading) ? heading : 0;
+  return `<div class="rp-boat" style="width:${size}px;height:${size}px;transform:rotate(${rot}deg);transform-origin:${gpsX}px ${gpsY}px">
+    <svg viewBox="0 0 40 40" width="${size}" height="${size}" aria-hidden="true">
+      <path class="rp-boat-hull" d="M20 2 L32 34 L20 28 L8 34 Z"/>
+      <circle class="rp-boat-gps" cx="${(gpsX / size) * 40}" cy="${(gpsY / size) * 40}" r="2.4"/>
+    </svg>
+  </div>`;
+}
+
+function loaPixels(lat: number, zoom: number, loaM: number, sun: boolean) {
+  const mPerPx =
+    (40075016.686 * Math.cos((lat * Math.PI) / 180)) / (256 * 2 ** zoom);
+  const px = loaM / Math.max(mPerPx, 0.08);
+  return Math.round(Math.min(160, Math.max(sun ? 48 : 36, px)));
+}
+
+function gpsAnchorPx(size: number, hull: BoatSetup) {
+  const gpsY = Math.max(
+    3,
+    Math.min(size - 3, (hull.gpsFromBowM / Math.max(1, hull.loaM)) * size),
+  );
+  const gpsX =
+    size / 2 +
+    (hull.gpsFromCenterM / Math.max(0.4, hull.beamM)) * (size * 0.28);
+  return { gpsX, gpsY };
+}
+
+function pinHtml(kind: "anchor" | "wp" | "rim", label?: string, next?: boolean) {
+  if (kind === "anchor") {
+    return `<div class="rp-pin rp-pin-anchor"><svg viewBox="0 0 24 24" width="22" height="22"><path fill="currentColor" d="M12 2a3 3 0 0 1 1 5.83V11h3v2h-3.1A6.5 6.5 0 0 1 18 19h-2a4.5 6.5 0 0 0-8 0H6a6.5 6.5 0 0 1 5.1-6H8v-2h3V7.83A3 3 0 0 1 12 2Z"/></svg></div>`;
+  }
+  if (kind === "rim") {
+    return `<div class="rp-rim"></div>`;
+  }
+  const named = label === "Start" || label === "Stop";
+  return `<div class="rp-pin rp-pin-wp${named ? " rp-pin-end" : ""}${next ? " rp-pin-next" : ""}">${label ?? ""}</div>`;
+}
+
+export function zoomBy(delta: 1 | -1) {
+  window.dispatchEvent(new CustomEvent("rp-zoom", { detail: delta }));
+}
+
+export function closeInOnBoat() {
+  window.dispatchEvent(new CustomEvent("rp-close-in"));
+}
+
+type SeaSetPaint = {
+  lat: number;
+  lng: number;
+  kn: number;
+  screenDeg: number;
+} | null;
+
+let paintSeaSet: ((v: SeaSetPaint) => void) | null = null;
+
+export function setSeaSetOverlay(v: SeaSetPaint) {
+  paintSeaSet?.(v);
+}
+
+type ChartBounds = {
+  south: number;
+  west: number;
+  north: number;
+  east: number;
+  zoom: number;
+};
+
+let chartBounds: ChartBounds | null = null;
+
+export function getChartBounds(): ChartBounds | null {
+  return chartBounds;
+}
+
+const TRANSPARENT_GIF =
+  "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==";
+
+let satEpoch = 0;
+const memTiles = new Map<string, Blob>();
+
+function rememberTile(key: string | undefined, blob: Blob) {
+  if (!key) return;
+  memTiles.set(key, blob);
+  if (memTiles.size > 480) {
+    const first = memTiles.keys().next().value;
+    if (first) memTiles.delete(first);
+  }
+}
+
+type LeafletNS = typeof import("leaflet");
+
+function leafletFrom(mod: unknown): LeafletNS {
+  const m = mod as LeafletNS & { default?: LeafletNS & { default?: LeafletNS } };
+  if (typeof m.TileLayer === "function" && typeof m.map === "function") return m;
+  if (typeof m.default?.TileLayer === "function" && typeof m.default.map === "function") {
+    return m.default;
+  }
+  if (typeof m.default?.default?.TileLayer === "function") return m.default.default;
+  throw new Error("Leaflet TileLayer missing");
+}
+
+/** Light grey "no imagery" tiles are tiny and flat. Real ocean can be small and dark — keep those. */
+async function isPlaceholder(blob: Blob): Promise<boolean> {
+  if (blob.size < 400) return true;
+  if (blob.size > 6000) return false;
+  try {
+    const bmp = await createImageBitmap(blob);
+    const canvas = document.createElement("canvas");
+    canvas.width = 8;
+    canvas.height = 8;
+    const g = canvas.getContext("2d", { willReadFrequently: true });
+    if (!g) return false;
+    g.drawImage(bmp, 0, 0, 8, 8);
+    bmp.close();
+    const d = g.getImageData(0, 0, 8, 8).data;
+    let n = 0;
+    let sr = 0;
+    let sg = 0;
+    let sb = 0;
+    let min = 255;
+    let max = 0;
+    for (let i = 0; i < d.length; i += 4) {
+      const y = (d[i]! + d[i + 1]! + d[i + 2]!) / 3;
+      if (y < min) min = y;
+      if (y > max) max = y;
+      sr += d[i]!;
+      sg += d[i + 1]!;
+      sb += d[i + 2]!;
+      n += 1;
+    }
+    const ar = sr / n;
+    const ag = sg / n;
+    const ab = sb / n;
+    const grey = Math.abs(ar - ag) < 14 && Math.abs(ag - ab) < 14;
+    const light = (ar + ag + ab) / 3 > 150;
+    return grey && light && max - min < 18;
+  } catch {
+    return blob.size < STUB_TILE_BYTES;
+  }
+}
+
+async function fetchRealTile(url: string, cacheKey?: string): Promise<Blob | null> {
+  if (cacheKey) {
+    const mem = memTiles.get(cacheKey);
+    if (mem) return mem;
+    const hit = await readTile(cacheKey);
+    if (hit && !(await isPlaceholder(hit))) {
+      rememberTile(cacheKey, hit);
+      return hit;
+    }
+  }
+  try {
+    const r = await fetch(url, { mode: "cors" });
+    if (!r.ok) return null;
+    const blob = await r.blob();
+    if (await isPlaceholder(blob)) return null;
+    rememberTile(cacheKey, blob);
+    return blob;
+  } catch {
+    return null;
+  }
+}
+
+function loadSatTile(
+  tile: HTMLImageElement,
+  sources: { id: string; url: string; cacheKey?: string }[],
+  done: DoneCallback,
+) {
+  const ok = () => done(undefined, tile);
+  const blank = () => {
+    tile.src = TRANSPARENT_GIF;
+    tile.onload = ok;
+  };
+  const paint = (blob: Blob, id: string) => {
+    if (tile.dataset.gen !== String(satEpoch)) return;
+    const obj = URL.createObjectURL(blob);
+    tile.dataset.blob = obj;
+    tile.dataset.sat = id;
+    tile.onload = ok;
+    tile.onerror = blank;
+    tile.src = obj;
+  };
+
+  void (async () => {
+    for (const src of sources) {
+      if (tile.dataset.gen !== String(satEpoch)) return;
+      const blob = await fetchRealTile(src.url, src.cacheKey);
+      if (!blob) continue;
+      paint(blob, src.id);
+      return;
+    }
+    if (tile.dataset.gen !== String(satEpoch)) return;
+    const first = sources[0];
+    if (!first) {
+      blank();
+      return;
+    }
+    tile.dataset.sat = first.id;
+    tile.onload = ok;
+    tile.onerror = blank;
+    tile.src = first.url;
+  })();
+}
+
+function satLayer(
+  L: LeafletNS,
+  url: string,
+  opts: {
+    maxNativeZoom: number;
+    attribution: string;
+    skipStubs?: boolean;
+    pane?: string;
+    opacity?: number;
+    subdomains?: string;
+    tileUrl?: (coords: Coords) => string;
+    cacheSource?: OfflineSource;
+    /** Tried in order. First real photo wins. Sentinel-only passes one. */
+    sources?: (coords: Coords) => { id: string; url: string; cacheKey?: string }[];
+  },
+): TileLayer {
+  const options: TileLayerOptions = {
+    maxZoom: MAX_ZOOM,
+    maxNativeZoom: opts.maxNativeZoom,
+    minZoom: 3,
+    detectRetina: false,
+    keepBuffer: 6,
+    updateWhenIdle: false,
+    updateWhenZooming: true,
+    attribution: opts.attribution,
+    errorTileUrl: TRANSPARENT_GIF,
+    opacity: opts.opacity ?? 1,
+    className: "rp-sat-tile",
+  };
+  if (opts.pane) options.pane = opts.pane;
+  if (opts.subdomains) options.subdomains = opts.subdomains;
+
+  if (!opts.skipStubs && !opts.tileUrl && !opts.sources) {
+    return L.tileLayer(url, options);
+  }
+
+  const proto: {
+    getTileUrl?: (coords: Coords) => string;
+    createTile?: (coords: Coords, done: DoneCallback) => HTMLElement;
+  } = {};
+
+  if (opts.tileUrl) {
+    const custom = opts.tileUrl;
+    proto.getTileUrl = function (coords: Coords) {
+      return custom(coords);
+    };
+  }
+
+  if (opts.skipStubs || opts.cacheSource || opts.sources) {
+    proto.createTile = function (
+      this: TileLayer,
+      coords: Coords,
+      done: DoneCallback,
+    ) {
+      const tile = document.createElement("img");
+      tile.alt = "";
+      tile.dataset.gen = String(satEpoch);
+      tile.setAttribute("role", "presentation");
+      const list = opts.sources
+        ? opts.sources(coords)
+        : [
+            {
+              id: opts.cacheSource ?? "sat",
+              url: this.getTileUrl(coords),
+              cacheKey: opts.cacheSource
+                ? `${opts.cacheSource}/${coords.z}/${coords.x}/${coords.y}`
+                : undefined,
+            },
+          ];
+      const cached = list.find((src) => src.cacheKey && memTiles.has(src.cacheKey));
+      if (cached?.cacheKey) {
+        const blob = memTiles.get(cached.cacheKey);
+        if (blob) {
+          const obj = URL.createObjectURL(blob);
+          tile.dataset.blob = obj;
+          tile.dataset.sat = cached.id;
+          tile.onload = () => done(undefined, tile);
+          tile.onerror = () => {
+            tile.src = TRANSPARENT_GIF;
+            tile.onload = () => done(undefined, tile);
+          };
+          tile.src = obj;
+          return tile;
+        }
+      }
+      tile.src = TRANSPARENT_GIF;
+      loadSatTile(tile, list, done);
+      return tile;
+    };
+  }
+
+  const Ctor = L.TileLayer.extend(proto) as unknown as new (
+    template: string,
+    layerOpts?: TileLayerOptions,
+  ) => TileLayer;
+  const layer = new Ctor(url, options);
+  layer.on("tileunload", (e: TileEvent) => {
+    const blob = e.tile.dataset.blob;
+    if (blob) URL.revokeObjectURL(blob);
+  });
+  return layer;
+}
+
+function tileChoice(id: SatSource, coords: Coords) {
+  return [
+    {
+      id,
+      url: satTileUrl(id, coords.x, coords.y, coords.z),
+      cacheKey: `${id}/${coords.z}/${coords.x}/${coords.y}`,
+    },
+  ];
+}
+
+function nativeZoom(id: ImageryId): number {
+  if (id === "google" || id === "auto") return 21;
+  if (id === "bing") return 19;
+  return 18;
+}
+
+export function MapView() {
+  const hostRef = useRef<HTMLDivElement>(null);
+  const wx = useWx();
+  const boat = useHelm((s) => s.boat ?? s.lastFix);
+  const chartUp = useHelm((s) => s.chartUp);
+
+  useEffect(() => {
+    const sea = wx.data?.sea;
+    if (
+      !boat ||
+      sea?.currentKn == null ||
+      sea.currentDir == null ||
+      sea.currentKn < 0.2
+    ) {
+      setSeaSetOverlay(null);
+      return;
+    }
+    const screen = sea.currentDir - chartBearing(chartUp, boat.heading);
+    setSeaSetOverlay({
+      lat: boat.lat,
+      lng: boat.lng,
+      kn: sea.currentKn,
+      screenDeg: screen,
+    });
+  }, [wx.data, boat, chartUp]);
+
+  useEffect(() => {
+    const host = hostRef.current;
+    if (!host) return;
+    let cancelled = false;
+    let map: LeafletMap | null = null;
+    let unsub: () => void = () => {};
+
+    void import("leaflet").then(async (mod) => {
+        if (cancelled || !hostRef.current) return;
+        const L = leafletFrom(mod);
+        (window as unknown as { L: LeafletNS }).L = L;
+        await import("leaflet-rotate");
+        if (cancelled || !hostRef.current) return;
+
+        const primary = cssVar("--color-primary", "#3ee0c0");
+        const danger = cssVar("--color-destructive", "#ff5a6a");
+        const fg = cssVar("--color-foreground", "#e6f3ef");
+        const sunMark = cssVar("--color-sun-mark", "#f4fff8");
+        const sunInk = cssVar("--color-sun-ink", "#041016");
+
+        map = L.map(hostRef.current, {
+          zoomControl: false,
+          attributionControl: true,
+          maxZoom: MAX_ZOOM,
+          minZoom: 3,
+          worldCopyJump: false,
+          zoomSnap: 0.25,
+          zoomDelta: 0.5,
+          fadeAnimation: true,
+          zoomAnimation: true,
+          dragging: true,
+          tapTolerance: 20,
+          inertia: true,
+          inertiaDeceleration: 1800,
+          bounceAtZoomLimits: false,
+          rotate: true,
+          rotateControl: false,
+          bearing: 0,
+          touchRotate: false,
+          shiftKeyRotate: false,
+          compassBearing: false,
+        } as Parameters<LeafletNS["map"]>[1]);
+        const mapDrag = map.dragging as typeof map.dragging & {
+          moving?: () => boolean;
+          _draggable?: { options: { clickTolerance: number } };
+        };
+        if (mapDrag._draggable) mapDrag._draggable.options.clickTolerance = 1;
+
+        const rotatePane = map.getPane("rotatePane") ?? map.getPane("mapPane");
+        map.createPane("satOverlay", rotatePane);
+        const overlayPane = map.getPane("satOverlay");
+        if (overlayPane) overlayPane.style.zIndex = "250";
+        map.createPane("satHi", rotatePane);
+        const hiPane = map.getPane("satHi");
+        if (hiPane) hiPane.style.zIndex = "260";
+        map.createPane("chartOverlay", rotatePane);
+        const chartPane = map.getPane("chartOverlay");
+        if (chartPane) chartPane.style.zIndex = "270";
+
+        let activeImagery: ImageryId = useHelm.getState().imagery;
+        const attrFor = (id: ImageryId) =>
+          id === "google"
+            ? ATTR_GOOGLE
+            : id === "bing"
+              ? ATTR_BING
+              : id === "sentinel"
+                ? ATTR_SENTINEL
+                : id === "auto"
+                  ? "Clearest satellite · Google, Maxar, Bing, Copernicus"
+                  : ATTR_ESRI;
+        const sourcesFor = (id: ImageryId) => (c: Coords) =>
+          id === "auto"
+            ? autoSatOrder(c.z).map((src) => ({
+                id: src,
+                url: satTileUrl(src, c.x, c.y, c.z),
+                cacheKey: `${src}/${c.z}/${c.x}/${c.y}`,
+              }))
+            : tileChoice(id, c);
+        let photo = satLayer(L, SENTINEL_URL, {
+          maxNativeZoom: nativeZoom(activeImagery),
+          attribution: attrFor(activeImagery),
+          sources: sourcesFor(activeImagery),
+        });
+        photo.addTo(map);
+        let incoming: TileLayer | null = null;
+        const labels: TileLayer = L.tileLayer(LABELS_URL, {
+          maxZoom: MAX_ZOOM,
+          maxNativeZoom: 19,
+          detectRetina: false,
+          opacity: 0.9,
+          pane: "satHi",
+        });
+        const sea: TileLayer = L.tileLayer(SEAMARK_URL, {
+          maxZoom: 18,
+          opacity: 0.95,
+          pane: "chartOverlay",
+          attribution: ATTR_OPENSEAMAP,
+        });
+        const depths: TileLayer = L.tileLayer.wms(DEPTH_WMS_URL, {
+          layers: DEPTH_WMS_LAYERS,
+          format: "image/png",
+          transparent: true,
+          version: "1.1.0",
+          maxZoom: MAX_ZOOM,
+          opacity: 0.85,
+          pane: "chartOverlay",
+          attribution: ATTR_OPENSEAMAP,
+        });
+
+        L.control
+          .scale({ metric: true, imperial: false, position: "bottomright" })
+          .addTo(map);
+
+        const boatIcon = (
+          heading: number,
+          sun: boolean,
+          hull: BoatSetup,
+          lat: number,
+          zoom: number,
+        ) => {
+          const size = loaPixels(lat, zoom, hull.loaM, sun);
+          const { gpsX, gpsY } = gpsAnchorPx(size, hull);
+          return L.divIcon({
+            className: "rp-divicon",
+            html: boatHtml(heading, size, gpsX, gpsY),
+            iconSize: [size, size],
+            iconAnchor: [gpsX, gpsY],
+          });
+        };
+
+        const boatMarker: Marker = L.marker([-23.8918, 152.3842], {
+          icon: boatIcon(125, false, useHelm.getState().hull, -23.8918, HELM_ZOOM),
+          zIndexOffset: 800,
+          keyboard: false,
+          interactive: false,
+        });
+        const setMarker: Marker = L.marker([-23.8918, 152.3842], {
+          icon: L.divIcon({
+            className: "rp-divicon",
+            html: `<div class="rp-set"></div>`,
+            iconSize: [28, 28],
+            iconAnchor: [14, 14],
+          }),
+          zIndexOffset: 750,
+          keyboard: false,
+          interactive: false,
+        });
+        let setOn = false;
+        paintSeaSet = (v) => {
+          if (!map) return;
+          if (!v || v.kn < 0.2) {
+            if (setOn) {
+              map.removeLayer(setMarker);
+              setOn = false;
+            }
+            return;
+          }
+          setMarker.setLatLng([v.lat, v.lng]);
+          setMarker.setIcon(
+            L.divIcon({
+              className: "rp-divicon",
+              html: `<div class="rp-set" style="transform:rotate(${v.screenDeg}deg)"><svg viewBox="0 0 24 32" width="22" height="28"><path d="M12 2 L20 18 L14 18 L14 30 L10 30 L10 18 L4 18 Z"/></svg></div>`,
+              iconSize: [28, 28],
+              iconAnchor: [14, 14],
+            }),
+          );
+          if (!setOn) {
+            setMarker.addTo(map);
+            setOn = true;
+          }
+        };
+
+        const accCircle: Circle = L.circle([-23.8918, 152.3842], {
+          radius: 8,
+          color: primary,
+          weight: 1,
+          fillColor: primary,
+          fillOpacity: 0.12,
+          interactive: false,
+        });
+        const anchorCircle: Circle = L.circle([0, 0], {
+          radius: 40,
+          color: primary,
+          weight: 2,
+          dashArray: "6 8",
+          fillColor: primary,
+          fillOpacity: 0.08,
+          interactive: false,
+        });
+        const alarmCircle: Circle = L.circle([0, 0], {
+          radius: 40,
+          color: danger,
+          weight: 3,
+          fillColor: danger,
+          fillOpacity: 0.18,
+          interactive: false,
+        });
+        const laybackCircle: Circle = L.circle([0, 0], {
+          radius: 30,
+          color: primary,
+          weight: 2,
+          dashArray: "2 10",
+          fillColor: primary,
+          fillOpacity: 0.04,
+          interactive: false,
+        });
+        const rodeLine: Polyline = L.polyline([], {
+          color: primary,
+          weight: 3,
+          dashArray: "5 7",
+          opacity: 0.95,
+          interactive: false,
+        });
+        const hookGhost: Marker = L.marker([0, 0], {
+          icon: L.divIcon({
+            className: "rp-divicon",
+            html: pinHtml("anchor"),
+            iconSize: [28, 28],
+            iconAnchor: [14, 14],
+          }),
+          interactive: false,
+          opacity: 0.75,
+          zIndexOffset: 550,
+        });
+        const anchorMarker: Marker = L.marker([0, 0], {
+          icon: L.divIcon({
+            className: "rp-divicon",
+            html: pinHtml("anchor"),
+            iconSize: [28, 28],
+            iconAnchor: [14, 14],
+          }),
+          draggable: true,
+          autoPan: true,
+          zIndexOffset: 500,
+        });
+        const rimHandle: Marker = L.marker([0, 0], {
+          icon: L.divIcon({
+            className: "rp-divicon",
+            html: pinHtml("rim"),
+            iconSize: [22, 22],
+            iconAnchor: [11, 11],
+          }),
+          draggable: true,
+          autoPan: false,
+          zIndexOffset: 520,
+        });
+        const fencePoly: Polygon = L.polygon([], {
+          color: primary,
+          weight: 3,
+          fillColor: primary,
+          fillOpacity: 0.08,
+          interactive: false,
+        });
+        const fenceDraftLine: Polyline = L.polyline([], {
+          color: primary,
+          weight: 3,
+          dashArray: "6 6",
+          interactive: false,
+        });
+        const fenceGroup: LayerGroup = L.layerGroup();
+        const rangeLine: Polyline = L.polyline([], {
+          color: primary,
+          weight: 2,
+          dashArray: "4 8",
+          opacity: 0.95,
+          interactive: false,
+        });
+        const routeLine: Polyline = L.polyline([], {
+          color: primary,
+          weight: 4,
+          opacity: 0.95,
+          lineJoin: "round",
+          lineCap: "round",
+        });
+        const routeGlow: Polyline = L.polyline([], {
+          color: fg,
+          weight: 8,
+          opacity: 0.22,
+          lineJoin: "round",
+        });
+        const draftLine: Polyline = L.polyline([], {
+          color: primary,
+          weight: 3,
+          dashArray: "7 8",
+          opacity: 0.9,
+        });
+        const swingLine: Polyline = L.polyline([], {
+          color: primary,
+          weight: 2.5,
+          opacity: 0.9,
+          lineJoin: "round",
+          lineCap: "round",
+        });
+        const crumbLine: Polyline = L.polyline([], {
+          color: "#f0c14a",
+          weight: 3,
+          opacity: 0.85,
+          lineJoin: "round",
+          lineCap: "round",
+        });
+        const mobLine: Polyline = L.polyline([], {
+          color: danger,
+          weight: 3,
+          dashArray: "3 7",
+          opacity: 0.95,
+          interactive: false,
+        });
+        const mobMarker: Marker = L.marker([0, 0], {
+          icon: L.divIcon({
+            className: "rp-divicon",
+            html: `<div class="rp-pin rp-pin-mob">MOB</div>`,
+            iconSize: [36, 36],
+            iconAnchor: [18, 18],
+          }),
+          interactive: false,
+          zIndexOffset: 900,
+        });
+        const wxOpen = document.createElement("button");
+        wxOpen.type = "button";
+        wxOpen.className = "rp-wx-open";
+        wxOpen.dataset.wx = "open";
+        wxOpen.textContent = "Forecast";
+        const openWx = (ev: Event) => {
+          ev.preventDefault();
+          ev.stopPropagation();
+          useHelm.getState().setPanel("weather");
+          wxMarker.closePopup();
+        };
+        wxOpen.addEventListener("pointerup", openWx);
+        wxOpen.addEventListener("click", openWx);
+        const wxMarker: Marker = L.marker([0, 0], {
+          icon: L.divIcon({
+            className: "rp-divicon",
+            html: `<div class="rp-pin">WX</div>`,
+            iconSize: [36, 22],
+            iconAnchor: [18, 11],
+          }),
+          interactive: true,
+          zIndexOffset: 700,
+        });
+        wxMarker.bindPopup(wxOpen, {
+          closeButton: false,
+          closeOnClick: false,
+          autoPan: true,
+          offset: [0, -6],
+          className: "rp-wx-pop",
+          minWidth: 108,
+        });
+        wxMarker.on("popupopen", () => {
+          const el = wxMarker.getPopup()?.getElement();
+          if (!el) return;
+          el.onpointerup = (ev) => {
+            ev.preventDefault();
+            ev.stopPropagation();
+            useHelm.getState().setPanel("weather");
+            wxMarker.closePopup();
+          };
+        });
+        let wxWantPopup = false;
+        const packDraftRect: Rectangle = L.rectangle(
+          [
+            [0, 0],
+            [0, 0],
+          ],
+          {
+            color: "#3ee0c0",
+            weight: 2,
+            dashArray: "6 5",
+            fillOpacity: 0.08,
+            interactive: false,
+          },
+        );
+        const packGroup: LayerGroup = L.layerGroup();
+        const wpGroup: LayerGroup = L.layerGroup();
+        const tubeGroup: LayerGroup = L.layerGroup();
+        routeGlow.addTo(map);
+        routeLine.addTo(map);
+        draftLine.addTo(map);
+        swingLine.addTo(map);
+        crumbLine.addTo(map);
+        packGroup.addTo(map);
+        tubeGroup.addTo(map);
+        wpGroup.addTo(map);
+        fenceGroup.addTo(map);
+        const gridGroup = L.layerGroup().addTo(map);
+        let gridKey = "";
+        const gridStep = (zoom: number) => {
+          if (zoom >= 17) return 0.01;
+          if (zoom >= 15) return 0.02;
+          if (zoom >= 13) return 0.05;
+          if (zoom >= 11) return 0.1;
+          if (zoom >= 9) return 0.25;
+          return 1;
+        };
+        const gridText = (deg: number, step: number, hem: string) => {
+          const a = Math.abs(deg);
+          if (step >= 1) return `${Math.round(a)}°${hem}`;
+          const d = Math.floor(a + 1e-8);
+          const minutes = (a - d) * 60;
+          const shown = step >= 0.05 ? minutes.toFixed(0) : minutes.toFixed(1);
+          return `${d}°${shown}'${hem}`;
+        };
+        const paintGrid = () => {
+          if (!map) return;
+          const chart = map;
+          if (!useHelm.getState().graticule) {
+            if (gridKey) {
+              gridGroup.clearLayers();
+              gridKey = "";
+            }
+            return;
+          }
+          const view = chart.getBounds();
+          let step = gridStep(chart.getZoom());
+          const spanLat = view.getNorth() - view.getSouth();
+          const spanLng = view.getEast() - view.getWest();
+          while (spanLat / step > 8 || spanLng / step > 8) step *= 2;
+          const south = Math.ceil(view.getSouth() / step) * step;
+          const west = Math.ceil(view.getWest() / step) * step;
+          const bearing = Math.round(
+            (chart as LeafletMap & { getBearing?: () => number }).getBearing?.() ?? 0,
+          );
+          const key = `${step.toFixed(5)}|${south.toFixed(4)}|${west.toFixed(4)}|${view.getNorth().toFixed(2)}|${view.getEast().toFixed(2)}|${Math.round(chart.getSize().x)}|${bearing}`;
+          if (key === gridKey) return;
+          gridKey = key;
+          gridGroup.clearLayers();
+          const line = {
+            color: "rgba(255,255,255,0.8)",
+            weight: 1,
+            opacity: 0.9,
+            interactive: false,
+          };
+          const size = chart.getSize();
+          const box = {
+            x0: 72,
+            y0: 86,
+            x1: Math.max(120, size.x - 60),
+            y1: Math.max(160, size.y - 124),
+          };
+          const cross = (ax: number, ay: number, bx: number, by: number) => {
+            const hits: { x: number; y: number }[] = [];
+            const edges: [number, number, number, number][] = [
+              [box.x0, box.y0, box.x1, box.y0],
+              [box.x1, box.y0, box.x1, box.y1],
+              [box.x1, box.y1, box.x0, box.y1],
+              [box.x0, box.y1, box.x0, box.y0],
+            ];
+            for (const [cx, cy, dx, dy] of edges) {
+              const rx = bx - ax;
+              const ry = by - ay;
+              const qx = dx - cx;
+              const qy = dy - cy;
+              const den = rx * qy - ry * qx;
+              if (Math.abs(den) < 1e-6) continue;
+              const t = ((cx - ax) * qy - (cy - ay) * qx) / den;
+              const u = ((cx - ax) * ry - (cy - ay) * rx) / den;
+              if (t >= 0 && t <= 1 && u >= 0 && u <= 1) hits.push({ x: ax + t * rx, y: ay + t * ry });
+            }
+            return hits;
+          };
+          const tagAt = (text: string, x: number, y: number, anchor: [number, number]) => {
+            const ll = chart.containerPointToLatLng(L.point(x, y));
+            L.marker(ll, {
+              interactive: false,
+              keyboard: false,
+              icon: L.divIcon({
+                className: "rp-divicon",
+                html: `<span class="rp-grid-label">${text}</span>`,
+                iconSize: [78, 16],
+                iconAnchor: anchor,
+              }),
+            }).addTo(gridGroup);
+          };
+          for (let lat = south; lat < view.getNorth(); lat += step) {
+            L.polyline(
+              [
+                [lat, view.getWest()],
+                [lat, view.getEast()],
+              ],
+              line,
+            ).addTo(gridGroup);
+            const a = chart.latLngToContainerPoint([lat, view.getWest()]);
+            const b = chart.latLngToContainerPoint([lat, view.getEast()]);
+            const hits = cross(a.x, a.y, b.x, b.y).sort((p, q) => p.x - q.x);
+            const at = hits[0];
+            if (at) tagAt(gridText(lat, step, lat >= 0 ? "N" : "S"), at.x, at.y, [0, 8]);
+          }
+          for (let lng = west; lng < view.getEast(); lng += step) {
+            L.polyline(
+              [
+                [view.getSouth(), lng],
+                [view.getNorth(), lng],
+              ],
+              line,
+            ).addTo(gridGroup);
+            const a = chart.latLngToContainerPoint([view.getSouth(), lng]);
+            const b = chart.latLngToContainerPoint([view.getNorth(), lng]);
+            const hits = cross(a.x, a.y, b.x, b.y).sort((p, q) => p.y - q.y);
+            const at = hits[0];
+            if (at) tagAt(gridText(lng, step, lng >= 0 ? "E" : "W"), at.x, at.y, [39, 0]);
+          }
+        };
+        map.on("moveend", paintGrid);
+        map.on("zoomend", paintGrid);
+
+        const start = useHelm.getState();
+        const reef = getReef(start.reefId);
+        const origin = start.boat ?? start.flyTo ?? reef;
+        const zoom = start.boat
+          ? HELM_ZOOM
+          : (start.flyTo?.zoom ?? reef.zoom);
+        map.setView([origin.lat, origin.lng], zoom);
+        useHelm.getState().setChartZoom(map.getZoom());
+
+        let lastFly = 0;
+        let labelsOn = false;
+        let seaOn = false;
+        let depthsOn = false;
+        let anchorOn = false;
+        let alarmShown = false;
+        let followArmed = false;
+        let boatOn = false;
+        let laybackOn = false;
+        let rodeOn = false;
+        let ghostOn = false;
+        let hookDragging = false;
+        let rimDragging = false;
+        let rimOn = false;
+        let fenceOn = false;
+        let fenceDraftOn = false;
+        let drawingStroke = false;
+        let swingStamp = "";
+        let mobOn = false;
+        let wxOn = false;
+        let displayBearing = 0;
+        let applying = false;
+        let applyAgain = false;
+        let routeStamp = "";
+        let packStamp = "";
+        let boatIconKey = "";
+
+        const setMapBearing = (deg: number) => {
+          const m = map as LeafletMap & {
+            setBearing?: (b: number) => void;
+            getBearing?: () => number;
+          };
+          if (typeof m.setBearing !== "function") return;
+          const cur = m.getBearing?.() ?? 0;
+          const d = ((deg - cur + 540) % 360) - 180;
+          if (Math.abs(d) < 0.35 && !(deg === 0 && Math.abs(cur) > 0.35)) return;
+          m.setBearing(deg);
+        };
+
+        const applyImagery = (id: ImageryId) => {
+          if (!map || id === activeImagery) return;
+          if (incoming) {
+            map.removeLayer(incoming);
+            incoming = null;
+          }
+          const next = satLayer(L, SENTINEL_URL, {
+            maxNativeZoom: nativeZoom(id),
+            attribution: attrFor(id),
+            sources: sourcesFor(id),
+          });
+          next.addTo(map);
+          incoming = next;
+          let settled = false;
+          const commit = () => {
+            if (settled || !map || incoming !== next) return;
+            settled = true;
+            if (map.hasLayer(photo)) map.removeLayer(photo);
+            photo = next;
+            activeImagery = id;
+            incoming = null;
+          };
+          next.once("load", commit);
+          window.setTimeout(() => {
+            if (settled || incoming !== next || !map) return;
+            const box = (next as TileLayer & { getContainer?: () => HTMLElement }).getContainer?.();
+            const imgs = box ? [...box.querySelectorAll("img")] : [];
+            if (imgs.length > 0 && imgs.every((img) => img.dataset.sat)) commit();
+          }, 1800);
+        };
+
+        const paintWaypoints = (
+          wps: Array<{ lat: number; lng: number; label?: string }>,
+          pathIndex: number[],
+          nextI: number | null,
+        ) => {
+          wpGroup.clearLayers();
+          pathIndex.forEach((src, n) => {
+            const w = wps[src];
+            if (!w) return;
+            const next = nextI === src;
+            const text = w.label === "Start" || w.label === "Stop" ? w.label : String(n + 1);
+            const wide = text === "Start" || text === "Stop";
+            const mk = L.marker([w.lat, w.lng], {
+              icon: L.divIcon({
+                className: "rp-divicon",
+                html: pinHtml("wp", text, next),
+                iconSize: wide ? [52, 22] : next ? [28, 28] : [22, 22],
+                iconAnchor: wide ? [26, 11] : next ? [14, 14] : [11, 11],
+              }),
+              interactive: true,
+              keyboard: false,
+              zIndexOffset: next ? 400 : 200,
+            });
+            mk.on("click", (ev) => {
+              L.DomEvent.stop(ev);
+              const st = useHelm.getState();
+              st.setPinnedMark(st.pinnedMark === src ? null : src);
+            });
+            mk.addTo(wpGroup);
+          });
+        };
+
+        const apply = () => {
+          if (!map) return;
+          if (applying) {
+            applyAgain = true;
+            return;
+          }
+          applying = true;
+          try {
+          const s = useHelm.getState();
+
+          const holdMap =
+            s.tapMode === "draw-pack" ||
+            s.tapMode === "drop-anchor" ||
+            s.tapMode === "resize-swing" ||
+            hookDragging ||
+            rimDragging;
+          if (holdMap) {
+            if (map.dragging.enabled()) map.dragging.disable();
+            map.getContainer().style.touchAction = "none";
+          } else if (!map.dragging.enabled()) {
+            map.dragging.enable();
+            map.getContainer().style.touchAction = "";
+          }
+
+          applyImagery(s.imagery);
+
+          const look = s.look;
+          const sun = look === "sunlight";
+          const night = look === "night";
+          routeLine.setStyle({
+            color: sun ? sunMark : night ? "#ff6a2a" : primary,
+            weight: sun ? 6 : 4,
+            opacity: 0.98,
+          });
+          routeGlow.setStyle({
+            color: sun ? sunInk : night ? "#3a1208" : fg,
+            weight: sun ? 14 : 8,
+            opacity: sun ? 0.92 : night ? 0.55 : 0.22,
+          });
+          draftLine.setStyle({
+            color: sun ? sunMark : primary,
+            weight: sun ? 5 : 3,
+            opacity: 0.95,
+          });
+          swingLine.setStyle({
+            color: sun ? sunMark : "#f0c14a",
+            weight: sun ? 4 : 2.5,
+            opacity: 0.95,
+          });
+          rodeLine.setStyle({
+            color: sun ? sunMark : primary,
+            weight: sun ? 4 : 3,
+          });
+          fencePoly.setStyle({
+            color: sun ? sunMark : primary,
+            fillColor: sun ? sunMark : primary,
+          });
+          fenceDraftLine.setStyle({
+            color: sun ? sunMark : primary,
+          });
+          laybackCircle.setStyle({
+            color: sun ? sunMark : primary,
+            fillColor: sun ? sunMark : primary,
+          });
+          accCircle.setStyle({
+            color: sun ? sunMark : primary,
+            fillColor: sun ? sunMark : primary,
+            weight: sun ? 2 : 1,
+            fillOpacity: sun ? 0.18 : 0.12,
+          });
+          anchorCircle.setStyle({
+            color: sun ? sunMark : primary,
+            fillColor: sun ? sunMark : primary,
+            weight: sun ? 3 : 2,
+          });
+
+          if (s.labels) {
+            if (!labelsOn) {
+              labels.addTo(map);
+              labelsOn = true;
+            }
+          } else if (labelsOn) {
+            map.removeLayer(labels);
+            labelsOn = false;
+          }
+          if (s.seamarks) {
+            if (!seaOn) {
+              sea.addTo(map);
+              seaOn = true;
+            }
+          } else if (seaOn) {
+            map.removeLayer(sea);
+            seaOn = false;
+          }
+          if (s.depths) {
+            if (!depthsOn) {
+              depths.addTo(map);
+              depthsOn = true;
+            }
+          } else if (depthsOn) {
+            map.removeLayer(depths);
+            depthsOn = false;
+          }
+
+          let framingTrack = false;
+          if (s.flyTo && s.flyTo.nonce !== lastFly) {
+            lastFly = s.flyTo.nonce;
+            const track = s.activePassage?.waypoints ?? [];
+            const box = map.getBounds();
+            const already =
+              s.flyTo.fit === "track" &&
+              track.length >= 2 &&
+              track.every((p) => box.contains([p.lat, p.lng]));
+            if (s.flyTo.fit === "track" && track.length >= 2 && !already) {
+              framingTrack = true;
+              map.fitBounds(
+                L.latLngBounds(track.map((p) => [p.lat, p.lng] as [number, number])),
+                {
+                  paddingTopLeft: [24, 76],
+                  paddingBottomRight: [24, 108],
+                  maxZoom: 18,
+                  animate: true,
+                },
+              );
+            } else if (!already) {
+              const z = s.followBoat
+                ? Math.max(s.flyTo.zoom, HELM_ZOOM)
+                : s.flyTo.zoom;
+              map.flyTo([s.flyTo.lat, s.flyTo.lng], z, { duration: 1.05 });
+            }
+          }
+
+          const wantBearing = chartBearing(s.chartUp, s.boat?.heading ?? null);
+          displayBearing = lerpBearing(displayBearing, wantBearing, 0.28);
+          if (
+            wantBearing === 0 &&
+            (displayBearing < 0.5 || displayBearing > 359.5)
+          ) {
+            displayBearing = 0;
+          }
+          setMapBearing(displayBearing);
+
+          if (s.boat) {
+            boatMarker.setLatLng([s.boat.lat, s.boat.lng]);
+            const iconKey = `${hullScreenHeading(s.chartUp, s.boat.heading)}|${map.getZoom().toFixed(2)}|${s.sunlight}|${s.hull.loaM}`;
+            if (iconKey !== boatIconKey) {
+              boatIconKey = iconKey;
+              boatMarker.setIcon(
+                boatIcon(
+                  hullScreenHeading(s.chartUp, s.boat.heading),
+                  s.sunlight,
+                  s.hull,
+                  s.boat.lat,
+                  map.getZoom(),
+                ),
+              );
+            }
+            accCircle.setLatLng([s.boat.lat, s.boat.lng]);
+            accCircle.setRadius(Math.max(4, s.boat.accuracy ?? 6));
+            if (!boatOn) {
+              accCircle.addTo(map);
+              boatMarker.addTo(map);
+              boatOn = true;
+            }
+            if (s.followBoat && !framingTrack && !mapDrag.moving?.()) {
+              if (!followArmed && map.getZoom() < HELM_ZOOM) {
+                map.setView([s.boat.lat, s.boat.lng], HELM_ZOOM, { animate: false });
+              }
+              followArmed = true;
+              const target = followCenter(map, s.boat, s.boatLow);
+              map.panTo([target.lat, target.lng], {
+                animate: true,
+                duration: 0.35,
+              });
+            } else {
+              followArmed = false;
+            }
+          } else if (boatOn) {
+            map.removeLayer(boatMarker);
+            map.removeLayer(accCircle);
+            boatOn = false;
+            followArmed = false;
+          }
+
+          const placing = s.tapMode === "drop-anchor";
+          const resizing = s.tapMode === "resize-swing";
+
+          const bow = s.boat
+            ? bowFromGps(s.boat, s.boat.heading, s.hull)
+            : null;
+          const drafting = !s.anchor && (s.anchorStep === "circle" || s.anchorStep === "watch");
+          const hookAt = s.anchor ?? s.circleDraft ?? (placing ? s.hookPreview : null);
+          if (bow && placing && s.swingShape !== "draw") {
+            const lay = Math.max(8, laybackM(s.rode));
+            laybackCircle.setLatLng([bow.lat, bow.lng]);
+            laybackCircle.setRadius(lay);
+            if (!laybackOn) {
+              laybackCircle.addTo(map);
+              laybackOn = true;
+            }
+          } else if (laybackOn) {
+            map.removeLayer(laybackCircle);
+            laybackOn = false;
+          }
+
+          if (bow && hookAt) {
+            rodeLine.setLatLngs([
+              [bow.lat, bow.lng],
+              [hookAt.lat, hookAt.lng],
+            ]);
+            if (!rodeOn) {
+              rodeLine.addTo(map);
+              rodeOn = true;
+            }
+          } else if (rodeOn) {
+            rodeLine.setLatLngs([]);
+            map.removeLayer(rodeLine);
+            rodeOn = false;
+          }
+
+          if ((placing || drafting) && (s.hookPreview || s.circleDraft)) {
+            const g = s.circleDraft ?? s.hookPreview;
+            if (g) hookGhost.setLatLng([g.lat, g.lng]);
+            if (!ghostOn) {
+              hookGhost.addTo(map);
+              ghostOn = true;
+            }
+          } else if (ghostOn) {
+            map.removeLayer(hookGhost);
+            ghostOn = false;
+          }
+
+          const pts = s.activePassage
+            ? guidePoints(s.activePassage, s.crumb, {
+                turnDeg: s.trackTurnDeg,
+                chordM: s.trackChordM,
+              })
+            : [];
+          const stored = s.activePassage ? passagePoints(s.activePassage) : [];
+          const wps =
+            s.drawMode !== "idle" ? s.draft : pts;
+          const nav =
+            s.boat && wps.length >= 1
+              ? markNav(s.boat, wps, s.pinnedMark, s.courseMark)
+              : null;
+          const marks =
+            s.drawMode === "record"
+              ? [0]
+              : s.drawMode !== "idle" || pts.length <= stored.length
+                ? wps.map((_, i) => i)
+                : cornerIndexes(pts);
+          const nextCorner =
+            nav == null
+              ? null
+              : (marks.find((i) => i >= nav.index) ?? marks[marks.length - 1] ?? null);
+          const end = pts[pts.length - 1];
+          const routeKey = [
+            s.activePassage && "id" in s.activePassage ? s.activePassage.id : s.activePassage?.title,
+            pts.length,
+            pts[0]?.lat?.toFixed(5),
+            end?.lat?.toFixed(5),
+            end?.lng?.toFixed(5),
+            s.courseMark,
+            s.drawMode,
+            s.draft.length,
+            s.draft[s.draft.length - 1]?.lat?.toFixed(5),
+            s.pinnedMark,
+            s.trackTurnDeg,
+            s.trackChordM,
+            s.look,
+            nav?.index,
+            s.crumbOn,
+          ].join("|");
+          if (routeKey !== routeStamp) {
+            routeStamp = routeKey;
+            routeLine.setLatLngs(
+              pts.map((p) => [p.lat, p.lng] as [number, number]),
+            );
+            routeGlow.setLatLngs(
+              pts.map((p) => [p.lat, p.lng] as [number, number]),
+            );
+            tubeGroup.clearLayers();
+            const leg = nav && nav.index > 0 ? nav.index - 1 : 0;
+            for (let i = 0; i < pts.length - 1; i += 1) {
+              const ring = segmentTube(pts[i]!, pts[i + 1]!, TUBE_M);
+              L.polygon(
+                ring.map((p) => [p.lat, p.lng] as [number, number]),
+                {
+                  stroke: false,
+                  fillColor: primary,
+                  fillOpacity: i === leg ? 0.42 : 0.2,
+                  interactive: false,
+                },
+              ).addTo(tubeGroup);
+            }
+            paintWaypoints(wps, marks, nextCorner);
+            if (s.drawMode === "record" && s.crumbOn) {
+              draftLine.setStyle({ color: "#f0c14a", dashArray: undefined, weight: 3, opacity: 0.9 });
+              draftLine.setLatLngs(s.draft.map((p) => [p.lat, p.lng] as [number, number]));
+            } else if (s.drawMode === "draw") {
+              draftLine.setStyle({ color: primary, dashArray: "7 8", weight: 3, opacity: 0.9 });
+              draftLine.setLatLngs(s.draft.map((p) => [p.lat, p.lng] as [number, number]));
+            } else {
+              draftLine.setLatLngs([]);
+            }
+          }
+          rangeLine.setLatLngs([]);
+          paintGrid();
+          crumbLine.setLatLngs([]);
+
+          if (s.anchor && s.swingTrailOn && s.swingTrail.length >= 2) {
+            const last = s.swingTrail[s.swingTrail.length - 1]!;
+            const stamp = `${s.swingTrail.length}:${last.lat.toFixed(5)}:${last.lng.toFixed(5)}`;
+            if (stamp !== swingStamp) {
+              swingStamp = stamp;
+              swingLine.setLatLngs(
+                s.swingTrail.map((p) => [p.lat, p.lng] as [number, number]),
+              );
+            }
+          } else if (swingStamp) {
+            swingStamp = "";
+            swingLine.setLatLngs([]);
+          }
+
+          crumbLine.setLatLngs([]);
+
+          if (s.mob) {
+            mobMarker.setLatLng([s.mob.lat, s.mob.lng]);
+            if (s.boat) {
+              mobLine.setLatLngs([
+                [s.boat.lat, s.boat.lng],
+                [s.mob.lat, s.mob.lng],
+              ]);
+            } else {
+              mobLine.setLatLngs([]);
+            }
+            if (!mobOn) {
+              mobMarker.addTo(map);
+              mobLine.addTo(map);
+              mobOn = true;
+            }
+          } else if (mobOn) {
+            map.removeLayer(mobMarker);
+            map.removeLayer(mobLine);
+            mobOn = false;
+          }
+
+          if (s.wxPin) {
+            wxMarker.setLatLng([s.wxPin.lat, s.wxPin.lng]);
+            if (!wxOn) {
+              wxMarker.addTo(map);
+              wxOn = true;
+            }
+            if (wxWantPopup) {
+              wxWantPopup = false;
+              wxMarker.openPopup();
+            }
+          } else if (wxOn) {
+            map.removeLayer(wxMarker);
+            wxOn = false;
+          }
+
+          const packKey = [
+            s.offlinePacks.map((p) => p.id).join(","),
+            s.packBox ? `${s.packBox.south.toFixed(4)},${s.packBox.west.toFixed(4)}` : "",
+            s.tapMode === "draw-pack" ? s.packDraft.map((p) => p.lat.toFixed(4)).join(",") : "",
+          ].join("|");
+          if (packKey !== packStamp) {
+            packStamp = packKey;
+          packGroup.clearLayers();
+          for (const pack of s.offlinePacks) {
+            L.rectangle(
+              [
+                [pack.bounds.south, pack.bounds.west],
+                [pack.bounds.north, pack.bounds.east],
+              ],
+              {
+                color: "#22c55e",
+                weight: 2,
+                fillColor: "#22c55e",
+                fillOpacity: 0.08,
+                interactive: false,
+              },
+            ).addTo(packGroup);
+          }
+          if (s.packBox) {
+            L.rectangle(
+              [
+                [s.packBox.south, s.packBox.west],
+                [s.packBox.north, s.packBox.east],
+              ],
+              {
+                color: "#3ee0c0",
+                weight: 2,
+                dashArray: "5 4",
+                fillOpacity: 0.1,
+                interactive: false,
+              },
+            ).addTo(packGroup);
+          }
+          if (s.tapMode === "draw-pack" && s.packDraft.length >= 1) {
+            const a = s.packDraft[0]!;
+            const b = s.packDraft[1] ?? a;
+            const box = squareFromCorners(a, b);
+            packDraftRect.setBounds([
+              [box.south, box.west],
+              [box.north, box.east],
+            ]);
+            if (!map.hasLayer(packDraftRect)) packDraftRect.addTo(map);
+          } else if (map.hasLayer(packDraftRect)) {
+            map.removeLayer(packDraftRect);
+          }
+          }
+
+          if (s.anchor && !placing) {
+            anchorCircle.setLatLng([s.anchor.lat, s.anchor.lng]);
+            anchorCircle.setRadius(s.anchor.radiusM);
+            alarmCircle.setLatLng([s.anchor.lat, s.anchor.lng]);
+            alarmCircle.setRadius(s.anchor.radiusM);
+            if (!hookDragging) {
+              anchorMarker.setLatLng([s.anchor.lat, s.anchor.lng]);
+            }
+            if (s.anchor.radiusLocked) anchorMarker.dragging?.disable();
+            else anchorMarker.dragging?.enable();
+            if (!anchorOn) {
+              anchorCircle.addTo(map);
+              anchorMarker.addTo(map);
+              anchorOn = true;
+            }
+            const fenced = Boolean(s.anchor.fence && s.anchor.fence.length >= 3);
+            if (s.alarmOn && !fenced && !alarmShown) {
+              alarmCircle.addTo(map);
+              alarmShown = true;
+            } else if ((!s.alarmOn || fenced) && alarmShown) {
+              map.removeLayer(alarmCircle);
+              alarmShown = false;
+            }
+
+            if (!rimDragging && !fenced) {
+              const brg = s.boat
+                ? bearingDegrees(s.anchor, s.boat)
+                : 0;
+              const rim = destPoint(s.anchor, brg, s.anchor.radiusM);
+              rimHandle.setLatLng([rim.lat, rim.lng]);
+              rimHandle.dragging?.enable();
+              if (!rimOn) {
+                rimHandle.addTo(map);
+                rimOn = true;
+              }
+            } else if (fenced && rimOn) {
+              map.removeLayer(rimHandle);
+              rimOn = false;
+            }
+
+            if (fenced) {
+              fencePoly.setLatLngs(
+                s.anchor.fence!.map((p) => [p.lat, p.lng] as [number, number]),
+              );
+              fencePoly.setStyle({
+                color: s.alarmOn ? danger : sun ? sunMark : primary,
+                fillColor: s.alarmOn ? danger : sun ? sunMark : primary,
+                fillOpacity: s.alarmOn ? 0.2 : 0.14,
+                weight: 3,
+              });
+              if (!fenceOn) {
+                fencePoly.addTo(map);
+                fenceOn = true;
+              }
+            } else if (fenceOn) {
+              map.removeLayer(fencePoly);
+              fenceOn = false;
+            }
+          } else if (anchorOn) {
+            map.removeLayer(anchorCircle);
+            map.removeLayer(anchorMarker);
+            if (alarmShown) map.removeLayer(alarmCircle);
+            if (rimOn) map.removeLayer(rimHandle);
+            if (fenceOn) map.removeLayer(fencePoly);
+            anchorOn = false;
+            alarmShown = false;
+            rimOn = false;
+            fenceOn = false;
+          }
+
+          const swingInk = s.anchorStep === "circle" && s.swingShape === "draw";
+          if (drafting && s.circleDraft && !swingInk) {
+            anchorCircle.setLatLng([s.circleDraft.lat, s.circleDraft.lng]);
+            anchorCircle.setRadius(s.circleDraft.radiusM);
+            if (!map.hasLayer(anchorCircle)) anchorCircle.addTo(map);
+            if (s.anchorStep === "circle" && !rimDragging) {
+              const brg = bow ? bearingDegrees(s.circleDraft, bow) : 90;
+              const rim = destPoint(s.circleDraft, brg, s.circleDraft.radiusM);
+              rimHandle.setLatLng([rim.lat, rim.lng]);
+              rimHandle.dragging?.disable();
+              if (!rimOn) {
+                rimHandle.addTo(map);
+                rimOn = true;
+              }
+            }
+          } else if (!s.anchor && map.hasLayer(anchorCircle)) {
+            map.removeLayer(anchorCircle);
+            if (rimOn) {
+              map.removeLayer(rimHandle);
+              rimOn = false;
+            }
+          }
+
+          if (s.tapMode === "draw-fence" || swingInk) {
+            const d = s.fenceDraft;
+            const closed = swingInk && !drawingStroke && d.length >= 3 ? [...d, d[0]!] : d;
+            fenceDraftLine.setLatLngs(closed.map((p) => [p.lat, p.lng] as [number, number]));
+            fenceDraftLine.setStyle({
+              color: primary,
+              weight: 3,
+              dashArray: swingInk && !drawingStroke && d.length >= 3 ? "" : "6 8",
+            });
+            if (!fenceDraftOn) {
+              fenceDraftLine.addTo(map);
+              fenceDraftOn = true;
+            }
+            fenceGroup.clearLayers();
+            if (!swingInk) {
+              d.forEach((p, i) => {
+                L.marker([p.lat, p.lng], {
+                  icon: L.divIcon({
+                    className: "rp-divicon",
+                    html: pinHtml("wp", String(i + 1)),
+                    iconSize: [22, 22],
+                    iconAnchor: [11, 11],
+                  }),
+                  interactive: false,
+                  keyboard: false,
+                }).addTo(fenceGroup);
+              });
+            }
+            if (swingInk && !drawingStroke && d.length >= 3) {
+              fencePoly.setLatLngs(d.map((p) => [p.lat, p.lng] as [number, number]));
+              fencePoly.setStyle({
+                color: primary,
+                fillColor: primary,
+                fillOpacity: 0.14,
+                weight: 3,
+              });
+              if (!fenceOn) {
+                fencePoly.addTo(map);
+                fenceOn = true;
+              }
+            } else if (swingInk && fenceOn) {
+              map.removeLayer(fencePoly);
+              fenceOn = false;
+            }
+          } else if (fenceDraftOn || (fenceOn && !s.anchor)) {
+            fenceDraftLine.setLatLngs([]);
+            if (fenceDraftOn) map.removeLayer(fenceDraftLine);
+            fenceGroup.clearLayers();
+            fenceDraftOn = false;
+            if (fenceOn && !s.anchor) {
+              map.removeLayer(fencePoly);
+              fenceOn = false;
+            }
+          }
+          } finally {
+            applying = false;
+            if (applyAgain) {
+              applyAgain = false;
+              apply();
+            }
+          }
+        };
+
+        apply();
+        unsub = useHelm.subscribe(apply);
+
+        map.on("click", (e) => {
+          if (heldPin) {
+            heldPin = false;
+            return;
+          }
+          const s = useHelm.getState();
+          const wp = { lat: e.latlng.lat, lng: e.latlng.lng };
+          if (s.drawMode === "draw") {
+            s.appendDraft({
+              ...wp,
+              label: `WP ${s.draft.length + 1}`,
+            });
+            return;
+          }
+          if (s.tapMode === "place-boat") {
+            s.setBoat({
+              lat: wp.lat,
+              lng: wp.lng,
+              heading: s.boat?.heading ?? 0,
+              speedMs: 0,
+              accuracy: 4,
+              source: "placed",
+              at: Date.now(),
+            });
+            s.setFollowBoat(false);
+            const step = useHelm.getState().anchorStep;
+            if (step === "place") {
+              useHelm.getState().setAnchorStep("depth");
+              useHelm.getState().setTapMode("none");
+            } else if (useHelm.getState().hookArmed) {
+              useHelm.getState().setHookNow();
+              const note = rodeDropNote(useHelm.getState().rode);
+              if (note) toast(note);
+            } else {
+              useHelm.getState().setTapMode("none");
+            }
+            return;
+          }
+          if (s.tapMode === "drop-anchor") {
+            return;
+          }
+          if (s.tapMode === "draw-fence") {
+            const first = s.fenceDraft[0];
+            if (first && s.fenceDraft.length >= 3 && haversineMeters(first, wp) < 12) {
+              s.commitFence();
+              return;
+            }
+            s.appendFencePoint(wp);
+            return;
+          }
+          if (s.tapMode === "resize-swing") {
+            return;
+          }
+        });
+
+        map.on("contextmenu", (e) => {
+          const oe = (e as { originalEvent?: Event }).originalEvent;
+          oe?.preventDefault();
+          const s = useHelm.getState();
+          if (s.tapMode !== "none" || s.drawMode !== "idle" || s.anchorStep) return;
+          wxWantPopup = true;
+          s.setWxPin({ lat: e.latlng.lat, lng: e.latlng.lng });
+          heldPin = true;
+          window.setTimeout(() => {
+            heldPin = false;
+          }, 800);
+        });
+
+        map.on("dragstart", () => {
+          if (
+            useHelm.getState().followBoat &&
+            !useHelm.getState().demoPlaying
+          ) {
+            useHelm.getState().setFollowBoat(false);
+          }
+        });
+
+        let placingPtr = false;
+        let resizePtr = false;
+        let draftResize = false;
+        let packOrigin: { lat: number; lng: number } | null = null;
+        let heldPin = false;
+        let holdTimer: ReturnType<typeof setTimeout> | null = null;
+        let holdAt: { x: number; y: number; lat: number; lng: number } | null = null;
+        const clearHold = () => {
+          if (holdTimer) clearTimeout(holdTimer);
+          holdTimer = null;
+          holdAt = null;
+        };
+        const dropWxPin = (lat: number, lng: number) => {
+          const s = useHelm.getState();
+          if (s.tapMode !== "none" || s.drawMode !== "idle" || s.anchorStep) return;
+          heldPin = true;
+          window.setTimeout(() => {
+            heldPin = false;
+          }, 800);
+          wxWantPopup = true;
+          s.setWxPin({ lat, lng });
+        };
+        const box = map.getContainer();
+        const eventToLatLng = (ev: PointerEvent) => {
+          if (!map) return null;
+          return map.mouseEventToLatLng(ev as unknown as MouseEvent);
+        };
+        const applyResize = (ll: { lat: number; lng: number }) => {
+          const a = useHelm.getState().anchor;
+          if (!a) return;
+          useHelm.getState().setAnchorRadius(haversineMeters(a, ll), true);
+        };
+        const onPointerDown = (ev: PointerEvent) => {
+          if (!map) return;
+          const hit = ev.target;
+          if (hit instanceof Element && hit.closest(".leaflet-popup, [data-wx=open]")) return;
+          const mode = useHelm.getState().tapMode;
+          if (ev.pointerType === "mouse" && ev.button !== 0) return;
+          const ll = eventToLatLng(ev);
+          if (!ll) return;
+          const finger = { lat: ll.lat, lng: ll.lng };
+          if (mode === "none" && useHelm.getState().drawMode === "idle" && !useHelm.getState().anchorStep) {
+            holdAt = { x: ev.clientX, y: ev.clientY, lat: finger.lat, lng: finger.lng };
+            holdTimer = setTimeout(() => {
+              if (!holdAt) return;
+              dropWxPin(holdAt.lat, holdAt.lng);
+              clearHold();
+            }, 480);
+          }
+          if (mode === "draw-pack") {
+            try {
+              box.setPointerCapture(ev.pointerId);
+            } catch {
+              /* capture is best-effort on some browsers */
+            }
+            ev.preventDefault();
+            packOrigin = finger;
+            useHelm.getState().setPackDrag(finger, null);
+            return;
+          }
+          if (mode !== "drop-anchor" && mode !== "resize-swing") return;
+          const swingDraw =
+            useHelm.getState().anchorStep === "circle" && useHelm.getState().swingShape === "draw";
+          if (swingDraw) {
+            try {
+              box.setPointerCapture(ev.pointerId);
+            } catch {
+              /* capture is best-effort on some browsers */
+            }
+            ev.preventDefault();
+            drawingStroke = true;
+            useHelm.getState().setFenceDraft([finger]);
+            return;
+          }
+          try {
+            box.setPointerCapture(ev.pointerId);
+          } catch {
+            /* capture is best-effort on some browsers */
+          }
+          ev.preventDefault();
+          if (mode === "resize-swing") {
+            resizePtr = true;
+            applyResize(finger);
+            return;
+          }
+          const draft = useHelm.getState().circleDraft;
+          if (useHelm.getState().anchorStep === "circle" && draft) {
+            const c = map.latLngToContainerPoint([draft.lat, draft.lng]);
+            const f = map.latLngToContainerPoint([finger.lat, finger.lng]);
+            const dist = Math.hypot(f.x - c.x, f.y - c.y);
+            const mPerPx =
+              (40075016.686 * Math.cos((draft.lat * Math.PI) / 180)) /
+              (256 * 2 ** map.getZoom());
+            const radiusPx = draft.radiusM / Math.max(mPerPx, 0.05);
+            if (Math.abs(dist - radiusPx) <= 36) {
+              draftResize = true;
+              return;
+            }
+          }
+          placingPtr = true;
+          placeOnLayback(finger);
+        };
+        const placeOnLayback = (finger: { lat: number; lng: number }) => {
+          const s = useHelm.getState();
+          const bow = s.boat ? bowFromGps(s.boat, s.boat.heading, s.hull) : null;
+          if (bow && haversineMeters(bow, finger) < 3) return;
+          const at = bow ? snapToLayback(bow, finger, s.rode) : finger;
+          if (s.anchorStep === "circle") s.setCircleDraft(at);
+          else s.setHookPreview(at);
+        };
+        const onPointerMove = (ev: PointerEvent) => {
+          if (!map) return;
+          if (placingPtr || draftResize || resizePtr) ev.preventDefault();
+          const ll = eventToLatLng(ev);
+          if (!ll) return;
+          const finger = { lat: ll.lat, lng: ll.lng };
+          if (holdAt) {
+            const moved = Math.hypot(ev.clientX - holdAt.x, ev.clientY - holdAt.y);
+            if (moved > 14) clearHold();
+          }
+          if (packOrigin && useHelm.getState().tapMode === "draw-pack") {
+            useHelm.getState().setPackDrag(packOrigin, finger);
+            return;
+          }
+          if (resizePtr && useHelm.getState().tapMode === "resize-swing") {
+            applyResize(finger);
+            return;
+          }
+          if (drawingStroke) {
+            const s = useHelm.getState();
+            const draft = s.fenceDraft;
+            const last = draft[draft.length - 1];
+            const mPerPx =
+              (40075016.686 * Math.cos((finger.lat * Math.PI) / 180)) /
+              (256 * 2 ** map.getZoom());
+            const step = Math.max(2, mPerPx * 6);
+            if (!last || haversineMeters(last, finger) >= step) s.appendFencePoint(finger);
+            return;
+          }
+          if (draftResize) {
+            const d = useHelm.getState().circleDraft;
+            if (!d) return;
+            useHelm.getState().setCircleDraft({
+              lat: d.lat,
+              lng: d.lng,
+              radiusM: clampAlarmRadius(haversineMeters(d, finger)),
+            });
+            return;
+          }
+          if (!placingPtr) return;
+          const s = useHelm.getState();
+          if (s.tapMode !== "drop-anchor") return;
+          placeOnLayback(finger);
+        };
+        const onPointerUp = (ev: PointerEvent) => {
+          const hit = ev.target;
+          if (hit instanceof Element && hit.closest(".rp-wx-pop, [data-wx=open]")) {
+            useHelm.getState().setPanel("weather");
+            wxMarker.closePopup();
+          }
+          clearHold();
+          if (packOrigin) {
+            const draft = useHelm.getState().packDraft;
+            packOrigin = null;
+            const ok = useHelm.getState().commitPackBox();
+            if (!ok && draft.length >= 2) {
+              toast("Drag a box across the reef. A line is too thin.");
+              useHelm.getState().setPackDrag(draft[0]!, null);
+            }
+          }
+          if (resizePtr) {
+            resizePtr = false;
+            if (useHelm.getState().tapMode === "resize-swing") {
+              useHelm.getState().setTapMode("none");
+            }
+          }
+          if (drawingStroke) {
+            drawingStroke = false;
+            const draft = useHelm.getState().fenceDraft;
+            useHelm.getState().setFenceDraft(draft.length < 3 ? [] : draft.slice());
+            return;
+          }
+          if (draftResize) draftResize = false;
+          if (!placingPtr) return;
+          placingPtr = false;
+          const s = useHelm.getState();
+          const p = s.hookPreview;
+          if (!p || s.tapMode !== "drop-anchor") return;
+          if (s.anchorStep === "circle") return;
+          const bow = s.boat ? bowFromGps(s.boat, s.boat.heading, s.hull) : null;
+          if (bow && haversineMeters(bow, p) < 2) return;
+          s.dropAnchor(p.lat, p.lng);
+          const note = rodeDropNote(s.rode);
+          if (note) toast(note);
+        };
+        const holdTouch = (ev: TouchEvent) => {
+          const mode = useHelm.getState().tapMode;
+          if (
+            placingPtr ||
+            draftResize ||
+            resizePtr ||
+            mode === "drop-anchor" ||
+            mode === "resize-swing" ||
+            mode === "draw-pack"
+          ) {
+            ev.preventDefault();
+          }
+        };
+        box.addEventListener("pointerdown", onPointerDown);
+        box.addEventListener("pointermove", onPointerMove);
+        box.addEventListener("touchstart", holdTouch, { passive: false });
+        box.addEventListener("touchmove", holdTouch, { passive: false });
+        window.addEventListener("pointermove", onPointerMove);
+        window.addEventListener("pointerup", onPointerUp);
+        window.addEventListener("pointercancel", onPointerUp);
+
+        anchorMarker.on("dragstart", () => {
+          hookDragging = true;
+          if (map?.dragging.enabled()) map.dragging.disable();
+        });
+        anchorMarker.on("drag", () => {
+          const ll = anchorMarker.getLatLng();
+          const s = useHelm.getState();
+          const bow = s.boat
+            ? bowFromGps(s.boat, s.boat.heading, s.hull)
+            : null;
+          if (bow) {
+            rodeLine.setLatLngs([
+              [bow.lat, bow.lng],
+              [ll.lat, ll.lng],
+            ]);
+          }
+          anchorCircle.setLatLng(ll);
+        });
+        anchorMarker.on("dragend", () => {
+          hookDragging = false;
+          const ll = anchorMarker.getLatLng();
+          useHelm.getState().moveAnchor(ll.lat, ll.lng);
+          const mode = useHelm.getState().tapMode;
+          if (
+            map &&
+            !map.dragging.enabled() &&
+            mode !== "drop-anchor" &&
+            mode !== "resize-swing"
+          ) {
+            map.dragging.enable();
+          }
+        });
+
+        rimHandle.on("dragstart", () => {
+          rimDragging = true;
+          if (map?.dragging.enabled()) map.dragging.disable();
+        });
+        rimHandle.on("drag", () => {
+          const a = useHelm.getState().anchor;
+          if (!a) return;
+          const ll = rimHandle.getLatLng();
+          const r = haversineMeters(a, { lat: ll.lat, lng: ll.lng });
+          anchorCircle.setRadius(r);
+        });
+        rimHandle.on("dragend", () => {
+          rimDragging = false;
+          const a = useHelm.getState().anchor;
+          const ll = rimHandle.getLatLng();
+          if (a) {
+            useHelm.getState().setAnchorRadius(
+              haversineMeters(a, { lat: ll.lat, lng: ll.lng }),
+              true,
+            );
+          }
+          const mode = useHelm.getState().tapMode;
+          if (
+            map &&
+            !map.dragging.enabled() &&
+            mode !== "drop-anchor" &&
+            mode !== "resize-swing"
+          ) {
+            map.dragging.enable();
+          }
+        });
+
+        const publishZoom = () => {
+          if (!map) return;
+          useHelm.getState().setChartZoom(map.getZoom());
+          const b = map.getBounds();
+          chartBounds = {
+            south: b.getSouth(),
+            west: b.getWest(),
+            north: b.getNorth(),
+            east: b.getEast(),
+            zoom: map.getZoom(),
+          };
+        };
+        map.on("moveend", publishZoom);
+        map.on("zoom", publishZoom);
+        map.on("zoomend", publishZoom);
+        publishZoom();
+
+        const onZoom = (ev: Event) => {
+          const delta = (ev as CustomEvent<number>).detail;
+          if (delta > 0) map?.zoomIn();
+          else map?.zoomOut();
+        };
+        const onCloseIn = () => {
+          const boat = useHelm.getState().boat;
+          if (!boat || !map) return;
+          useHelm.getState().setFollowBoat(true);
+          followArmed = true;
+          map.setView([boat.lat, boat.lng], CLOSE_ZOOM, { animate: true });
+        };
+        window.addEventListener("rp-zoom", onZoom);
+        window.addEventListener("rp-close-in", onCloseIn);
+        const prevUnsub = unsub;
+        unsub = () => {
+          prevUnsub();
+          window.removeEventListener("rp-zoom", onZoom);
+          window.removeEventListener("rp-close-in", onCloseIn);
+          box.removeEventListener("pointerdown", onPointerDown);
+          box.removeEventListener("pointermove", onPointerMove);
+          box.removeEventListener("touchstart", holdTouch);
+          box.removeEventListener("touchmove", holdTouch);
+          window.removeEventListener("pointermove", onPointerMove);
+          window.removeEventListener("pointerup", onPointerUp);
+          window.removeEventListener("pointercancel", onPointerUp);
+        };
+      });
+
+    return () => {
+      cancelled = true;
+      paintSeaSet = null;
+      unsub();
+      map?.remove();
+    };
+  }, []);
+
+  return (
+    <div
+      ref={hostRef}
+      className="absolute inset-0 z-0 bg-background"
+      aria-label="Satellite chart"
+    />
+  );
+}

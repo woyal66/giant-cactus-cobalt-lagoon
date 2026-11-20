@@ -1,0 +1,496 @@
+import { Link } from "@tanstack/react-router";
+import { toast } from "sonner";
+import {
+  LocateFixed,
+  Satellite,
+} from "lucide-react";
+import { SignedIn, SignedOut, UserButton } from "@/lib/auth/gates";
+import { useCurrentUserState } from "@/lib/auth/use-current-user";
+import {
+  bearingDegrees,
+  formatGroundScale,
+  formatHeading,
+  formatLat,
+  formatLng,
+  formatMeters,
+  haversineMeters,
+  metresAlong,
+  msToKnots,
+  cornerIndexes,
+} from "@/lib/geo";
+import { imageryShort } from "@/lib/imagery";
+import { formatScope, hoursUntil, rodeMath } from "@/lib/anchor";
+import { steerCue, formatTtg, markNav } from "@/lib/steer";
+import { bowFromGps, gpsReachM } from "@/lib/boat";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { closeInOnBoat } from "@/components/helm/map-view";
+import { WindInstrument } from "@/components/helm/weather";
+import { unlockAlarmAudio } from "@/hooks/helm-runtime";
+import { useWx } from "@/hooks/weather";
+import { useHelm, guidePoints } from "@/store/helm";
+
+function AuthSlot({ compact }: { compact?: boolean }) {
+  const { user, isPending } = useCurrentUserState();
+  if (isPending) {
+    return <div className="size-9 shrink-0 animate-pulse rounded-md bg-muted" />;
+  }
+  if (user) {
+    return (
+      <SignedIn>
+        <div className={compact ? "size-9 overflow-hidden" : "hidden max-w-[10rem] truncate sm:block"}>
+          <UserButton />
+        </div>
+        {compact ? null : (
+          <div className="sm:hidden">
+            <UserButton />
+          </div>
+        )}
+      </SignedIn>
+    );
+  }
+  return (
+    <SignedOut>
+      <Button asChild variant="helm" size={compact ? "icon-sm" : "sm"}>
+        <Link to="/login">{compact ? "In" : "Sign in"}</Link>
+      </Button>
+    </SignedOut>
+  );
+}
+
+export function TopHud() {
+  const boat = useHelm((s) => s.boat);
+  const hull = useHelm((s) => s.hull);
+  const follow = useHelm((s) => s.followBoat);
+  const chartUp = useHelm((s) => s.chartUp);
+  const boatLow = useHelm((s) => s.boatLow);
+  const cycleChartLock = useHelm((s) => s.cycleChartLock);
+  const followCourse = useHelm((s) => s.followCourse);
+  const passage = useHelm((s) => s.activePassage);
+  const tapMode = useHelm((s) => s.tapMode);
+  const anchorStep = useHelm((s) => s.anchorStep);
+  const hookArmed = useHelm((s) => s.hookArmed);
+  const demo = useHelm((s) => s.demoPlaying);
+  const gpsDenied = useHelm((s) => s.gpsDenied);
+  const chartZoom = useHelm((s) => s.chartZoom);
+  const imagery = useHelm((s) => s.imagery);
+  const hookPreview = useHelm((s) => s.hookPreview);
+  const fenceDraft = useHelm((s) => s.fenceDraft);
+  const packDraft = useHelm((s) => s.packDraft);
+  const cancelPlaceHook = useHelm((s) => s.cancelPlaceHook);
+  const popFencePoint = useHelm((s) => s.popFencePoint);
+  const popPackCorner = useHelm((s) => s.popPackCorner);
+  const commitFence = useHelm((s) => s.commitFence);
+  const setPanel = useHelm((s) => s.setPanel);
+  const mob = useHelm((s) => s.mob);
+  const panel = useHelm((s) => s.panel);
+  const dropMob = useHelm((s) => s.dropMob);
+  const wx = useWx();
+  const gust = wx.data?.now.gustKn ?? 0;
+  const tracking = Boolean(passage && passage.waypoints.length >= 2);
+  const following = tracking && follow && chartUp === "heading" && boatLow;
+
+  const src =
+    boat?.source === "gps"
+      ? "GPS"
+      : boat?.source === "last"
+        ? "LAST"
+        : boat?.source === "demo"
+          ? "DEMO"
+          : boat?.source === "placed"
+            ? "PLOT"
+            : "NO FIX";
+  const scale = formatGroundScale(boat?.lat ?? -23.9, chartZoom);
+  const tapeUp = Boolean(boat) && tapMode === "none" && panel !== "weather";
+
+  return (
+    <header className="pointer-events-none absolute inset-x-0 top-0 z-20 p-2 pt-[max(0.5rem,env(safe-area-inset-top))]">
+      {tapeUp ? <div className="h-[4.1rem] md:hidden" aria-hidden /> : null}
+      <div className="pointer-events-auto mx-auto hidden max-w-6xl items-center gap-2 md:flex">
+        <div className="flex min-w-0 items-center gap-3 rounded-xl border border-border bg-card/95 px-3 py-2 shadow-[var(--shadow-border)] rp-glass">
+          <div className="min-w-0">
+            <p className="font-display text-lg leading-none font-semibold tracking-wide text-foreground">
+              Anchor Mate
+            </p>
+            <p className="mt-0.5 text-[11px] tracking-wide text-muted-foreground uppercase">
+              Satellite helm
+            </p>
+          </div>
+          <Badge variant={boat?.source === "gps" ? "default" : "muted"}>{src}</Badge>
+          {demo ? <Badge>Entrance run</Badge> : null}
+        </div>
+        <div className="flex flex-1 items-stretch gap-px overflow-hidden rounded-xl border border-border bg-card/95 shadow-[var(--shadow-border)] rp-glass">
+          <WindInstrument />
+          <Instrument
+            label="LAT"
+            value={boat ? formatLat(boat.lat) : "—"}
+            unit=""
+            wide
+          />
+          <Instrument
+            label="LON"
+            value={boat ? formatLng(boat.lng) : "—"}
+            unit=""
+            wide
+          />
+        </div>
+        <div className="flex items-center gap-2 rounded-xl border border-border bg-card/95 px-2 py-1.5 shadow-[var(--shadow-border)] rp-glass">
+          <AuthSlot />
+        </div>
+      </div>
+
+      <div className="mx-auto mt-1.5 flex max-w-6xl justify-between gap-2">
+        <div className="pointer-events-auto flex flex-col gap-1.5">
+          <Button
+            variant={following || follow ? "default" : "helm"}
+            size="icon"
+            className="size-10"
+            aria-label={tracking ? (following ? "Release the chart" : "Follow the track") : !follow ? "Centre on boat" : chartUp === "heading" ? "North up" : "Heading up"}
+            onClick={() => {
+              if (tracking) {
+                unlockAlarmAudio();
+                followCourse();
+                return;
+              }
+              cycleChartLock();
+            }}
+          >
+            {tracking ? (
+              <span className="font-display text-[10px] font-bold leading-none">
+                {following ? "ON" : "GO"}
+              </span>
+            ) : !follow ? (
+              <LocateFixed />
+            ) : chartUp === "heading" ? (
+              <span className="font-display text-lg font-bold leading-none">↑</span>
+            ) : (
+              <span className="font-display text-sm font-bold leading-none">N</span>
+            )}
+          </Button>
+          <button
+            type="button"
+            onClick={closeInOnBoat}
+            aria-label="Helm scale"
+            className="rounded-md border border-border bg-card/95 px-1 py-1 text-center shadow-[var(--shadow-border)] rp-glass"
+          >
+            <p className="font-display text-[11px] leading-none font-semibold tabular-nums">
+              {scale}
+            </p>
+            <p className="mt-0.5 text-[8px] leading-none tracking-wide text-muted-foreground uppercase">
+              {imageryShort(imagery)}
+            </p>
+          </button>
+          <Button
+            variant={mob ? "danger" : "helm"}
+            size="icon"
+            className="size-10"
+            aria-label={mob ? "Man overboard is marked" : "Man overboard"}
+            onClick={() => {
+              if (mob) return;
+              unlockAlarmAudio();
+              if (!dropMob()) toast("Need a GPS fix before MOB.");
+            }}
+          >
+            <span className="font-display text-[11px] font-bold leading-none">MOB</span>
+          </Button>
+          {gust >= 25 ? (
+            <button
+              type="button"
+              onClick={() => setPanel("weather")}
+              className="rounded-md border border-destructive bg-destructive px-1 py-1 text-center text-[10px] font-bold text-white"
+            >
+              Gust {Math.round(gust)}
+            </button>
+          ) : null}
+        </div>
+        <div className="pointer-events-auto flex flex-col gap-1.5">
+          <Button
+            variant={panel === "layers" ? "default" : "helm"}
+            size="icon"
+            className="size-10"
+            aria-label="Map, boat, and look"
+            onClick={() => setPanel(panel === "layers" ? null : "layers")}
+          >
+            <Satellite />
+          </Button>
+        </div>
+      </div>
+
+      {tapMode !== "none" && anchorStep !== "circle" ? (
+        <div className="pointer-events-auto mx-auto mt-1.5 flex max-w-6xl items-center gap-1.5 rounded-md bg-card/95 px-2 py-1.5 text-xs text-foreground shadow-[var(--shadow-border)]">
+          <p className="min-w-0 flex-1 truncate">
+            {tapMode === "place-boat"
+              ? hookArmed
+                ? "Tap the chart. The hook sets just astern."
+                : "Tap to place the boat."
+              : tapMode === "resize-swing"
+                ? "Drag to set the swing radius. Lift to lock."
+                : tapMode === "draw-fence"
+                  ? fenceDraft.length < 3
+                    ? `Tap corners of the barrier (${fenceDraft.length}/3).`
+                    : "Tap the first mark to close, or Set."
+                  : tapMode === "draw-pack"
+                    ? "Zoom out first. Drag across the reef — it becomes a square."
+                  : boat && hookPreview
+                    ? `Hook ${formatMeters(haversineMeters(bowFromGps(boat, boat.heading, hull), hookPreview))} — drag the ring, lift to set.`
+                    : "Drag to the sand where the hook went down."}
+          </p>
+          {tapMode === "draw-pack" ? (
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-8 shrink-0"
+              disabled={packDraft.length === 0}
+              onClick={popPackCorner}
+            >
+              Undo
+            </Button>
+          ) : null}
+          {tapMode === "draw-fence" ? (
+            <>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-8 shrink-0"
+                disabled={fenceDraft.length === 0}
+                onClick={popFencePoint}
+              >
+                Undo
+              </Button>
+              <Button
+                variant="default"
+                size="sm"
+                className="h-8 shrink-0"
+                disabled={fenceDraft.length < 3}
+                onClick={commitFence}
+              >
+                Set
+              </Button>
+            </>
+          ) : null}
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-8 shrink-0"
+            onClick={() => cancelPlaceHook()}
+          >
+            Cancel
+          </Button>
+        </div>
+      ) : null}
+
+      {!boat && !gpsDenied ? (
+        <p className="pointer-events-none mx-auto mt-1.5 max-w-6xl text-center text-[11px] text-muted-foreground">
+          Locating GPS…
+        </p>
+      ) : null}
+
+      {!boat && gpsDenied ? (
+        <p className="pointer-events-none mx-auto mt-1.5 max-w-6xl text-center text-[11px] text-muted-foreground">
+          GPS off — Layers → Place boat.
+        </p>
+      ) : null}
+    </header>
+  );
+}
+
+function Instrument({
+  label,
+  value,
+  unit,
+  wide,
+  compact,
+}: {
+  label: string;
+  value: string;
+  unit: string;
+  wide?: boolean;
+  compact?: boolean;
+}) {
+  return (
+    <div
+      className={
+        compact
+          ? "min-w-0 flex-1 px-2 py-1.5"
+          : `px-3 py-2 ${wide ? "min-w-[9.5rem]" : "min-w-[4.5rem]"}`
+      }
+    >
+      <p className="text-[9px] tracking-[0.12em] text-muted-foreground uppercase">
+        {label}
+      </p>
+      <p
+        className={`font-display leading-none font-semibold tabular-nums rp-instrument-value ${
+          compact ? "text-lg" : "text-[1.35rem]"
+        }`}
+      >
+        {value}
+        {unit ? (
+          <span className="ml-0.5 text-[10px] font-medium text-muted-foreground">
+            {unit}
+          </span>
+        ) : null}
+      </p>
+    </div>
+  );
+}
+
+export function MobHud() {
+  const boat = useHelm((s) => s.boat);
+  const mob = useHelm((s) => s.mob);
+  const clearMob = useHelm((s) => s.clearMob);
+  const panel = useHelm((s) => s.panel);
+  const tapMode = useHelm((s) => s.tapMode);
+  if (!mob || panel || tapMode !== "none") return null;
+  const rangeM = boat ? haversineMeters(boat, mob) : null;
+  const brg = boat ? formatHeading(bearingDegrees(boat, mob)) : "—";
+  const rng = rangeM != null ? formatMeters(rangeM) : "—";
+  const sog = boat ? msToKnots(boat.speedMs) : 0;
+  const ttg =
+    boat && rangeM != null && sog >= 0.4 ? formatTtg(rangeM / (boat.speedMs || 1)) : "—";
+
+  return (
+    <div className="pointer-events-none absolute inset-x-0 bottom-[4.6rem] z-30 px-2 md:bottom-[9.2rem] md:px-3">
+      <div className="pointer-events-auto mx-auto flex w-full max-w-md items-stretch overflow-hidden rounded-xl border border-destructive bg-card/95 shadow-[var(--shadow-border)] rp-glass">
+        <div className="min-w-0 flex-1 px-3 py-2">
+          <p className="truncate text-[10px] tracking-[0.14em] text-destructive uppercase">
+            Back to MOB
+          </p>
+          <div className="mt-1 grid grid-cols-3 gap-1">
+            <div>
+              <p className="text-[9px] tracking-[0.12em] text-muted-foreground uppercase">Brg</p>
+              <p className="font-display text-[1.4rem] leading-none font-semibold tabular-nums">
+                {brg}
+              </p>
+            </div>
+            <div>
+              <p className="text-[9px] tracking-[0.12em] text-muted-foreground uppercase">Rng</p>
+              <p className="font-display text-[1.4rem] leading-none font-semibold tabular-nums">
+                {rng}
+              </p>
+            </div>
+            <div>
+              <p className="text-[9px] tracking-[0.12em] text-muted-foreground uppercase">Ttg</p>
+              <p className="font-display text-[1.4rem] leading-none font-semibold tabular-nums">
+                {ttg}
+              </p>
+            </div>
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={clearMob}
+          className="shrink-0 border-l border-border px-3 text-xs font-semibold tracking-wide text-destructive uppercase"
+        >
+          Clear
+        </button>
+      </div>
+    </div>
+  );
+}
+
+export function NavRibbon() {
+  const boat = useHelm((s) => s.boat);
+  const passage = useHelm((s) => s.activePassage);
+  const anchor = useHelm((s) => s.anchor);
+  const alarmOn = useHelm((s) => s.alarmOn);
+  const rode = useHelm((s) => s.rode);
+  const hull = useHelm((s) => s.hull);
+  const panel = useHelm((s) => s.panel);
+  const tapMode = useHelm((s) => s.tapMode);
+  const steerSense = useHelm((s) => s.steerSense);
+  const xteAlarmM = useHelm((s) => s.xteAlarmM);
+  const crumb = useHelm((s) => s.crumb);
+  const turnDeg = useHelm((s) => s.trackTurnDeg);
+  const chordM = useHelm((s) => s.trackChordM);
+  const courseMark = useHelm((s) => s.courseMark);
+  const pinned = useHelm((s) => s.pinnedMark);
+  const setPanel = useHelm((s) => s.setPanel);
+  const math = rodeMath(rode, gpsReachM(hull));
+
+  if (useHelm((s) => s.mob)) return null;
+  if (!passage && !anchor) return null;
+  if (panel || tapMode !== "none") return null;
+
+  const pts = passage ? guidePoints(passage, crumb, { turnDeg, chordM }) : [];
+  const nav = boat && pts.length >= 1 ? markNav(boat, pts, pinned, courseMark) : null;
+  const cue =
+    boat && pts.length >= 2
+      ? steerCue(boat, pts, steerSense, xteAlarmM, nav?.index)
+      : null;
+  const corners = cornerIndexes(pts);
+  const nextCorner =
+    nav == null ? null : (corners.find((i) => i >= nav.index) ?? null);
+  const toCorner =
+    boat && nav && nextCorner != null
+      ? metresAlong(pts, boat, nav.index, nextCorner)
+      : null;
+  const remaining = cue ? formatMeters(cue.remainM) : null;
+  const xte =
+    cue && Math.abs(cue.xteM) >= 1
+      ? `${cue.xteM < 10 ? Math.abs(cue.xteM).toFixed(1) : formatMeters(Math.abs(cue.xteM))} ${cue.xteM > 0 ? "stb" : "port"}`
+      : "in the tube";
+  const hook = boat && anchor ? haversineMeters(boat, anchor) : null;
+  const fenced = Boolean(anchor?.fence && anchor.fence.length >= 3);
+
+  return (
+    <div className="pointer-events-none absolute inset-x-0 bottom-[4.6rem] z-20 px-2 md:bottom-[9.2rem] md:px-3">
+      <div className="mx-auto flex max-w-6xl flex-wrap gap-1.5">
+        {passage ? (
+          <button
+            type="button"
+            onClick={() => setPanel("passages")}
+            className="pointer-events-auto rounded-md border border-border bg-card/95 px-2 py-1 text-left shadow-[var(--shadow-border)]"
+          >
+            <p className="font-display text-sm leading-none font-semibold">
+              {passage.title}
+            </p>
+            {remaining ? (
+              <p className="mt-0.5 text-[11px] text-muted-foreground">
+                {toCorner != null ? `${formatMeters(toCorner)} along to the corner · ` : ""}
+                {remaining} left · {xte}
+              </p>
+            ) : null}
+          </button>
+        ) : null}
+        {anchor && hook != null ? (
+          <button
+            type="button"
+            onClick={() => setPanel("anchor")}
+            className={`pointer-events-auto rounded-md border px-2 py-1 text-left shadow-[var(--shadow-border)] ${
+              alarmOn
+                ? "border-destructive bg-destructive text-white"
+                : "border-border bg-card/95"
+            }`}
+          >
+            <p className="font-display text-sm leading-none font-semibold tabular-nums">
+              {fenced
+                ? "Barrier"
+                : `${formatMeters(hook)} / ${Math.round(anchor.radiusM)} m`}
+            </p>
+            <p
+              className={`mt-0.5 text-[11px] ${
+                alarmOn
+                  ? "text-white/85"
+                  : math.status === "critical"
+                    ? "text-destructive"
+                    : "text-muted-foreground"
+              }`}
+            >
+              {fenced
+                ? alarmOn
+                  ? "Outside"
+                  : "Inside"
+                : `${formatScope(math.scopeHw)} HW${
+                    math.shortHwM > 0.4
+                      ? ` · +${Math.ceil(math.shortHwM)} m`
+                      : rode.tideHighAt
+                        ? ` · ${hoursUntil(rode.tideHighAt)}`
+                        : ""
+                  }`}
+            </p>
+          </button>
+        ) : null}
+      </div>
+    </div>
+  );
+}

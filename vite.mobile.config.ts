@@ -1,0 +1,39 @@
+import { resolve } from "node:path";
+import { defineConfig } from "vite";
+import react from "@vitejs/plugin-react";
+import tailwindcss from "@tailwindcss/vite";
+
+/** Static phone bundle. No server. Tracks stay on the device. */
+export default defineConfig({
+  base: "./",
+  plugins: [react(), tailwindcss()],
+  resolve: {
+    alias: [
+      {
+        find: "@/lib/passages",
+        replacement: resolve(import.meta.dirname, "src/lib/passages.mobile.ts"),
+      },
+      {
+        find: "@/lib/auth/server",
+        replacement: resolve(import.meta.dirname, "src/mobile-shims/auth-server.ts"),
+      },
+      {
+        find: "@tanstack/react-start/server",
+        replacement: resolve(import.meta.dirname, "src/mobile-shims/start.ts"),
+      },
+      {
+        find: "@tanstack/react-start",
+        replacement: resolve(import.meta.dirname, "src/mobile-shims/start.ts"),
+      },
+      { find: "@", replacement: resolve(import.meta.dirname, "src") },
+    ],
+  },
+  build: {
+    outDir: "dist-mobile",
+    emptyOutDir: true,
+    rollupOptions: {
+      input: resolve(import.meta.dirname, "mobile.html"),
+    },
+  },
+  publicDir: "public",
+});

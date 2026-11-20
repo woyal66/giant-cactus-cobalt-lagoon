@@ -1,0 +1,43 @@
+{
+  "marks": [
+    {
+      "ms": 500,
+      "status": 200,
+      "leaflet": false,
+      "tiles": 0,
+      "text": "WIND …kn NO FIX N 17890 m/px MOB Locating GPS… ATLAS TRACKS ANCHOR RECORD DRAW",
+      "overlay": false
+    },
+    {
+      "ms": 1500,
+      "status": 200,
+      "leaflet": true,
+      "tiles": 60,
+      "text": "WIND …kn NO FIX In N 2.2 m/px MOB GPS off — Layers → Place boat. ATLAS TRACKS ANCHOR RECORD DRAW",
+      "overlay": false
+    },
+    {
+      "ms": 3000,
+      "status": 200,
+      "leaflet": true,
+      "tiles": 60,
+      "text": "WIND …kn NO FIX In N 2.2 m/px MOB GPS off — Layers → Place boat. ATLAS TRACKS ANCHOR RECORD DRAW",
+      "overlay": false
+    },
+    {
+      "ms": 6000,
+      "status": 200,
+      "leaflet": true,
+      "tiles": 60,
+      "text": "WIND …kn NO FIX In N 2.2 m/px MOB GPS off — Layers → Place boat. ATLAS TRACKS ANCHOR RECORD DRAW",
+      "overlay": false
+    }
+  ],
+  "final": {
+    "leaflet": true,
+    "tiles": 108,
+    "text": "200 m Leaflet | Sentinel-2 cloudless © EOX / Copernicus, Maxar © Esri, Maxar, Earthstar Geographics, Imagery © Google ReefPilot SATELLITE HELM NO FIX WIND 16.5kn ESE LAT — LON — Sign in N 2.2 m/px MOB GPS off — Layers → Place boat. 16.5kn ESE · MODERATE BREEZE NOW 17 1 AM 16 2 AM 15 3 AM 15 4 AM 15 "
+  },
+  "errors": [],
+  "failed": []
+}

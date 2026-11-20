@@ -1,0 +1,36 @@
+{
+  "url": "http://127.0.0.1:8080/",
+  "viewports": {
+    "desktop": {
+      "width": 1280,
+      "height": 800,
+      "status": 200,
+      "title": "ReefPilot",
+      "hasCanvas": false,
+      "bodyTextLen": 193,
+      "bodyTextHash": "2bbb0bc1a1af75bf265db4664cde973fbcd5fd7b3e14249f0267ce5320193f29",
+      "bodyTextPrefix": "ReefPilot SATELLITE HELM NO FIX WIND …kn LAT — LON — N 17890 m/p",
+      "horizontalOverflow": false,
+      "consoleErrors": [],
+      "pageErrors": [],
+      "screenshot": "/workspace/screenshots/app-builder-preview.png"
+    },
+    "mobile": {
+      "width": 390,
+      "height": 844,
+      "status": 200,
+      "title": "ReefPilot",
+      "hasCanvas": false,
+      "bodyTextLen": 78,
+      "bodyTextHash": "c540019aeb63a6bc64d35b2450e3cbcdf2f8f3e1eea675e585b900301d53d774",
+      "bodyTextPrefix": "WIND …kn NO FIX N 17890 m/px MOB Locating GPS… ATLAS TRACKS ANCH",
+      "horizontalOverflow": false,
+      "consoleErrors": [],
+      "pageErrors": [],
+      "screenshot": "/workspace/screenshots/app-builder-preview-mobile.png"
+    }
+  },
+  "brandWarnings": [],
+  "authWarnings": [],
+  "verdictFile": "/workspace/screenshots/app-builder-preview.json"
+}

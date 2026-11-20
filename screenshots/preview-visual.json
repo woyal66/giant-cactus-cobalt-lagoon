@@ -1,0 +1,22 @@
+[
+  {
+    "name": "mobile",
+    "width": 390,
+    "height": 844,
+    "path": "/workspace/screenshots/preview-mobile.png",
+    "tiles": 60,
+    "text": "WIND 16.3kn ESE NO FIX In N 2.2 m/px MOB GPS off — Layers → Place boat. ATLAS TRACKS ANCHOR RECORD DRAW",
+    "scale": "2.2 m/px",
+    "errors": []
+  },
+  {
+    "name": "desktop",
+    "width": 1280,
+    "height": 800,
+    "path": "/workspace/screenshots/preview-desktop.png",
+    "tiles": 96,
+    "text": "200 m Leaflet | Sentinel-2 cloudless © EOX / Copernicus, Maxar © Esri, Maxar, Earthstar Geographics, Imagery © Google ReefPilot SATELLITE HELM NO FIX WIND 16.3kn ESE LAT — LON — Sign in N 2.2 m/px MOB GPS off — Layers → Place boat. 16.3kn E",
+    "scale": "2.2 m/px",
+    "errors": []
+  }
+]
