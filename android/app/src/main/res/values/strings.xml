@@ -4,4 +4,8 @@
     <string name="title_activity_main">Anchor Mate</string>
     <string name="package_name">com.anchormate.app</string>
     <string name="custom_url_scheme">com.anchormate.app</string>
+    <!-- Background GPS (anchor watch) foreground-service notification -->
+    <string name="capacitor_background_geolocation_notification_channel_name">Anchor watch</string>
+    <string name="capacitor_background_geolocation_notification_icon">drawable/ic_stat_anchor</string>
+    <string name="capacitor_background_geolocation_notification_color">#3EE0C0</string>
 </resources>

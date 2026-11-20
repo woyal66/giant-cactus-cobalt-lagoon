@@ -42,6 +42,9 @@ import { REEFS } from "@/lib/reefs";
 import { fetchTideRise } from "@/lib/tides";
 import { STEER_PRESETS, XTE_ALARM_PRESETS } from "@/lib/steer";
 import { SignedIn, SignedOut, UserButton } from "@/lib/auth/gates";
+import { isNativeApp } from "@/lib/native";
+import { isPreview } from "@/lib/subscription";
+import { SubscriptionRow } from "@/components/subscription";
 import { useCurrentUserState } from "@/lib/auth/use-current-user";
 import { simulateAnchorDrag, startMusgraveDemo, unlockAlarmAudio } from "@/hooks/helm-runtime";
 import { useHelm, type LocalDraft, type PanelId } from "@/store/helm";
@@ -438,14 +441,20 @@ export function LayersPanel() {
   return (
     <Sheet id="layers" title="View" kicker="Map stays up">
       <div className="mb-2 flex items-center justify-between gap-2">
-        <SignedIn>
-          <UserButton />
-        </SignedIn>
-        <SignedOut>
-          <Button asChild variant="outline" size="sm">
-            <Link to="/login">Sign in</Link>
-          </Button>
-        </SignedOut>
+        {isNativeApp() || isPreview() ? (
+          <SubscriptionRow />
+        ) : (
+          <>
+            <SignedIn>
+              <UserButton />
+            </SignedIn>
+            <SignedOut>
+              <Button asChild variant="outline" size="sm">
+                <Link to="/login">Sign in</Link>
+              </Button>
+            </SignedOut>
+          </>
+        )}
       </div>
       <div className="mb-2 grid gap-1">
         {IMAGERY.map((im) => (

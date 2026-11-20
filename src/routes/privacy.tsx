@@ -4,7 +4,7 @@ export const Route = createFileRoute("/privacy")({ component: Privacy });
 
 export function Privacy() {
   return (
-    <main className="min-h-dvh bg-background px-5 py-8 text-foreground">
+    <main className="h-dvh overflow-y-auto bg-background px-5 py-8 text-foreground">
       <div className="mx-auto max-w-lg">
         <p className="text-[10px] tracking-[0.18em] text-muted-foreground uppercase">
           Anchor Mate
@@ -22,9 +22,15 @@ export function Privacy() {
             named in the chart menu.
           </p>
           <p>
-            Tracks and boat settings are saved on this phone. Closing the app stops the
-            anchor check. The watch does not keep running in the background after the app
-            is closed.
+            Tracks and boat settings are saved on this phone. While an anchor watch or track is
+            running, the phone app keeps reading your location with the screen locked so the
+            alarm can sound. It stops when you lift the anchor or end the track. Swiping the app
+            closed also stops the watch.
+          </p>
+          <p>
+            Subscriptions are paid through the App Store or Google Play. We use RevenueCat to
+            check whether your subscription is active. It receives an anonymous app ID and your
+            purchase history from the store, not your name, payment card or location.
           </p>
           <p>
             This is a lookout aid, not an official chart. You remain responsible for the

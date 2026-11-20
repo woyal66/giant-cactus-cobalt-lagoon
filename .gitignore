@@ -3,3 +3,19 @@ node_modules/
 .github_repo
 .env
 .env.*
+!.env.example
+
+# Build output (regenerate with npm run build / npm run build:mobile)
+dist/
+dist-mobile/
+.vercel/
+.output/
+
+# Release signing secrets — never commit
+android/keystore.properties
+*.jks
+*.keystore
+
+# Store/release build artifacts
+ios/App/build/
+*.ipa

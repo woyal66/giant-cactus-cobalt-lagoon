@@ -14,6 +14,8 @@ import {
 } from "@tanstack/react-router";
 import { HelmApp } from "@/components/helm/helm-app";
 import { Privacy } from "@/routes/privacy";
+import { Terms } from "@/components/legal/terms";
+import { SubscriptionGate } from "@/components/subscription";
 import "./styles.css";
 
 function LoginNote() {
@@ -48,7 +50,17 @@ const rootRoute = createRootRoute({
 const indexRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/",
-  component: HelmApp,
+  component: () => (
+    <SubscriptionGate>
+      <HelmApp />
+    </SubscriptionGate>
+  ),
+});
+
+const termsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/terms",
+  component: Terms,
 });
 
 const privacyRoute = createRoute({
@@ -63,7 +75,7 @@ const loginRoute = createRoute({
   component: LoginNote,
 });
 
-const routeTree = rootRoute.addChildren([indexRoute, privacyRoute, loginRoute]);
+const routeTree = rootRoute.addChildren([indexRoute, privacyRoute, termsRoute, loginRoute]);
 const queryClient = new QueryClient({
   defaultOptions: { queries: { staleTime: 30_000, retry: 1, refetchOnWindowFocus: false } },
 });

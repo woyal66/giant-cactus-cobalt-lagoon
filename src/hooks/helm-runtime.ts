@@ -20,6 +20,7 @@ import {
   type GuardState,
 } from "@/lib/watch-guard";
 import { isNativeApp } from "@/lib/native";
+import { FIX_EVENT, startBackgroundGps, type BackgroundWatch } from "@/lib/background-gps";
 import { useHelm, guidePoints } from "@/store/helm";
 import type { Waypoint } from "@/lib/passages";
 
@@ -68,7 +69,8 @@ export function useGpsWatch() {
     let stopped = false;
     let watchId: number | string | null = null;
     let pollTimer: number | null = null;
-    let mode: "watch" | "poll" | null = null;
+    let mode: "watch" | "poll" | "bg" | null = null;
+    let bgWatch: BackgroundWatch | null = null;
     let pending = false;
     let pendingAt = 0;
 
@@ -121,6 +123,18 @@ export function useGpsWatch() {
         window.clearTimeout(pollTimer);
         pollTimer = null;
       }
+    };
+
+    const stopBg = () => {
+      bgWatch?.stop();
+      bgWatch = null;
+    };
+
+    /** On the phone, any armed watch must survive the screen locking. */
+    const wantBackground = () => {
+      if (!isNativeApp()) return false;
+      const s = useHelm.getState();
+      return Boolean(s.anchor) || s.drawMode === "record" || Boolean(s.activePassage);
     };
 
     const wantPoll = () => {
@@ -217,6 +231,15 @@ export function useGpsWatch() {
 
     const sync = () => {
       if (stopped) return;
+      if (wantBackground()) {
+        if (mode === "bg") return;
+        clearWatch();
+        clearPoll();
+        mode = "bg";
+        bgWatch = startBackgroundGps(applyFix, () => useHelm.getState().setGpsDenied(true));
+        return;
+      }
+      stopBg();
       if (wantPoll()) {
         if (mode === "poll") return;
         clearWatch();
@@ -238,7 +261,11 @@ export function useGpsWatch() {
 
     sync();
     const unsub = useHelm.subscribe((s, prev) => {
-      if (Boolean(s.anchor) !== Boolean(prev.anchor) || s.drawMode !== prev.drawMode) {
+      if (
+        Boolean(s.anchor) !== Boolean(prev.anchor) ||
+        s.drawMode !== prev.drawMode ||
+        Boolean(s.activePassage) !== Boolean(prev.activePassage)
+      ) {
         sync();
       }
     });
@@ -250,6 +277,7 @@ export function useGpsWatch() {
       document.removeEventListener("visibilitychange", onVis);
       clearWatch();
       clearPoll();
+      stopBg();
     };
   }, []);
 }
@@ -335,10 +363,13 @@ export function useAnchorWatch() {
     };
 
     document.addEventListener("visibilitychange", kick);
+    // Background GPS delivers fixes while browser timers are frozen; check each one.
+    window.addEventListener(FIX_EVENT, kick);
     kick();
     return () => {
       stopped = true;
       document.removeEventListener("visibilitychange", kick);
+      window.removeEventListener(FIX_EVENT, kick);
       window.clearTimeout(timer);
       stopAlarmTone();
       stopSteerEar();

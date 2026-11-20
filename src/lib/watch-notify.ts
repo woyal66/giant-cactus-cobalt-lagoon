@@ -87,15 +87,43 @@ function post(msg: WatchMsg) {
   }
 }
 
+/** Android: alarms need their own max-importance channel to sound on a locked phone. */
+const ALARM_CHANNEL = "anchor-alarm";
+let channelReady: Promise<void> | null = null;
+
+function ensureAlarmChannel(
+  LocalNotifications: typeof import("@capacitor/local-notifications").LocalNotifications,
+): Promise<void> {
+  channelReady ??= LocalNotifications.createChannel({
+    id: ALARM_CHANNEL,
+    name: "Anchor and safety alarms",
+    description: "Anchor drag, GPS lost, off track and man overboard",
+    importance: 5,
+    visibility: 1,
+    vibration: true,
+  }).catch(() => undefined); // iOS has no channels; that is fine.
+  return channelReady;
+}
+
 function nativeAlarm(kind: "drag" | "xte" | "gps" | "mob", title: string, body: string) {
   if (!isNativeApp()) return;
   const id = kind === "drag" ? 1 : kind === "gps" ? 2 : kind === "xte" ? 3 : 4;
   void import("@capacitor/local-notifications")
-    .then(({ LocalNotifications }) =>
-      LocalNotifications.schedule({
-        notifications: [{ id, title, body, ongoing: kind === "drag", autoCancel: false }],
-      }),
-    )
+    .then(async ({ LocalNotifications }) => {
+      await ensureAlarmChannel(LocalNotifications);
+      await LocalNotifications.schedule({
+        notifications: [
+          {
+            id,
+            title,
+            body,
+            ongoing: kind === "drag",
+            autoCancel: false,
+            channelId: ALARM_CHANNEL,
+          },
+        ],
+      });
+    })
     .catch(() => undefined);
 }
 

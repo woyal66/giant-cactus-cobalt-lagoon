@@ -14,6 +14,11 @@ export default defineConfig({
         replacement: resolve(import.meta.dirname, "src/lib/passages.mobile.ts"),
       },
       {
+        // tide-station.ts imports "./bom-tides.ts"; the phone fetches BOM natively.
+        find: /^\.\/bom-tides\.ts$/,
+        replacement: resolve(import.meta.dirname, "src/lib/bom-tides.mobile.ts"),
+      },
+      {
         find: "@/lib/auth/server",
         replacement: resolve(import.meta.dirname, "src/mobile-shims/auth-server.ts"),
       },
