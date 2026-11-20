@@ -617,7 +617,7 @@ function SeaStack({
                   {tideOrigin?.kind === "station" ? "Tide" : "Tide est"}
                 </span>
                 <span className="mt-0.5 block font-display text-base leading-none font-semibold tabular-nums">
-                  {tideM.toFixed(2)} m
+                  {formatDepth(tideM)}
                 </span>
                 <span className="text-[10px] text-muted-foreground">
                   {rising == null ? "Slack" : rising ? "Rising" : "Falling"}
@@ -1768,7 +1768,7 @@ function ForecastGraph({
           {showTide ? (
             <ReadoutCell
               label="Tide LAT"
-              value={tideM != null ? `${tideM.toFixed(2)} m` : "—"}
+              value={tideM != null ? formatDepth(tideM) : "—"}
               hint={rising == null ? "Slack" : rising ? "Rising" : "Falling"}
             />
           ) : null}

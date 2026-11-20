@@ -226,7 +226,8 @@ Anchor Mate is paid, so before launch:
 | Open-Meteo | Wind, waves, currents, model tide | A commercial API plan → `VITE_OPEN_METEO_KEY`. Requests switch over automatically. |
 | BOM tide tables | Official port tides | BOM content is personal use by default. Ask BOM about a data licence, and show their copyright and disclaimer. |
 | OpenSeaMap seamarks and depths | Chart overlays | CC BY-SA. Credit is shown. For heavy use, contact the project. |
-| GBRMPA reef outlines (eAtlas) | Reef overlay | CC BY. Credit is shown. |
+| GBRMPA reef outlines and zoning (eAtlas) | Reef and marine park overlays | CC BY. Credit is shown. The zoning legend says it's a guide, not the law. |
+| ntfy (remote watch) | Second-phone alarms | The public ntfy.sh is free but rate-limited, so it suits testing. For launch, buy an ntfy plan or self-host, and set `VITE_REMOTE_WATCH_SERVER`. |
 
 For the store build, add `VITE_LICENSED_IMAGERY_ONLY=1` to `.env.production.local`.
 It hides every map source above that has no licence and saves offline packs from

@@ -288,11 +288,11 @@ function AnchorSetBar() {
           <div>
             <p className="text-[10px] tracking-[0.14em] text-muted-foreground uppercase">Length</p>
             <p className="mt-1 font-display text-2xl leading-tight font-semibold">
-              This length will be {Math.round(math.laybackM)} m
+              This length will be {formatLength(math.laybackM)}
               {astern != null ? `, ${astern}°` : " astern"}.
             </p>
             <p className="mt-1 text-sm text-muted-foreground">
-              Scope {math.scopeNow.toFixed(1)}:1. Swing circle {math.radiusM} m.
+              Scope {math.scopeNow.toFixed(1)}:1. Swing circle {formatLength(math.radiusM)}.
             </p>
             <Row
               cancel="Back"

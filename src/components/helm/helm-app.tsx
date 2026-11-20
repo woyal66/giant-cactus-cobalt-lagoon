@@ -18,9 +18,11 @@ import {
   SavePanel,
 } from "@/components/helm/panels";
 import { BoatPanel } from "@/components/helm/boat-panel";
+import { FirstRunGuide } from "@/components/helm/first-run-guide";
 import {
   useAnchorWatch,
   useAutoNight,
+  useRemoteWatch,
   useDemoCruise,
   useGpsWatch,
   useMarkMade,
@@ -37,6 +39,7 @@ export function HelmApp() {
   useWakeLock();
   useMarkMade();
   useAutoNight();
+  useRemoteWatch();
 
   useEffect(() => {
     void listPacks().then((p) => useHelm.getState().setOfflinePacks(p));
@@ -100,6 +103,7 @@ export function HelmApp() {
       <BottomDock />
       <Disclaimer />
       <AlarmOverlay />
+      <FirstRunGuide />
       <Toaster
         theme="dark"
         position="bottom-center"

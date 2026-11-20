@@ -11,6 +11,7 @@ import {
   type DepthUnit,
   type LengthUnit,
 } from "@/lib/units";
+import { isTopic } from "@/lib/remote-watch";
 import { boxShortM, squareFromCorners, type BBox, type OfflinePack } from "@/lib/offline-tiles";
 import {
   clampAlarmRadius,
@@ -79,6 +80,8 @@ export type AnchorWatch = {
   droppedAt: number;
   radiusLocked: boolean;
   fence: LatLng[] | null;
+  /** Temporary anchor for the first-run alarm demo. Never saved. */
+  demo?: boolean;
 };
 
 export type LocalDraft = {
@@ -198,6 +201,10 @@ export type HelmState = {
   autoNight: boolean;
   depthUnit: DepthUnit;
   lengthUnit: LengthUnit;
+  /** First-run guide finished or skipped. */
+  guideDone: boolean;
+  /** Second phone pairing for remote watch (ntfy topic). */
+  remoteWatch: { topic: string; boatName: string } | null;
   sunPunch: 1 | 2 | 3;
   rode: RodeSetup;
   hull: BoatSetup;
@@ -291,6 +298,8 @@ type HelmActions = {
   setLook: (v: LookMode) => void;
   setAutoNight: (v: boolean) => void;
   setDepthUnit: (v: DepthUnit) => void;
+  setGuideDone: (v: boolean) => void;
+  setRemoteWatch: (v: { topic: string; boatName: string } | null) => void;
   setLengthUnit: (v: LengthUnit) => void;
   cycleLook: () => void;
   setSunPunch: (n: 1 | 2 | 3) => void;
@@ -398,6 +407,8 @@ function persistSig(state: Record<string, unknown>): string {
     state.look,
     state.autoNight,
     state.depthUnit,
+    state.guideDone,
+    persistId(state.remoteWatch),
     state.lengthUnit,
     state.sunPunch,
     state.chartUp,
@@ -434,7 +445,7 @@ let writeTimer: ReturnType<typeof setTimeout> | null = null;
 /** Settings and tracks are saved at most this often; the anchor is saved at once. */
 const PERSIST_DEBOUNCE_MS = 4_000;
 
-function flushHelmWrite() {
+export function flushHelmWrite() {
   if (writeTimer != null) {
     clearTimeout(writeTimer);
     writeTimer = null;
@@ -578,6 +589,8 @@ export const useHelm = create<HelmState & HelmActions>()(
       look: "normal",
       autoNight: false,
       depthUnit: "m",
+      guideDone: false,
+      remoteWatch: null,
       lengthUnit: "m",
       sunPunch: 2,
       rode: DEFAULT_RODE,
@@ -1099,6 +1112,8 @@ export const useHelm = create<HelmState & HelmActions>()(
         set({ sunlight, look: sunlight ? "sunlight" : "normal" }),
       setLook: (look) => set({ look, sunlight: look === "sunlight" }),
       setAutoNight: (autoNight) => set({ autoNight }),
+      setGuideDone: (guideDone) => set({ guideDone }),
+      setRemoteWatch: (remoteWatch) => set({ remoteWatch }),
       setDepthUnit: (depthUnit) => {
         setUnits({ depth: depthUnit });
         set({ depthUnit });
@@ -1310,7 +1325,9 @@ export const useHelm = create<HelmState & HelmActions>()(
         crumbOn: s.crumbOn,
         mob: s.mob,
         // Restored on relaunch so an OS kill overnight does not silently end the watch.
-        anchor: s.anchor,
+        anchor: s.anchor?.demo ? null : s.anchor,
+        guideDone: s.guideDone,
+        remoteWatch: s.remoteWatch,
       }),
       merge: (persisted, current) => {
         const p = (persisted ?? {}) as Partial<HelmState>;
@@ -1333,6 +1350,13 @@ export const useHelm = create<HelmState & HelmActions>()(
           parkZones: typeof p.parkZones === "boolean" ? p.parkZones : current.parkZones,
           autoNight: typeof p.autoNight === "boolean" ? p.autoNight : current.autoNight,
           depthUnit: applyDepthUnit(p.depthUnit, current.depthUnit),
+          guideDone: typeof p.guideDone === "boolean" ? p.guideDone : current.guideDone,
+          remoteWatch:
+            p.remoteWatch &&
+            isTopic(p.remoteWatch.topic) &&
+            typeof p.remoteWatch.boatName === "string"
+              ? { topic: p.remoteWatch.topic, boatName: p.remoteWatch.boatName.slice(0, 40) }
+              : null,
           lengthUnit: applyLengthUnit(p.lengthUnit, current.lengthUnit),
           look: isLookMode(p.look)
             ? p.look

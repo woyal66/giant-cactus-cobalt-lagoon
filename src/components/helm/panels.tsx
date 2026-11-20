@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -44,8 +44,10 @@ import { STEER_PRESETS, XTE_ALARM_PRESETS } from "@/lib/steer";
 import { SignedIn, SignedOut, UserButton } from "@/lib/auth/gates";
 import { isNativeApp } from "@/lib/native";
 import { shareGpx } from "@/lib/share-gpx";
+import { restoreBackup, saveBackup } from "@/lib/backup-actions";
 import { UnitStepField } from "@/components/helm/unit-field";
 import { MoonCard } from "@/components/helm/moon-card";
+import { RemoteWatchCard } from "@/components/helm/remote-watch-card";
 import { formatDepth, formatLength } from "@/lib/units";
 import { criticalAlerts, type CriticalStatus } from "@/lib/critical-alert";
 import { openLocationSettings } from "@/lib/background-gps";
@@ -238,6 +240,7 @@ export function AnchorPanel() {
       </div>
       {boat || anchor ? <AnchorWxCard /> : null}
       <MoonCard compact />
+      <RemoteWatchCard />
       {anchor ? (
         <div className="mb-2 grid gap-2">
           <div className="flex items-center justify-between rounded-lg border border-border bg-background px-3 py-2">
@@ -566,6 +569,17 @@ export function LayersPanel() {
         ))}
       </div>
       <UnitsPicker />
+      <Button
+        variant="outline"
+        size="sm"
+        className="mb-2 w-full"
+        onClick={() => {
+          setPanel(null);
+          useHelm.getState().setGuideDone(false);
+        }}
+      >
+        Show the getting-started guide
+      </Button>
       {look === "sunlight" ? (
         <div className="mb-2 grid grid-cols-3 gap-2">
           {([1, 2, 3] as const).map((n) => (
@@ -1115,6 +1129,7 @@ export function PassagesPanel() {
           </p>
         </div>
       ) : null}
+      <BackupRow />
       {(pub.data ?? []).length || pub.isLoading ? (
         <p className="mb-1 text-[10px] tracking-[0.14em] text-muted-foreground uppercase">Library</p>
       ) : null}
@@ -1261,6 +1276,60 @@ function ZoneLegend() {
         no-anchoring areas in the Whitsundays, Keppels and Hinchinbrook. Check the
         official GBRMPA zoning maps before you fish or anchor. Anchor on sand, not coral.
       </p>
+    </div>
+  );
+}
+
+/** Back up tracks and settings to a file (iCloud Drive, Google Drive, Files), or restore one. */
+function BackupRow() {
+  const input = useRef<HTMLInputElement>(null);
+  const count = useHelm((s) => s.drafts.length);
+  return (
+    <div className="mb-3 rounded-lg border border-border bg-background px-3 py-2">
+      <p className="text-[10px] tracking-[0.14em] text-muted-foreground uppercase">Backup</p>
+      <p className="mt-0.5 text-[12px] leading-snug text-muted-foreground">
+        Save your {count ? `${count} track${count === 1 ? "" : "s"}` : "tracks"} and settings to iCloud Drive,
+        Google Drive or Files, and restore them on a new phone.
+      </p>
+      <div className="mt-2 grid grid-cols-2 gap-2">
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => {
+            saveBackup().catch((err: unknown) => {
+              if (!/cancel/i.test(String(err))) toast.error("Couldn't save the backup");
+            });
+          }}
+        >
+          Save backup
+        </Button>
+        <Button variant="outline" size="sm" onClick={() => input.current?.click()}>
+          Restore
+        </Button>
+      </div>
+      <input
+        ref={input}
+        type="file"
+        accept="application/json,.json"
+        className="hidden"
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          e.target.value = "";
+          if (!file) return;
+          void file
+            .text()
+            .then((text) => {
+              const r = restoreBackup(text);
+              toast.success(
+                r.added
+                  ? `Restored ${r.added} track${r.added === 1 ? "" : "s"} and your settings`
+                  : "Settings restored. Those tracks were already on this phone.",
+              );
+              if (r.dropped) toast.warning(`${r.dropped} oldest tracks didn't fit (40 max).`);
+            })
+            .catch((err: unknown) => toast.error(err instanceof Error ? err.message : "Couldn't restore"));
+        }}
+      />
     </div>
   );
 }

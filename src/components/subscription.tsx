@@ -1,4 +1,7 @@
-import { useEffect, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
+import { isNativeApp } from "@/lib/native";
+import { TRIAL_NOTICE_ID, trialMessage, trialPlan } from "@/lib/trial-reminder";
+import { useHelm } from "@/store/helm";
 import { Link } from "@tanstack/react-router";
 import { Anchor, Check, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -27,7 +30,14 @@ export function SubscriptionGate({ children }: { children: ReactNode }) {
     void initSubscription();
   }, []);
 
-  if (access === "active") return <>{children}</>;
+  if (access === "active") {
+    return (
+      <>
+        {children}
+        <TrialReminder />
+      </>
+    );
+  }
   if (access === "checking") {
     return (
       <main className="grid h-dvh place-items-center bg-background text-muted-foreground">
@@ -176,6 +186,87 @@ export function SubscriptionRow() {
             Manage
           </a>
         </Button>
+      </div>
+    </div>
+  );
+}
+
+const BANNER_DISMISS_KEY = "anchormate.trialBanner";
+
+/**
+ * Trial ending: one local notification a day before, plus a banner in the last
+ * 48 h (dismissible once per day). Rescheduled whenever the trial state changes.
+ */
+function TrialReminder() {
+  const inTrial = useSubscription((s) => s.inTrial);
+  const expiresAt = useSubscription((s) => s.expiresAt);
+  const willRenew = useSubscription((s) => s.willRenew);
+  const offer = useSubscription((s) => s.offer);
+  const tracks = useHelm((s) => s.drafts.length);
+  const packs = useHelm((s) => s.offlinePacks.length);
+  const [hidden, setHidden] = useState(() => {
+    try {
+      return localStorage.getItem(BANNER_DISMISS_KEY) === new Date().toDateString();
+    } catch {
+      return false;
+    }
+  });
+
+  const plan = trialPlan({ inTrial, expiresAt, willRenew });
+  const base = {
+    willRenew,
+    price: offer?.price ?? null,
+    period: offer?.period ?? "year",
+    store: storeName(),
+    tracks,
+    packs,
+  };
+
+  useEffect(() => {
+    if (!isNativeApp()) return;
+    void import("@capacitor/local-notifications")
+      .then(async ({ LocalNotifications }) => {
+        await LocalNotifications.cancel({ notifications: [{ id: TRIAL_NOTICE_ID }] });
+        if (!plan.notifyAt || !expiresAt) return;
+        const m = trialMessage({ ...base, expiresAt, readAt: plan.notifyAt });
+        await LocalNotifications.schedule({
+          notifications: [
+            { id: TRIAL_NOTICE_ID, title: m.title, body: m.body, schedule: { at: new Date(plan.notifyAt) } },
+          ],
+        });
+      })
+      .catch(() => undefined);
+    // Re-plan when anything in the message changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [plan.notifyAt, expiresAt, willRenew, offer?.price, tracks, packs]);
+
+  if (!plan.showBanner || hidden || !expiresAt) return null;
+  const m = trialMessage({ ...base, expiresAt });
+  return (
+    <div className="pointer-events-none absolute inset-x-0 top-[calc(max(0.4rem,env(safe-area-inset-top))+6.5rem)] z-40 flex justify-center px-3">
+      <div className="pointer-events-auto w-full max-w-md rounded-xl border border-primary/40 bg-card/95 p-3 shadow-[var(--shadow-border)]">
+        <p className="font-display text-base leading-tight font-semibold">{m.title}</p>
+        <p className="mt-1 text-[12px] leading-snug text-muted-foreground">{m.body}</p>
+        <div className="mt-2 grid grid-cols-2 gap-2">
+          <Button asChild variant="outline" size="sm">
+            <a href={manageUrl()} target="_blank" rel="noreferrer">
+              Manage
+            </a>
+          </Button>
+          <Button
+            size="sm"
+            onClick={() => {
+              try {
+                localStorage.setItem(BANNER_DISMISS_KEY, new Date().toDateString());
+              } catch {
+                /* storage blocked */
+              }
+              setHidden(true);
+            }}
+          >
+            OK
+          </Button>
+        </div>
       </div>
     </div>
   );

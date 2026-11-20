@@ -26,7 +26,15 @@ a server function, give the phone build an equivalent or it silently returns `nu
 - `src/lib/imagery.ts`: map sources and licensing switches (`VITE_MAPTILER_KEY`, `VITE_ESRI_KEY`, `VITE_LICENSED_IMAGERY_ONLY`). `src/lib/open-meteo.ts` adds the commercial Open-Meteo key.
 - `src/lib/weather.ts`: forecasts are saved per ~10 km cell and revived offline (`reviveForecast`).
 - `src/lib/critical-alert.ts` ↔ `ios/App/App/CriticalAlertPlugin.swift` (registered in `MainViewController.swift`): iPhone alarms as Critical Alerts (needs Apple entitlement, see STORE-RELEASE 7a) or Time Sensitive.
-- `src/lib/gpx.ts` / `share-gpx.ts`: GPX export via the share sheet.
+- `src/lib/gpx.ts` / `share-gpx.ts` / `share-file.ts`: GPX export and file sharing via the share sheet.
+- `src/lib/units.ts`: display units (depth m/ft/fathoms, length m/ft). Everything is stored in metres; use `formatDepth` / `formatLength` / `formatMeters`, never a literal " m". Components that format call `useUnitsKey()` so they re-render on a change.
+- `src/lib/moon.ts` (suncalc) + `components/helm/moon-card.tsx`: moon phase and rise/set, offline.
+- `src/lib/remote-watch.ts` + `useRemoteWatch` + `remote-watch-card.tsx`: second-phone alarms over ntfy (`VITE_REMOTE_WATCH_SERVER`).
+- `src/lib/backup.ts` / `backup-actions.ts`: backup file and restore. Restore goes through the store's own load path (`persist.rehydrate`) so values are validated; the live anchor watch is kept.
+- `src/lib/trial-reminder.ts`: trial-ending notice (local notification id 900) and banner.
+- `components/helm/first-run-guide.tsx`: onboarding; `runAlarmDemo` uses a `demo: true` anchor that is never persisted. `simulateAnchorDrag` pauses live GPS for 30 s (`demoHoldUntil`).
+- Marine park zones: `ZONING_WMS_LAYERS` / `PARK_ZONES` in `imagery.ts`.
+- `docs/passage-planner-plan.md`: plan for weather routing (not built).
 - Anchor watch: saved immediately on change and restored on relaunch (`isAnchorWatch` in the store). Other state is saved at most every 4 s and flushed on backgrounding.
 - `src/components/legal/terms.tsx`, `src/routes/privacy.tsx`: legal text shown in-app and on the website. Keep in sync with what the stores link to.
 

@@ -28,6 +28,16 @@ export function Privacy() {
             closed also stops the watch.
           </p>
           <p>
+            If you turn on Remote watch, anchor watch alerts with the boat&apos;s position are sent
+            through the ntfy notification service to a private channel that only your paired phones
+            know. The service logs the channel name and IP address to limit abuse. Remote watch is off
+            unless you set it up, and turning it off stops all sending.
+          </p>
+          <p>
+            Backups are files you save yourself, for example to iCloud Drive or Google Drive. They
+            contain your tracks and settings, not your anchor watch.
+          </p>
+          <p>
             Subscriptions are paid through the App Store or Google Play. We use RevenueCat to
             check whether your subscription is active. It receives an anonymous app ID and your
             purchase history from the store, not your name, payment card or location.

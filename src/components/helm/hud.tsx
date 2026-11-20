@@ -493,7 +493,7 @@ export function NavRibbon() {
                   : "Inside"
                 : `${formatScope(math.scopeHw)} HW${
                     math.shortHwM > 0.4
-                      ? ` · +${Math.ceil(math.shortHwM)} m`
+                      ? ` · +${formatLength(Math.ceil(math.shortHwM))}`
                       : rode.tideHighAt
                         ? ` · ${hoursUntil(rode.tideHighAt)}`
                         : ""
