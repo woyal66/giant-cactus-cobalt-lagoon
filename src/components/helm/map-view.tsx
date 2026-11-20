@@ -1132,7 +1132,16 @@ export function MapView() {
         let packStamp = "";
         let boatIconKey = "";
 
+        // Two-finger gesture guard. Follow-boat only paused for one-finger drags, so a GPS fix
+        // (once a second) re-centred or rotated the chart mid-pinch: the jumpy zoom.
+        let pinchTouches = 0;
+        let gestureUntil = 0;
+        const gesturing = () =>
+          pinchTouches >= 2 ||
+          Date.now() < gestureUntil ||
+          Boolean((map as unknown as { _animatingZoom?: boolean })._animatingZoom);
         const setMapBearing = (deg: number) => {
+          if (gesturing()) return;
           const m = map as LeafletMap & {
             setBearing?: (b: number) => void;
             getBearing?: () => number;
@@ -1393,7 +1402,7 @@ export function MapView() {
               boatMarker.addTo(map);
               boatOn = true;
             }
-            if (s.followBoat && !framingTrack && !mapDrag.moving?.()) {
+            if (s.followBoat && !framingTrack && !mapDrag.moving?.() && !gesturing()) {
               if (!followArmed && map.getZoom() < HELM_ZOOM) {
                 map.setView([s.boat.lat, s.boat.lng], HELM_ZOOM, { animate: false });
               }
@@ -2199,6 +2208,15 @@ export function MapView() {
         };
         box.addEventListener("pointerdown", onPointerDown);
         box.addEventListener("pointermove", onPointerMove);
+        const countTouches = (ev: TouchEvent) => {
+          const was = pinchTouches;
+          pinchTouches = ev.touches.length;
+          if (pinchTouches >= 2) clearHold(); // a pinch is not a long-press
+          if (was >= 2 && pinchTouches < 2) gestureUntil = Date.now() + 700;
+        };
+        box.addEventListener("touchstart", countTouches, { passive: true });
+        box.addEventListener("touchend", countTouches, { passive: true });
+        box.addEventListener("touchcancel", countTouches, { passive: true });
         box.addEventListener("touchstart", holdTouch, { passive: false });
         box.addEventListener("touchmove", holdTouch, { passive: false });
         window.addEventListener("pointermove", onPointerMove);
@@ -2308,6 +2326,9 @@ export function MapView() {
           window.removeEventListener("rp-close-in", onCloseIn);
           box.removeEventListener("pointerdown", onPointerDown);
           box.removeEventListener("pointermove", onPointerMove);
+          box.removeEventListener("touchstart", countTouches);
+          box.removeEventListener("touchend", countTouches);
+          box.removeEventListener("touchcancel", countTouches);
           box.removeEventListener("touchstart", holdTouch);
           box.removeEventListener("touchmove", holdTouch);
           window.removeEventListener("pointermove", onPointerMove);
