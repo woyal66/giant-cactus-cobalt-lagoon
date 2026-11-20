@@ -100,6 +100,8 @@ export type LocalDraft = {
   kind: PassageKind;
   waypoints: Waypoint[];
   savedAt: string;
+  /** Waypoints tapped on the chart: followed exactly, never simplified. */
+  tapped?: boolean;
 };
 
 export type WxLayers = {
@@ -819,9 +821,12 @@ export const useHelm = create<HelmState & HelmActions>()(
           fix &&
           s.drawMode === "record" &&
           s.crumbOn &&
-          (fix.source === "gps" || fix.source === "demo")
+          (fix.source === "gps" || fix.source === "demo") &&
+          // Poor fixes and drift while stopped are what made recorded tracks jagged.
+          (fix.accuracy == null || fix.accuracy <= 15) &&
+          !(fix.speedMs < 0.25 && crumb.length > 0)
         ) {
-          crumb = appendTrail(crumb, fix, 2);
+          crumb = appendTrail(crumb, fix, 3);
         }
         if (
           fix === s.boat &&
@@ -1264,10 +1269,11 @@ export const useHelm = create<HelmState & HelmActions>()(
         set({ demoPlaying, followBoat: demoPlaying ? true : get().followBoat }),
       dismissIntro: () => set({ introOpen: false }),
       saveDraft: (input) => {
-        const waypoints = simplifyTrack(input.waypoints, {
-          turnDeg: get().trackTurnDeg,
-          chordM: get().trackChordM,
-        }).map((w, i) => ({
+        // Every tapped waypoint is deliberate (a dog-leg round a bommie): keep them all,
+        // dropping only double taps.
+        const waypoints = input.waypoints
+          .filter((w, i, all) => i === 0 || haversineMeters(all[i - 1]!, w) >= 1)
+          .map((w, i) => ({
           lat: w.lat,
           lng: w.lng,
           label:
@@ -1276,6 +1282,7 @@ export const useHelm = create<HelmState & HelmActions>()(
         const draft: LocalDraft = {
           ...input,
           waypoints,
+          tapped: true,
           localId: `local-${Date.now()}`,
           savedAt: new Date().toISOString(),
         };
@@ -1694,7 +1701,7 @@ export function guidePoints(
 ): LatLng[] {
   const hit = guideCache.get(p.waypoints);
   if (hit && hit.turn === clean?.turnDeg && hit.chord === clean?.chordM) return hit.pts;
-  const pts = simplifyTrack(p.waypoints, clean);
+  const pts = "tapped" in p && p.tapped ? p.waypoints.map((w) => ({ lat: w.lat, lng: w.lng })) : simplifyTrack(p.waypoints, clean);
   guideCache.set(p.waypoints, { turn: clean?.turnDeg, chord: clean?.chordM, pts });
   return pts;
 }

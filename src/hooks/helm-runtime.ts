@@ -6,7 +6,7 @@ import { boatInsideWatch, anchorPollMs, ANCHOR_POLL_FAST_MS, fixPreciseForWatch 
 import { HELM_ZOOM } from "@/lib/imagery";
 import { previewAlarm, startAlarmTone, stopAlarmTone, unlockAlarmAudio } from "@/lib/alarm";
 import { setSteerEar, stopSteerEar } from "@/lib/steer-audio";
-import { markNav, steerCue } from "@/lib/steer";
+import { markNav, steerCue, steerLegIndex } from "@/lib/steer";
 import {
   clearAnchorStatus,
   clearWatchNotice,
@@ -427,7 +427,7 @@ export function useAnchorWatch() {
       const leg = boat && pts.length >= 1 ? markNav(boat, pts, s.pinnedMark, s.courseMark) : null;
       const cue =
         boat && pts.length >= 2
-          ? steerCue(boat, pts, s.steerSense, s.xteAlarmM, leg?.index)
+          ? steerCue(boat, pts, s.steerSense, s.xteAlarmM, leg ? steerLegIndex(boat, pts, leg.index) : undefined)
           : null;
       // With lock-screen GPS running the page is not frozen when hidden, so the
       // guard can (and must) still raise "GPS lost" with the screen off.

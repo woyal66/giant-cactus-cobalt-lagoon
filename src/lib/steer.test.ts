@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { destPoint } from "./geo.ts";
-import { formatTtg, formatXte, markNav, nextVertexIndex, steerCue } from "./steer.ts";
+import { formatTtg, formatXte, markNav, nextTurn, nextVertexIndex, steerCue, steerLegIndex } from "./steer.ts";
 
 describe("track steer", () => {
   const a = { lat: -23.9, lng: 152.4 };
@@ -80,5 +80,59 @@ describe("track steer", () => {
     assert.equal(formatXte(-12).unit, "m");
     assert.equal(formatXte(null).value, "—");
     assert.equal(formatXte(null).unit, "");
+  });
+});
+
+describe("following a tapped route", () => {
+  const a = { lat: -23.9, lng: 152.4 };
+  const b = destPoint(a, 0, 300);
+  const c = destPoint(b, 90, 300);
+  const d = destPoint(c, 120, 200);
+  const route = [a, b, c, d];
+
+  it("moves on to the next waypoint even when a mark is passed wide", () => {
+    // 30 m wide of b, already past it heading east along leg b→c.
+    const past = destPoint(destPoint(b, 90, 40), 0, 30);
+    assert.equal(nextVertexIndex(past, route, null, 1), 2);
+  });
+
+  it("does not skip ahead before a mark is reached", () => {
+    const before = destPoint(a, 0, 150);
+    assert.equal(nextVertexIndex(before, route, null, 0), 1);
+  });
+
+  it("calls the turn ahead with side, size and new course", () => {
+    const boat = { ...destPoint(a, 0, 260), speedMs: 2 };
+    const t = nextTurn(boat, route, 1);
+    assert.ok(t && !("arrival" in t));
+    assert.equal(t.index, 1);
+    assert.ok(Math.abs(t.distM - 40) < 1);
+    assert.ok(Math.abs(t.turnDeg - 90) < 1);
+    assert.ok(Math.abs(t.newCourse - 90) < 1);
+    assert.equal(t.now, false);
+    const close = nextTurn({ ...destPoint(a, 0, 285), speedMs: 2 }, route, 1);
+    assert.equal(close?.now, true);
+    // Inside the arrival radius the guide already points at the next mark: still "turn now".
+    const atMark = nextTurn({ ...destPoint(a, 0, 294), speedMs: 2, heading: 0 }, route, 2);
+    assert.ok(atMark && !("arrival" in atMark) && atMark.now && atMark.index === 1);
+    // Once heading down the new leg, the call moves on.
+    const turned = nextTurn({ ...destPoint(a, 0, 294), speedMs: 2, heading: 85 }, route, 2);
+    assert.ok(turned && turned.index === 2 && !turned.now);
+  });
+
+  it("then announces the last mark", () => {
+    const t = nextTurn({ ...destPoint(c, 120, 100), speedMs: 1 }, route, 3);
+    assert.ok(t && "arrival" in t);
+    assert.ok(Math.abs(t.distM - 100) < 1);
+  });
+
+  it("keeps cross-track on the leg into a corner until the turn is made", () => {
+    const boat = { ...destPoint(a, 0, 292), speedMs: 2, heading: 0 };
+    // The guide has already counted WP2 as made (courseMark = 2), 8 m short of it.
+    const leg = steerLegIndex(boat, route, 2);
+    assert.equal(leg, 1);
+    const cue = steerCue(boat, route, "track", 3, leg)!;
+    assert.ok(Math.abs(cue.xteM) < 0.5, String(cue.xteM));
+    assert.equal(cue.offTrack, false);
   });
 });

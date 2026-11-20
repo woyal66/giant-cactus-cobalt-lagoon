@@ -199,18 +199,76 @@ export function simplifyPath<T extends LatLng>(pts: T[], epsilonM = TUBE_M): T[]
   return pts.filter((_, i) => keep[i]).map((p) => ({ ...p }));
 }
 
-export function simplifyTrack<T extends LatLng>(pts: T[], clean?: Partial<TrackClean>): T[] {
+/** Median spacing below this marks a recorded GPS trail (tapped routes are far sparser). */
+export const DENSE_TRACK_M = 6;
+const SMOOTH_M = 5;
+
+/**
+ * Light smoothing for recorded trails: each interior fix becomes the average of the fixes
+ * within ±5 m along the trail. Removes GPS wobble; a right-angle corner moves about 1–2 m.
+ * Sparse (tapped) routes are returned unchanged.
+ */
+export function smoothTrail<T extends LatLng>(pts: T[], halfM = SMOOTH_M): T[] {
+  if (pts.length < 5) return pts;
+  const legs: number[] = [];
+  for (let i = 1; i < pts.length; i += 1) legs.push(haversineMeters(pts[i - 1]!, pts[i]!));
+  const median = [...legs].sort((x, y) => x - y)[Math.floor(legs.length / 2)]!;
+  if (median >= DENSE_TRACK_M) return pts;
+  const chain: number[] = [0];
+  for (const l of legs) chain.push(chain[chain.length - 1]! + l);
+  return pts.map((p, i) => {
+    if (i === 0 || i === pts.length - 1) return p;
+    let lat = 0;
+    let lng = 0;
+    let n = 0;
+    for (let j = i; j >= 0 && chain[i]! - chain[j]! <= halfM; j -= 1) {
+      lat += pts[j]!.lat;
+      lng += pts[j]!.lng;
+      n += 1;
+    }
+    for (let k = i + 1; k < pts.length && chain[k]! - chain[i]! <= halfM; k += 1) {
+      lat += pts[k]!.lat;
+      lng += pts[k]!.lng;
+      n += 1;
+    }
+    return { ...p, lat: lat / n, lng: lng / n };
+  });
+}
+
+export function simplifyTrack<T extends LatLng>(input: T[], clean?: Partial<TrackClean>): T[] {
   const turnKeep = clean?.turnDeg ?? TRACK_TURN_DEG;
   const chordKeep = clean?.chordM ?? TRACK_CHORD_M;
-  if (pts.length < 3) return pts.map((p) => ({ ...p }));
+  if (input.length < 3) return input.map((p) => ({ ...p }));
+  const pts = smoothTrail(input);
   const keep = new Array<boolean>(pts.length).fill(false);
   keep[0] = true;
   keep[pts.length - 1] = true;
+  // Turns are measured over a baseline of a few metres each side, not between neighbouring
+  // fixes: GPS wobble of 2–5 m between fixes 2 m apart looks like a sharp turn otherwise,
+  // and every wobble ended up as a waypoint (the jagged recorded tracks).
+  const baseM = Math.max(10, chordKeep);
+  const chain: number[] = [0];
+  for (let i = 1; i < pts.length; i += 1) chain.push(chain[i - 1]! + haversineMeters(pts[i - 1]!, pts[i]!));
+  const turns = new Array<number>(pts.length).fill(0);
   for (let i = 1; i < pts.length - 1; i += 1) {
-    const turn = Math.abs(
-      turnDegrees(bearingDegrees(pts[i - 1]!, pts[i]!), bearingDegrees(pts[i]!, pts[i + 1]!)),
-    );
-    if (turn >= turnKeep) keep[i] = true;
+    let j = i - 1;
+    while (j > 0 && chain[i]! - chain[j]! < baseM) j -= 1;
+    let k = i + 1;
+    while (k < pts.length - 1 && chain[k]! - chain[i]! < baseM) k += 1;
+    turns[i] = Math.abs(turnDegrees(bearingDegrees(pts[j]!, pts[i]!), bearingDegrees(pts[i]!, pts[k]!)));
+  }
+  const total = chain[chain.length - 1]!;
+  for (let i = 1; i < pts.length - 1; i += 1) {
+    if (turns[i]! < turnKeep) continue;
+    // Next to the ends the baseline is short and noisy; the end points are kept anyway.
+    if (chain[i]! < baseM / 2 || total - chain[i]! < baseM / 2) continue;
+    // One waypoint per corner: the sharpest point within two baselines.
+    let peak = true;
+    for (let j = i - 1; j > 0 && chain[i]! - chain[j]! < 2 * baseM && peak; j -= 1) if (turns[j]! > turns[i]!) peak = false;
+    for (let k = i + 1; k < pts.length - 1 && chain[k]! - chain[i]! < 2 * baseM && peak; k += 1) {
+      if (turns[k]! >= turns[i]!) peak = false;
+    }
+    if (peak) keep[i] = true;
   }
   let changed = true;
   while (changed) {

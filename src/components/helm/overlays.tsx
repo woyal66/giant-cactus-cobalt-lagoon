@@ -1,9 +1,10 @@
 import { Link } from "@tanstack/react-router";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Bell } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { bearingDegrees, formatHeading, formatMeters, haversineMeters, msToKnots } from "@/lib/geo";
-import { formatXte, markNav, steerCue } from "@/lib/steer";
+import { describeTurn, formatXte, markNav, nextTurn, steerCue, steerLegIndex, type TurnAhead } from "@/lib/steer";
+import { isNativeApp } from "@/lib/native";
 import { setAllowance } from "@/lib/weather";
 import { useWx } from "@/hooks/weather";
 import { cn } from "@/lib/utils";
@@ -204,8 +205,11 @@ export function SteerOverlay() {
 
   const pts = passage ? guidePoints(passage, undefined, { turnDeg, chordM }) : [];
   const nav = boat && pts.length ? markNav(boat, pts, pinned, courseMark) : null;
+  const turn = nav && pts.length >= 2 ? nextTurn(boat, pts, nav.index) : null;
+  // A turn at the mark just counted as made is still to be steered (see steerLegIndex).
+  const legTo = nav ? steerLegIndex(boat, pts, nav.index) : undefined;
   const cue =
-    pts.length >= 2 ? steerCue(boat, pts, sense, alarmM, nav?.index) : null;
+    pts.length >= 2 ? steerCue(boat, pts, sense, alarmM, legTo) : null;
   const sog = msToKnots(boat.speedMs);
   const cog = boat.heading;
   const xte = formatXte(cue?.xteM);
@@ -251,6 +255,7 @@ export function SteerOverlay() {
             unit={allow ? `${allow.deg}° ${allow.side}` : undefined}
           />
         </div>
+        {nav && pts.length >= 2 ? <TurnLine turn={turn} markIndex={nav.index} /> : null}
         {showArrow ? (
           <div
             className="rp-steer-bug mt-1"
@@ -263,6 +268,55 @@ export function SteerOverlay() {
           </div>
         ) : null}
       </div>
+    </div>
+  );
+}
+
+/** One short buzz: a turn is due, or a waypoint was passed. */
+function buzz(strong: boolean) {
+  if (isNativeApp()) {
+    void import("@capacitor/haptics")
+      .then(({ Haptics, ImpactStyle }) => Haptics.impact({ style: strong ? ImpactStyle.Heavy : ImpactStyle.Medium }))
+      .catch(() => navigator.vibrate?.(strong ? [120, 60, 120] : 80));
+  } else {
+    navigator.vibrate?.(strong ? [120, 60, 120] : 80);
+  }
+}
+
+/** Next turn on the route, called before it arrives, so the helm turns on time. */
+function TurnLine({ turn, markIndex }: { turn: TurnAhead | null; markIndex: number }) {
+  const lastNow = useRef<number>(-1);
+  const lastMark = useRef<number>(markIndex);
+  useEffect(() => {
+    if (turn?.now && lastNow.current !== turn.index) {
+      lastNow.current = turn.index;
+      buzz(true);
+    }
+  }, [turn?.now, turn?.index]);
+  useEffect(() => {
+    if (markIndex > lastMark.current) buzz(false);
+    lastMark.current = markIndex;
+  }, [markIndex]);
+  if (!turn) return null;
+  const text = describeTurn(turn, formatMeters, formatHeading);
+  const side = "turnDeg" in turn ? (turn.turnDeg > 0 ? "S" : "P") : null;
+  return (
+    <div
+      role="status"
+      aria-live="polite"
+      className={cn(
+        "rp-glass mt-1 flex items-center gap-2 rounded-full px-3 py-1 text-[13px] font-semibold tabular-nums",
+        turn.now && side === "S" && "bg-emerald-600 text-white",
+        turn.now && side === "P" && "bg-red-600 text-white",
+        turn.now && !side && "bg-primary text-primary-foreground",
+      )}
+    >
+      {side ? (
+        <span aria-hidden className="text-base leading-none">
+          {side === "S" ? "↱" : "↰"}
+        </span>
+      ) : null}
+      {text}
     </div>
   );
 }

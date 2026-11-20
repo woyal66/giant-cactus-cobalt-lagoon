@@ -284,3 +284,83 @@ export function steerCue(
     aim,
   };
 }
+export type TurnAhead = {
+  /** Vertex where the turn is. */
+  index: number;
+  /** Metres along the route from the boat to the turn. */
+  distM: number;
+  /** Signed turn: + starboard, − port. */
+  turnDeg: number;
+  /** Course on the next leg. */
+  newCourse: number;
+  /** True when the boat should be turning now. */
+  now: boolean;
+} | { index: number; distM: number; arrival: true; now: boolean };
+
+/** Smaller course changes than this are not called out. */
+export const TURN_CALL_DEG = 15;
+
+/**
+ * The next turn worth calling out, or the arrival. "Now" is about 10 seconds of boat
+ * speed before the turn, and never less than 15 m, so the helm starts the turn on time.
+ */
+export function nextTurn(
+  boat: LatLng & { speedMs?: number | null; heading?: number | null },
+  pts: LatLng[],
+  index: number,
+  minTurnDeg = TURN_CALL_DEG,
+): TurnAhead | null {
+  if (index < 0 || index >= pts.length) return null;
+  // At least the 12 m mark-arrival radius, or the guide moves on before the call.
+  const lead = Math.max(15, (boat.speedMs ?? 0) * 10);
+  // The guide has just moved past a turning mark: keep calling that turn until it is made.
+  const prev = index - 1;
+  if (prev >= 1 && prev < pts.length - 1) {
+    const inBrg = bearingDegrees(pts[prev - 1]!, pts[prev]!);
+    const outBrg = bearingDegrees(pts[prev]!, pts[prev + 1]!);
+    const turn = turnDegrees(inBrg, outBrg);
+    const fromMark = haversineMeters(boat, pts[prev]!);
+    if (Math.abs(turn) >= minTurnDeg && fromMark <= lead) {
+      const heading = boat.heading;
+      const made = heading != null && Math.abs(turnDegrees(heading, outBrg)) < 20;
+      if (!made) return { index: prev, distM: 0, turnDeg: turn, newCourse: wrapDegrees(outBrg), now: true };
+    }
+  }
+  let dist = haversineMeters(boat, pts[index]!);
+  for (let i = index; i < pts.length; i += 1) {
+    if (i > index) dist += haversineMeters(pts[i - 1]!, pts[i]!);
+    if (i === pts.length - 1) return { index: i, distM: dist, arrival: true, now: dist <= lead };
+    if (i === 0) continue;
+    const inBrg = bearingDegrees(pts[i - 1]!, pts[i]!);
+    const outBrg = bearingDegrees(pts[i]!, pts[i + 1]!);
+    const turn = turnDegrees(inBrg, outBrg);
+    if (Math.abs(turn) >= minTurnDeg) {
+      return { index: i, distM: dist, turnDeg: turn, newCourse: wrapDegrees(outBrg), now: dist <= lead };
+    }
+  }
+  return null;
+}
+
+/** "Turn 35° starboard in 40 m, then 128°" */
+export function describeTurn(t: TurnAhead, fmt: (m: number) => string, heading: (d: number) => string): string {
+  if ("arrival" in t) return t.now ? "Arriving at the last mark" : `Last mark in ${fmt(t.distM)}`;
+  const side = t.turnDeg > 0 ? "starboard" : "port";
+  const deg = Math.round(Math.abs(t.turnDeg));
+  return t.now
+    ? `Turn ${side} now, ${deg}° to ${heading(t.newCourse)}`
+    : `In ${fmt(t.distM)}: turn ${deg}° ${side} to ${heading(t.newCourse)}`;
+}
+
+/**
+ * Which mark to steer and measure cross-track against. While a turn at a mark the guide
+ * has just counted as made is still being made, keep the leg into that mark: otherwise
+ * the display and the off-track alarm jump to the next leg up to 15 m early.
+ */
+export function steerLegIndex(
+  boat: LatLng & { speedMs?: number | null; heading?: number | null },
+  pts: LatLng[],
+  navIndex: number,
+): number {
+  const t = nextTurn(boat, pts, navIndex);
+  return t && t.now && t.index === navIndex - 1 ? t.index : navIndex;
+}
