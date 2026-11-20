@@ -4,9 +4,19 @@ One tool that helps a skipper **before** a passage (when to go, which way, what 
 arrival, which sails) and **during** it (is the plan still right, what's coming in the next three
 hours, when to change sail, squall watch).
 
-Status: plan. The routing engine, departure table, tide and current physics, wind-over-tide seas,
-motoring rules, GPX import and export, and Follow mode are already built (see
-`docs/passage-planner-plan.md`). This plan builds on them.
+Status: phases A–H, K–Q are built (app side). Still to do:
+- **I (instruments over NMEA / Signal K):** needs a native TCP/UDP plugin and testing on a boat.
+- **J (live lightning):** needs a paid lightning feed and licence.
+- **L (satellite top-ups):** the phone side is built (text format, decoder, paste box). The
+  server that writes the forecasts and answers messenger requests is not built.
+- **H (reef avoidance):** built, but the reef file must be generated with
+  `npm run build:reefs -- <GBRMPA features.geojson>` before a store build.
+- **P (radar):** built on RainViewer; needs a commercial licence (or a BOM licence) before launch.
+- **Q (speed vs polar):** wind comes from the forecast until instruments (I) are connected.
+
+The routing engine, departure table, tide and current physics, wind-over-tide seas,
+motoring rules, GPX import and export, and Follow mode were built first (see
+`docs/passage-planner-plan.md`).
 
 Independence: this is Anchor Mate's own design, built on public weather data and its own code.
 Other products are named below only as an internal benchmark. Their names don't appear in the app or marketing.

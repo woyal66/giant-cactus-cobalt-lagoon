@@ -350,6 +350,16 @@ function Results({
         })}
       </div>
 
+      {out.reefData !== "used" ? (
+        <p className="mt-2 rounded-md border border-amber-500/50 bg-amber-500/10 px-2.5 py-1.5 text-[12px] leading-snug text-amber-200">
+          Routes avoid the coastline but not reefs (reef data isn&apos;t installed). Check every leg on the chart
+          with reef outlines on.
+        </p>
+      ) : (
+        <p className="mt-2 text-[11px] text-muted-foreground">
+          Routes avoid mapped reefs (GBRMPA outlines, generalised). Small gaps and entrances are closed: pilot those yourself.
+        </p>
+      )}
       {picked ? <PickedActions picked={picked} ctx={ctx} shelter={out.shelter} /> : null}
 
       <p className="mt-3 mb-1 text-[10px] tracking-[0.14em] text-muted-foreground uppercase">All departures</p>

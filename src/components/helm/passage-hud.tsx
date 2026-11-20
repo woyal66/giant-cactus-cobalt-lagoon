@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ChevronDown, ChevronUp, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { SatPaste } from "@/components/helm/sat-paste";
 import { isNativeApp } from "@/lib/native";
 import { formatDepth } from "@/lib/units";
 import { windCardinal } from "@/lib/weather";
@@ -368,6 +369,7 @@ export function PassageHud() {
                 Passage log
               </Button>
             </div>
+            <SatPaste />
             {prefs.rules.thunder !== "ignore" && next3.some((p) => p.thunder >= 2) ? (
               <p className="mt-1.5 text-[12px] text-amber-300">Storms likely in the next 3 hours. Reef early and watch the sky.</p>
             ) : null}

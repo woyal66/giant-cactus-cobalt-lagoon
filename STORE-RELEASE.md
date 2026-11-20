@@ -228,6 +228,8 @@ Anchor Mate is paid, so before launch:
 | BOM tide tables | Official port tides | BOM content is personal use by default. Ask BOM about a data licence, and show their copyright and disclaimer. |
 | OpenSeaMap seamarks and depths | Chart overlays | CC BY-SA. Credit is shown. For heavy use, contact the project. |
 | GBRMPA reef outlines and zoning (eAtlas) | Reef and marine park overlays | CC BY. Credit is shown. The zoning legend says it's a guide, not the law. |
+| RainViewer radar | Rain radar overlay and closing-squall alert | Their free API is personal and non-commercial. Get a commercial agreement with RainViewer (or a BOM radar licence and a BOM source) before launch, then set `VITE_RADAR_LICENSED=1`. To ship without radar, set `VITE_RADAR_SOURCE=off`. |
+| GBRMPA reef features (planner) | Passage planner reef avoidance | CC BY 4.0. Download the "Great Barrier Reef Features" GeoJSON and run `npm run build:reefs -- path/to/file.geojson` (writes `public/reefs/gbr.json`, bundled into the app). Without it, the planner warns that routes don't avoid reefs. Credit GBRMPA. |
 | ntfy (remote watch) | Second-phone alarms | The public ntfy.sh is free but rate-limited, so it suits testing. For launch, buy an ntfy plan or self-host, and set `VITE_REMOTE_WATCH_SERVER`. |
 
 For the store build, add `VITE_LICENSED_IMAGERY_ONLY=1` to `.env.production.local`.

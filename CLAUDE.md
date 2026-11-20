@@ -36,7 +36,14 @@ a server function, give the phone build an equivalent or it silently returns `nu
 - Marine park zones: `ZONING_WMS_LAYERS` / `PARK_ZONES` in `imagery.ts`.
 - **Passage planner** (`src/lib/routing/`): `polar.ts` (built-in polars by boat type, √LWL scaling, engine only in light air), `field.ts` (gridded wind/gust/wave/current, vector interpolation), `router.ts` (isochrone router; fastest/comfort/safest differ only in step cost; tack/gybe cost `MANOEUVRE_H`), `plan.ts` (departure window × plans, model spread, traffic lights), `land.ts` (Natural Earth 1:10m coastline rasterised per corridor; **no reefs**), `fetch-field.ts` (Open-Meteo multi-location, ECMWF + GFS + marine), `worker.ts` / `client.ts` (runs in a Web Worker). UI: `components/helm/route-planner.tsx`, dock "Route" button, tap modes `route-start` / `route-finish`, chart preview `routePreview`.
 - `src/lib/gpx-import.ts`: GPX import into Tracks (routes, tracks, waypoints; dedupes our own route+track export).
+- More planner modules: `learned.ts` (learned polar from clean sailing samples, `throughWater`), `brief.ts` (passage brief text + HTML), `reefs.ts` (bundled GBRMPA reef outlines as router obstacles; built by `scripts/build-reefs.mjs`).
+- `src/lib/radar.ts` + `components/helm/radar-layer.ts`, `radar-chip.tsx`: rain radar overlay (RainViewer, licence switches) and closing heavy-rain cell alert.
+- `src/hooks/polar-monitor.ts` + `perf-chip.tsx`: live % of polar, learning.
+- `src/lib/mob.ts`, `hooks/mob-drift.ts`, `components/helm/mob-guide.tsx`: MOB drift cone and recovery steps.
+- `src/lib/sat-forecast.ts` + `sat-paste.tsx`: satellite messenger text forecast format (decoder; the server is not built).
+- Route following: `steer.ts` (`locateOnRoute`, `steerCue`, `nextTurn`, `steerLegIndex`). Tapped routes (`tapped: true`) are never simplified; recorded trails are filtered and smoothed (`smoothTrail`, `simplifyTrack` in `geo.ts`). See `docs/reef-pilotage.md`.
 - `docs/passage-planner-plan.md`: the plan; phases 0–2 are now built (see its status line).
+- `docs/ai-plan.md`: feature review and the AI plan (not built).
 - `docs/sailing-assistant-plan.md`: next stage: routing settings page, storm/squall risk (CAPE), true and apparent wind graph, sail plan, arrival forecast, during-the-sail tools.
 - Anchor watch: saved immediately on change and restored on relaunch (`isAnchorWatch` in the store). Other state is saved at most every 4 s and flushed on backgrounding.
 - `src/components/legal/terms.tsx`, `src/routes/privacy.tsx`: legal text shown in-app and on the website. Keep in sync with what the stores link to.

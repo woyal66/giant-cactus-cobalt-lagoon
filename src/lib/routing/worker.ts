@@ -5,6 +5,7 @@
  */
 import { isDaylight } from "../sun.ts";
 import { clearAround, landObstacle, loadLandPolygons, rasterize, shelterAround, type BBox, type Polygon } from "./land.ts";
+import { loadReefPolygons, markReefs } from "./reefs.ts";
 import { findWindows, planPassage, type PlanInput, type PlanOutput, type WindowScan } from "./plan.ts";
 
 export type PlanRequest = Omit<PlanInput, "obstacle" | "isDay"> & {
@@ -29,6 +30,9 @@ self.onmessage = async (e: MessageEvent<PlanRequest>) => {
     const span = Math.max(req.box.east - req.box.west, req.box.north - req.box.south);
     const mask = rasterize(polys, req.box, Math.max(0.003, span / 700));
     const shelter = polys.length ? shelterAround(mask, req.finish) : undefined;
+    // Reefs as obstacles when this build bundles reef outlines.
+    const reefs = await loadReefPolygons(self.location.origin);
+    if (reefs) markReefs(mask, reefs, rasterize);
     clearAround(mask, [req.start, req.finish], 2500);
     if (req.kind === "windows") {
       const scan = findWindows({
@@ -41,7 +45,11 @@ self.onmessage = async (e: MessageEvent<PlanRequest>) => {
       (self as unknown as Worker).postMessage({ id: req.id, ok: true, scan } satisfies PlanReply);
       return;
     }
-    const out = { ...planPassage({ ...req, obstacle: landObstacle(mask), isDay: isDaylight }), shelter };
+    const out = {
+      ...planPassage({ ...req, obstacle: landObstacle(mask), isDay: isDaylight }),
+      shelter,
+      reefData: reefs ? ("used" as const) : ("missing" as const),
+    };
     (self as unknown as Worker).postMessage({ id: req.id, ok: true, out } satisfies PlanReply);
   } catch (err) {
     (self as unknown as Worker).postMessage({

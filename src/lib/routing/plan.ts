@@ -34,6 +34,8 @@ export type PlanOutput = {
   best: Record<RouteMode, Choice | null>;
   /** 16 compass points around the finish: true = land within ~3 km (sheltered from wind from there). */
   shelter?: boolean[];
+  /** Whether reef outlines were in this build and avoided. */
+  reefData?: "used" | "missing";
 };
 
 export type PlanInput = {
