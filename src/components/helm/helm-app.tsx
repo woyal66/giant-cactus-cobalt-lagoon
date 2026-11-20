@@ -21,6 +21,7 @@ import { BoatPanel } from "@/components/helm/boat-panel";
 import { FirstRunGuide } from "@/components/helm/first-run-guide";
 import { RoutePlanner } from "@/components/helm/route-planner";
 import { PassageHud } from "@/components/helm/passage-hud";
+import { useMobDrift } from "@/hooks/mob-drift";
 import {
   useAnchorWatch,
   useAutoNight,
@@ -43,6 +44,7 @@ export function HelmApp() {
   useMarkMade();
   useAutoNight();
   useRemoteWatch();
+  useMobDrift();
 
   useEffect(() => {
     void listPacks().then((p) => useHelm.getState().setOfflinePacks(p));

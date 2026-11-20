@@ -5,7 +5,7 @@
 import { haversineMeters, type LatLng } from "../geo.ts";
 import type { WeatherField } from "./field.ts";
 import { ROUTE_MODELS, corridor, fetchField } from "./fetch-field.ts";
-import type { PlanOutput } from "./plan.ts";
+import type { PlanOutput, WindowScan } from "./plan.ts";
 import type { BoatPerf } from "./polar.ts";
 import type { Limits, RouteRules } from "./router.ts";
 import type { PlanReply, PlanRequest } from "./worker.ts";
@@ -53,12 +53,16 @@ export function planOnFields(run: PlanRun & { fields: WeatherField[]; box: PlanR
 }
 
 function sendToWorker(req: PlanRequest): Promise<PlanOutput> {
+  return post(req).then((r) => r.out!);
+}
+
+function post(req: PlanRequest): Promise<Extract<PlanReply, { ok: true }>> {
   const w = getWorker();
-  return new Promise<PlanOutput>((resolve, reject) => {
+  return new Promise((resolve, reject) => {
     const onMsg = (e: MessageEvent<PlanReply>) => {
       if (e.data.id !== req.id) return;
       w.removeEventListener("message", onMsg);
-      if (e.data.ok) resolve(e.data.out);
+      if (e.data.ok) resolve(e.data);
       else reject(new Error(e.data.error));
     };
     w.addEventListener("message", onMsg);
@@ -100,4 +104,38 @@ export async function runPlan(run: PlanRun): Promise<PlanRunResult> {
   };
   const out = await sendToWorker(req);
   return { out, fields: fields.fields, box: grid, forecastAt: fields.at };
+}
+
+/**
+ * Scan the next ~10 days for the best weather windows for this passage. Uses the
+ * main model only (the scan is about timing; models are compared when planning).
+ */
+export async function findWeatherWindows(run: Omit<PlanRun, "windowStart" | "windowEnd">): Promise<WindowScan> {
+  const grid = corridor(run.start, run.finish);
+  const directNm = haversineMeters(run.start, run.finish) / 1852;
+  const main = ROUTE_MODELS.find((m) => m.id === (run.models?.[0] ?? "ecmwf")) ?? ROUTE_MODELS[0]!;
+  run.onStatus?.("Downloading 10 days of weather…");
+  const field = await fetchField(grid, main, 10);
+  const end = field.times[field.times.length - 1]!;
+  const tripH = Math.max(2, directNm / 4);
+  const from = Math.ceil(Date.now() / 3_600_000) * 3_600_000;
+  const to = end - tripH * 3_600_000;
+  if (to <= from) throw new Error("This passage is too long for the forecast range.");
+  run.onStatus?.("Looking for the best windows…");
+  const res = await post({
+    id: (seq += 1),
+    kind: "windows",
+    start: run.start,
+    finish: run.finish,
+    windowStart: from,
+    windowEnd: to,
+    fields: [field],
+    boat: run.boat,
+    limits: run.limits,
+    rules: run.rules,
+    box: grid,
+    // The marine model runs about 8 days.
+    marineUntil: from + 8 * 86_400_000,
+  });
+  return res.scan!;
 }

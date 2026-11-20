@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -13,7 +13,9 @@ import type { Limits, RouteRules } from "@/lib/routing/router";
 import { formatHeading, formatMeters, bearingDegrees, haversineMeters } from "@/lib/geo";
 import { formatDepth } from "@/lib/units";
 import { shareGpx } from "@/lib/share-gpx";
-import { runPlan } from "@/lib/routing/client";
+import { findWeatherWindows, runPlan } from "@/lib/routing/client";
+import type { WindowScan } from "@/lib/routing/plan";
+import { WindowFinder } from "@/components/helm/window-finder";
 import type { Choice, DepartureRow, PlanOutput } from "@/lib/routing/plan";
 import type { RouteMetrics, RouteMode, RoutePoint } from "@/lib/routing/router";
 import { useHelm, type LocalDraft } from "@/store/helm";
@@ -119,7 +121,8 @@ function PlannerSheet() {
   const hull = useHelm((s) => s.hull);
   const setPreview = useHelm((s) => s.setRoutePreview);
   const begin = useHelm((s) => s.beginRoutePlan);
-  const [view, setView] = useState<"plan" | "settings">("plan");
+  const [view, setView] = useState<"plan" | "settings" | "windows">("plan");
+  const [scan, setScan] = useState<WindowScan | null>(null);
   const [offsetH, setOffsetH] = useState(0);
   const [windowH, setWindowH] = useState(24);
   const [busy, setBusy] = useState<string | null>(null);
@@ -128,9 +131,9 @@ function PlannerSheet() {
   const [picked, setPicked] = useState<{ mode: RouteMode; departAt: number } | null>(null);
   const distM = haversineMeters(start, finish);
 
-  const run = () => {
+  const run = (lead = offsetH, span = windowH) => {
     const now = Date.now();
-    const windowStart = Math.ceil((now + offsetH * H) / (15 * 60_000)) * 15 * 60_000;
+    const windowStart = Math.ceil((now + lead * H) / (15 * 60_000)) * 15 * 60_000;
     setBusy("Starting…");
     setOut(null);
     setPicked(null);
@@ -147,7 +150,7 @@ function PlannerSheet() {
       start,
       finish,
       windowStart,
-      windowEnd: windowStart + windowH * H,
+      windowEnd: windowStart + span * H,
       boat,
       limits: prefs.limits,
       rules: prefs.rules,
@@ -166,6 +169,9 @@ function PlannerSheet() {
       .catch((err: unknown) => toast.error(err instanceof Error ? err.message : "Couldn't plan the passage"))
       .finally(() => setBusy(null));
   };
+
+  const runRef = useRef(run);
+  runRef.current = run;
 
   const pickedResult = useMemo(() => {
     if (!out || !picked) return null;
@@ -190,6 +196,24 @@ function PlannerSheet() {
 
       {view === "settings" ? (
         <RouteSettings onDone={() => setView("plan")} />
+      ) : view === "windows" && scan ? (
+        <>
+          <WindowFinder
+            scan={scan}
+            onPick={(w) => {
+              const lead = Math.max(0, Math.floor((w.from - Date.now()) / H));
+              const span = Math.min(72, Math.max(6, Math.ceil((w.to - w.from) / H) + 3));
+              setOffsetH(lead);
+              setWindowH(span);
+              setView("plan");
+              // Plan the chosen window straight away.
+              setTimeout(() => runRef.current?.(lead, span), 0);
+            }}
+          />
+          <Button variant="ghost" size="sm" className="mt-2 w-full" onClick={() => setView("plan")}>
+            Back
+          </Button>
+        </>
       ) : !out ? (
         <>
           <p className="mb-1 text-[10px] tracking-[0.14em] text-muted-foreground uppercase">Leave from</p>
@@ -224,9 +248,41 @@ function PlannerSheet() {
               Start and finish are under half a mile apart. Tap Change start or finish and zoom out.
             </p>
           ) : null}
-          <Button size="lg" className="w-full" disabled={Boolean(busy) || distM < 926} onClick={run}>
+          <Button size="lg" className="w-full" disabled={Boolean(busy) || distM < 926} onClick={() => run()}>
             {busy ? <Loader2 className="animate-spin" aria-hidden /> : null}
             {busy ?? "Find routes"}
+          </Button>
+          <Button
+            variant="outline"
+            className="mt-1.5 w-full"
+            disabled={Boolean(busy) || distM < 926}
+            onClick={() => {
+              setBusy("Starting…");
+              findWeatherWindows({
+                start,
+                finish,
+                boat: {
+                  type: prefs.boatType,
+                  loaM: hull.loaM,
+                  motorBelowKn: prefs.motorBelowKn,
+                  motorWindBelowKn: prefs.motorWindBelowKn,
+                  motorOnNose: prefs.motorOnNose,
+                  motorKn: prefs.motorKn,
+                },
+                limits: prefs.limits,
+                rules: prefs.rules,
+                models: prefs.models,
+                onStatus: setBusy,
+              })
+                .then((sc) => {
+                  setScan(sc);
+                  setView("windows");
+                })
+                .catch((err: unknown) => toast.error(err instanceof Error ? err.message : "Couldn't scan the forecast"))
+                .finally(() => setBusy(null));
+            }}
+          >
+            Find the best window (next 10 days)
           </Button>
           <Button variant="ghost" size="sm" className="mt-1 w-full" onClick={begin}>
             Change start or finish

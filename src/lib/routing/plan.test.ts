@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { uniformField, type WeatherField } from "./field.ts";
-import { departureTimes, planPassage } from "./plan.ts";
+import { departureTimes, findWindows, planPassage } from "./plan.ts";
 import { DEFAULT_LIMITS } from "./router.ts";
 import type { BoatPerf } from "./polar.ts";
 
@@ -47,4 +47,16 @@ test("picks the departure that avoids a gale and reports model spread", () => {
   assert.ok(out.best.safest);
   const later = out.rows.find((r) => r.results.fastest.ok);
   assert.ok(later && later.spreadH != null && later.spreadH > 0);
+});
+
+test("window finder groups good departures and ranks a calm window first", () => {
+  // Three days: a gale on day 1 (hours 0-30), then a fair breeze.
+  const f: WeatherField = uniformField({ windKn: 14, windDir: 0 }, box, t0, 96);
+  for (let i = 0; i <= 30; i += 1) f.windKn[i] = new Float32Array(9).fill(36);
+  const scan = findWindows({ start: A, finish: B, from: t0, to: t0 + 72 * H, fields: [f], boat, limits: DEFAULT_LIMITS });
+  assert.ok(scan.slots.length >= 20);
+  assert.equal(scan.slots[0]!.light, "red");
+  const best = scan.windows[0]!;
+  assert.ok(best.from >= t0 + 27 * H, `best window starts +${(best.from - t0) / H} h`);
+  assert.equal(best.confidence, best.leadDays <= 3 ? "good" : "fair");
 });

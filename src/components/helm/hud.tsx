@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { toast } from "sonner";
 import {
@@ -24,6 +25,7 @@ import { formatScope, hoursUntil, rodeMath } from "@/lib/anchor";
 import { steerCue, formatTtg, markNav } from "@/lib/steer";
 import { bowFromGps, gpsReachM } from "@/lib/boat";
 import { Badge } from "@/components/ui/badge";
+import { MobGuide } from "@/components/helm/mob-guide";
 import { Button } from "@/components/ui/button";
 import { closeInOnBoat } from "@/components/helm/map-view";
 import { WindInstrument } from "@/components/helm/weather";
@@ -338,11 +340,22 @@ function Instrument({
 
 export function MobHud() {
   const boat = useHelm((s) => s.boat);
-  const mob = useHelm((s) => s.mob);
+  const mark = useHelm((s) => s.mob);
+  const drift = useHelm((s) => s.mobDrift);
   const clearMob = useHelm((s) => s.clearMob);
   const panel = useHelm((s) => s.panel);
   const tapMode = useHelm((s) => s.tapMode);
-  if (!mob || panel || tapMode !== "none") return null;
+  const [guide, setGuide] = useState(false);
+  if (!mark) return null;
+  if (guide) return <MobGuide onClose={() => setGuide(false)} />;
+  if (panel || tapMode !== "none") return null;
+  // Steer for where they have probably drifted to by now, not the original mark.
+  const minsSince = (Date.now() - mark.at) / 60_000;
+  const nowPt = drift?.points.reduce<{ lat: number; lng: number; minutes: number } | null>(
+    (best, p) => (!best || Math.abs(p.minutes - minsSince) < Math.abs(best.minutes - minsSince) ? p : best),
+    null,
+  );
+  const mob = nowPt && drift && !drift.source.startsWith("no current") ? nowPt : mark;
   const rangeM = boat ? haversineMeters(boat, mob) : null;
   const brg = boat ? formatHeading(bearingDegrees(boat, mob)) : "—";
   const rng = rangeM != null ? formatMeters(rangeM) : "—";
@@ -355,7 +368,7 @@ export function MobHud() {
       <div className="pointer-events-auto mx-auto flex w-full max-w-md items-stretch overflow-hidden rounded-xl border border-destructive bg-card/95 shadow-[var(--shadow-border)] rp-glass">
         <div className="min-w-0 flex-1 px-3 py-2">
           <p className="truncate text-[10px] tracking-[0.14em] text-destructive uppercase">
-            Back to MOB
+            {mob === mark ? "Back to MOB" : "To drift position now"}
           </p>
           <div className="mt-1 grid grid-cols-3 gap-1">
             <div>
@@ -378,13 +391,24 @@ export function MobHud() {
             </div>
           </div>
         </div>
-        <button
-          type="button"
-          onClick={clearMob}
-          className="shrink-0 border-l border-border px-3 text-xs font-semibold tracking-wide text-destructive uppercase"
-        >
-          Clear
-        </button>
+        <div className="flex shrink-0 flex-col border-l border-border">
+          <button
+            type="button"
+            onClick={() => setGuide(true)}
+            className="flex-1 bg-destructive px-3 text-xs font-semibold tracking-wide text-white uppercase"
+          >
+            Steps
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              if (window.confirm("Clear the man-overboard mark?")) clearMob();
+            }}
+            className="flex-1 px-3 text-xs font-semibold tracking-wide text-destructive uppercase"
+          >
+            Clear
+          </button>
+        </div>
       </div>
     </div>
   );

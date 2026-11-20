@@ -882,6 +882,9 @@ export function MapView() {
         );
         const packGroup: LayerGroup = L.layerGroup();
         const wpGroup: LayerGroup = L.layerGroup();
+        // MOB drift: where the person is likely to be at +5 / +10 / +20 min (and now).
+        const mobDriftGroup: LayerGroup = L.layerGroup();
+        let mobDriftStamp = "";
         const tubeGroup: LayerGroup = L.layerGroup();
         routeGlow.addTo(map);
         routeLine.addTo(map);
@@ -1479,6 +1482,43 @@ export function MapView() {
             if (!map.hasLayer(planCursor)) planCursor.addTo(map);
           } else if (map.hasLayer(planCursor)) {
             map.removeLayer(planCursor);
+          }
+          const md = s.mob ? s.mobDrift : null;
+          const mdStamp = md ? md.points.map((p) => `${p.minutes.toFixed(0)}:${p.lat.toFixed(5)},${p.lng.toFixed(5)}`).join("|") : "";
+          if (mdStamp !== mobDriftStamp) {
+            mobDriftStamp = mdStamp;
+            mobDriftGroup.clearLayers();
+            if (md && s.mob) {
+              L.polyline([[s.mob.lat, s.mob.lng], ...md.points.map((p) => [p.lat, p.lng] as [number, number])], {
+                color: "#ff5a5f",
+                weight: 2,
+                dashArray: "4 6",
+                interactive: false,
+              }).addTo(mobDriftGroup);
+              for (const p of md.points) {
+                L.circle([p.lat, p.lng], {
+                  radius: p.radiusM,
+                  color: "#ff5a5f",
+                  weight: 1.5,
+                  fillColor: "#ff5a5f",
+                  fillOpacity: 0.12,
+                  interactive: false,
+                }).addTo(mobDriftGroup);
+                L.marker([p.lat, p.lng], {
+                  icon: L.divIcon({
+                    className: "rp-divicon",
+                    html: `<span style="font:600 11px system-ui;color:#fff;background:#c9363b;padding:1px 4px;border-radius:4px;white-space:nowrap">+${Math.round(p.minutes)} min</span>`,
+                    iconSize: [46, 16],
+                    iconAnchor: [23, -6],
+                  }),
+                  interactive: false,
+                  keyboard: false,
+                }).addTo(mobDriftGroup);
+              }
+              if (!map.hasLayer(mobDriftGroup)) mobDriftGroup.addTo(map);
+            } else if (map.hasLayer(mobDriftGroup)) {
+              map.removeLayer(mobDriftGroup);
+            }
           }
           // Only clear once; redrawing an empty path on every store change was wasted work.
           if (rangeLine.getLatLngs().length) rangeLine.setLatLngs([]);

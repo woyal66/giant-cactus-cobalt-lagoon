@@ -165,3 +165,90 @@ export function planPassage(input: PlanInput): PlanOutput {
   }
   return { rows, best };
 }
+
+/* ---------------- Weather window finder ---------------- */
+
+export type WindowSlot = { departAt: number; light: Light; score: number; hours: number | null };
+
+export type WeatherWindow = {
+  from: number;
+  to: number;
+  light: Light;
+  /** Best single departure inside the window. */
+  bestDepart: number;
+  hours: number;
+  maxWindKn: number;
+  maxWaveM: number;
+  /** Days from now to the window's start; confidence falls with lead time. */
+  leadDays: number;
+  confidence: "good" | "fair" | "low";
+  note: string;
+};
+
+export type WindowScan = { slots: WindowSlot[]; windows: WeatherWindow[] };
+
+/**
+ * Scan departures across the whole forecast (every `stepH` hours) with the quick
+ * router, then group consecutive good departures into windows, best first.
+ */
+export function findWindows(
+  input: Omit<PlanInput, "windowStart" | "windowEnd"> & { from: number; to: number; stepH?: number; marineUntil?: number },
+): WindowScan {
+  const [main] = input.fields;
+  if (!main) throw new Error("No weather to route on.");
+  const rules = input.rules ?? DEFAULT_RULES;
+  const stepH = input.stepH ?? 3;
+  const slots: (WindowSlot & { r?: Ok })[] = [];
+  for (let t = input.from; t <= input.to; t += stepH * H) {
+    const r = route({ ...input, departAt: t, field: main, mode: "safest", coarse: true });
+    if (!r.ok) {
+      slots.push({ departAt: t, light: "red", score: Infinity, hours: null });
+      continue;
+    }
+    const results = { fastest: r, comfort: r, safest: r } as Record<RouteMode, RouteResult>;
+    const light = lightFor(results, input.limits, null, rules);
+    const night = rules.night === "avoid" && r.metrics.arrivesInDark ? 1.5 : rules.night === "penalise" && r.metrics.arrivesInDark ? 0.6 : 0;
+    slots.push({ departAt: t, light, score: safetyScore(r, input.limits, null) + night, hours: r.metrics.hours, r });
+  }
+  // Group consecutive non-red slots of the same or better colour into windows.
+  const windows: WeatherWindow[] = [];
+  let i = 0;
+  while (i < slots.length) {
+    if (slots[i]!.light === "red") {
+      i += 1;
+      continue;
+    }
+    let j = i;
+    while (j + 1 < slots.length && slots[j + 1]!.light !== "red") j += 1;
+    const run = slots.slice(i, j + 1).filter((s) => s.r);
+    const best = run.reduce((a, b) => (b.score < a.score ? b : a));
+    const allGreen = run.every((s) => s.light === "green");
+    const leadDays = (run[0]!.departAt - input.from) / 86_400_000;
+    const m = best.r!.metrics;
+    const noWaves = input.marineUntil != null && best.r!.arriveAt > input.marineUntil;
+    windows.push({
+      from: run[0]!.departAt,
+      to: run[run.length - 1]!.departAt,
+      light: allGreen ? "green" : best.light,
+      bestDepart: best.departAt,
+      hours: m.hours,
+      maxWindKn: m.maxWindKn,
+      maxWaveM: m.maxWaveM,
+      leadDays,
+      confidence: leadDays <= 3 ? "good" : leadDays <= 5 ? "fair" : "low",
+      note: [
+        m.maxThunder >= 2 ? "storms possible" : "",
+        m.arrivesInDark ? "night arrival" : "",
+        m.steepSeaHours >= 1 ? "wind over tide" : "",
+        noWaves ? "no wave forecast this far out" : "",
+      ]
+        .filter(Boolean)
+        .join(" · "),
+    });
+    i = j + 1;
+  }
+  const rank = (w: WeatherWindow) =>
+    (w.light === "green" ? 0 : 10) + slots.find((s) => s.departAt === w.bestDepart)!.score + w.leadDays * 0.15;
+  windows.sort((a, b) => rank(a) - rank(b));
+  return { slots: slots.map(({ r: _r, ...s }) => s), windows: windows.slice(0, 6) };
+}

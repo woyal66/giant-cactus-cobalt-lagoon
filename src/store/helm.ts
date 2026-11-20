@@ -12,6 +12,7 @@ import {
   type LengthUnit,
 } from "@/lib/units";
 import { isTopic } from "@/lib/remote-watch";
+import type { DriftPoint } from "@/lib/mob";
 import { BOAT_TYPES, type BoatType } from "@/lib/routing/polar";
 import { DEFAULT_LIMITS, DEFAULT_RULES, type Limits, type RouteRules } from "@/lib/routing/router";
 import { isTreat } from "@/lib/routing/storm";
@@ -201,6 +202,8 @@ export type HelmState = {
   routeStart: LatLng | null;
   routeFinish: LatLng | null;
   routePreview: LatLng[] | null;
+  /** Predicted man-overboard drift (5/10/20 min) and where the inputs came from. Not persisted. */
+  mobDrift: { points: DriftPoint[]; source: string } | null;
   /** Point on the route the timeline is scrubbed to. Not persisted. */
   routeCursor: LatLng | null;
   /** Planner choices, remembered between trips. */
@@ -327,6 +330,7 @@ type HelmActions = {
   setRouteFinish: (p: LatLng | null) => void;
   setRoutePreview: (pts: LatLng[] | null) => void;
   setRouteCursor: (p: LatLng | null) => void;
+  setMobDrift: (d: { points: DriftPoint[]; source: string } | null) => void;
   setRoutePrefs: (p: Partial<RoutePrefs>) => void;
   endRoutePlan: () => void;
   setLengthUnit: (v: LengthUnit) => void;
@@ -730,6 +734,7 @@ export const useHelm = create<HelmState & HelmActions>()(
       routeFinish: null,
       routePreview: null,
       routeCursor: null,
+      mobDrift: null,
       routePrefs: DEFAULT_ROUTE_PREFS,
       lengthUnit: "m",
       sunPunch: 2,
@@ -1270,6 +1275,7 @@ export const useHelm = create<HelmState & HelmActions>()(
       setRouteFinish: (routeFinish) => set({ routeFinish, routePreview: null, tapMode: "none" }),
       setRoutePreview: (routePreview) => set({ routePreview, routeCursor: null }),
       setRouteCursor: (routeCursor) => set({ routeCursor }),
+      setMobDrift: (mobDrift) => set({ mobDrift }),
       setRoutePrefs: (p) => {
         const cur = get().routePrefs;
         set({
@@ -1461,7 +1467,7 @@ export const useHelm = create<HelmState & HelmActions>()(
         });
         return true;
       },
-      clearMob: () => set({ mob: null, mobMuted: false }),
+      clearMob: () => set({ mob: null, mobMuted: false, mobDrift: null }),
       setMobMuted: (mobMuted) => set({ mobMuted }),
     }),
     {
