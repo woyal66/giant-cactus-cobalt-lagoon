@@ -3,7 +3,9 @@
 A plan for adding passage planning to Anchor Mate: tap a start and a finish,
 pick a departure window, and get the best plan for **safety, speed and comfort**.
 
-Status: proposal. Nothing here is built yet.
+Status: **phases 0–2 built** (GPX import; departure planner; isochrone router with built-in
+polars, coastline avoidance, three plans, follow/save/export). Not yet: reef and shoal avoidance,
+imported polar files, wave-polar motion estimates, own weather pipeline, learned polars.
 
 **Independence:** this is Anchor Mate's own tool, with its own routing engine, public weather
 data and its own boat polars. It has no affiliation with, data from, or connection to

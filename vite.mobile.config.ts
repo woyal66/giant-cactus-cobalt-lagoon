@@ -41,6 +41,8 @@ export default defineConfig({
       { find: "@", replacement: resolve(import.meta.dirname, "src") },
     ],
   },
+  // The route planner worker loads its coastline lazily, which needs ES-module workers.
+  worker: { format: "es" },
   build: {
     outDir: "dist-mobile",
     emptyOutDir: true,

@@ -45,6 +45,8 @@ import { SignedIn, SignedOut, UserButton } from "@/lib/auth/gates";
 import { isNativeApp } from "@/lib/native";
 import { shareGpx } from "@/lib/share-gpx";
 import { restoreBackup, saveBackup } from "@/lib/backup-actions";
+import { dedupeLines, parseGpx } from "@/lib/gpx-import";
+import { mergeTracks } from "@/lib/backup";
 import { UnitStepField } from "@/components/helm/unit-field";
 import { MoonCard } from "@/components/helm/moon-card";
 import { RemoteWatchCard } from "@/components/helm/remote-watch-card";
@@ -57,7 +59,7 @@ import { useCurrentUserState } from "@/lib/auth/use-current-user";
 import { simulateAnchorDrag, startMusgraveDemo, unlockAlarmAudio } from "@/hooks/helm-runtime";
 import { useHelm, useUnitsKey, type LocalDraft, type PanelId } from "@/store/helm";
 
-function Sheet({
+export function Sheet({
   id,
   title,
   kicker,
@@ -1129,6 +1131,7 @@ export function PassagesPanel() {
           </p>
         </div>
       ) : null}
+      <GpxImportRow />
       <BackupRow />
       {(pub.data ?? []).length || pub.isLoading ? (
         <p className="mb-1 text-[10px] tracking-[0.14em] text-muted-foreground uppercase">Library</p>
@@ -1328,6 +1331,56 @@ function BackupRow() {
               if (r.dropped) toast.warning(`${r.dropped} oldest tracks didn't fit (40 max).`);
             })
             .catch((err: unknown) => toast.error(err instanceof Error ? err.message : "Couldn't restore"));
+        }}
+      />
+    </div>
+  );
+}
+
+/** Open a GPX route or track from a chartplotter, another app, or a friend. */
+function GpxImportRow() {
+  const input = useRef<HTMLInputElement>(null);
+  return (
+    <div className="mb-2">
+      <Button variant="outline" className="w-full" onClick={() => input.current?.click()}>
+        Import route or track (GPX)
+      </Button>
+      <input
+        ref={input}
+        type="file"
+        // iOS greys out .gpx files under a strict filter, so accept broadly and check the contents.
+        accept=".gpx,application/gpx+xml,application/xml,text/xml,application/octet-stream"
+        className="hidden"
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          e.target.value = "";
+          if (!file) return;
+          void file
+            .text()
+            .then((xml) => {
+              const lines = dedupeLines(parseGpx(xml));
+              const base = file.name.replace(/\.gpx$/i, "");
+              const now = Date.now();
+              const tracks = lines.map((l, i) => ({
+                localId: `gpx-${now}-${i}`,
+                title: l.name || (lines.length > 1 ? `${base} ${i + 1}` : base) || "Imported route",
+                region: "",
+                notes: `Imported from ${file.name}`,
+                kind: "passage" as const,
+                waypoints: l.points,
+                savedAt: new Date(now - i).toISOString(),
+              }));
+              const s = useHelm.getState();
+              const merged = mergeTracks(s.drafts, tracks);
+              useHelm.setState({ drafts: merged.tracks });
+              toast.success(
+                tracks.length === 1
+                  ? `Imported "${tracks[0]!.title}". Tap it to follow.`
+                  : `Imported ${tracks.length} routes and tracks.`,
+              );
+              if (merged.dropped) toast.warning(`${merged.dropped} oldest tracks didn't fit (40 max).`);
+            })
+            .catch((err: unknown) => toast.error(err instanceof Error ? err.message : "Couldn't read that file"));
         }}
       />
     </div>

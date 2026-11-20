@@ -12,6 +12,8 @@ import {
   type LengthUnit,
 } from "@/lib/units";
 import { isTopic } from "@/lib/remote-watch";
+import { BOAT_TYPES, type BoatType } from "@/lib/routing/polar";
+import { DEFAULT_LIMITS, type Limits } from "@/lib/routing/router";
 import { boxShortM, squareFromCorners, type BBox, type OfflinePack } from "@/lib/offline-tiles";
 import {
   clampAlarmRadius,
@@ -40,6 +42,7 @@ export type { ImageryId };
 export type FixSource = "gps" | "last" | "demo" | "placed" | "none";
 export type PanelId =
   | null
+  | "route"
   | "atlas"
   | "passages"
   | "anchor"
@@ -183,7 +186,21 @@ export type HelmState = {
   introOpen: boolean;
   drafts: LocalDraft[];
   gpsDenied: boolean;
-  tapMode: "none" | "place-boat" | "drop-anchor" | "resize-swing" | "draw-fence" | "draw-pack";
+  tapMode:
+    | "none"
+    | "place-boat"
+    | "drop-anchor"
+    | "resize-swing"
+    | "draw-fence"
+    | "draw-pack"
+    | "route-start"
+    | "route-finish";
+  /** Passage planner: start and finish taps, and the route shown on the chart. Not persisted. */
+  routeStart: LatLng | null;
+  routeFinish: LatLng | null;
+  routePreview: LatLng[] | null;
+  /** Planner choices, remembered between trips. */
+  routePrefs: RoutePrefs;
   hookPreview: LatLng | null;
   /** Tap the chart to place the boat, then drop the hook. Not persisted. */
   hookArmed: boolean;
@@ -300,6 +317,13 @@ type HelmActions = {
   setDepthUnit: (v: DepthUnit) => void;
   setGuideDone: (v: boolean) => void;
   setRemoteWatch: (v: { topic: string; boatName: string } | null) => void;
+  /** Start a new passage plan: tap the start, then the finish. */
+  beginRoutePlan: () => void;
+  setRouteStart: (p: LatLng | null) => void;
+  setRouteFinish: (p: LatLng | null) => void;
+  setRoutePreview: (pts: LatLng[] | null) => void;
+  setRoutePrefs: (p: Partial<RoutePrefs>) => void;
+  endRoutePlan: () => void;
   setLengthUnit: (v: LengthUnit) => void;
   cycleLook: () => void;
   setSunPunch: (n: 1 | 2 | 3) => void;
@@ -409,6 +433,7 @@ function persistSig(state: Record<string, unknown>): string {
     state.depthUnit,
     state.guideDone,
     persistId(state.remoteWatch),
+    persistId(state.routePrefs),
     state.lengthUnit,
     state.sunPunch,
     state.chartUp,
@@ -539,6 +564,37 @@ function applyLengthUnit(v: unknown, fallback: LengthUnit): LengthUnit {
   return u;
 }
 
+export type RoutePrefs = {
+  boatType: BoatType;
+  motorBelowKn: number;
+  motorKn: number;
+  limits: Limits;
+};
+
+export const DEFAULT_ROUTE_PREFS: RoutePrefs = {
+  boatType: "cruiser",
+  motorBelowKn: 3,
+  motorKn: 6,
+  limits: DEFAULT_LIMITS,
+};
+
+function readRoutePrefs(v: unknown): RoutePrefs {
+  const p = (v ?? {}) as Partial<RoutePrefs>;
+  const num = (x: unknown, d: number, lo: number, hi: number) =>
+    typeof x === "number" && Number.isFinite(x) ? Math.min(hi, Math.max(lo, x)) : d;
+  const l = (p.limits ?? {}) as Partial<Limits>;
+  return {
+    boatType: BOAT_TYPES.some((b) => b.id === p.boatType) ? (p.boatType as BoatType) : "cruiser",
+    motorBelowKn: num(p.motorBelowKn, 3, 0, 8),
+    motorKn: num(p.motorKn, 6, 2, 30),
+    limits: {
+      maxWindKn: num(l.maxWindKn, DEFAULT_LIMITS.maxWindKn, 8, 50),
+      maxGustKn: num(l.maxGustKn, DEFAULT_LIMITS.maxGustKn, 10, 60),
+      maxWaveM: num(l.maxWaveM, DEFAULT_LIMITS.maxWaveM, 0.5, 8),
+    },
+  };
+}
+
 export const useHelm = create<HelmState & HelmActions>()(
   persist(
     (set, get) => ({
@@ -591,6 +647,10 @@ export const useHelm = create<HelmState & HelmActions>()(
       depthUnit: "m",
       guideDone: false,
       remoteWatch: null,
+      routeStart: null,
+      routeFinish: null,
+      routePreview: null,
+      routePrefs: DEFAULT_ROUTE_PREFS,
       lengthUnit: "m",
       sunPunch: 2,
       rode: DEFAULT_RODE,
@@ -1114,6 +1174,30 @@ export const useHelm = create<HelmState & HelmActions>()(
       setAutoNight: (autoNight) => set({ autoNight }),
       setGuideDone: (guideDone) => set({ guideDone }),
       setRemoteWatch: (remoteWatch) => set({ remoteWatch }),
+      beginRoutePlan: () =>
+        set({
+          routeStart: null,
+          routeFinish: null,
+          routePreview: null,
+          tapMode: "route-start",
+          panel: "route",
+          drawMode: "idle",
+          // Let the chart go so you can pan to the finish and see the whole route.
+          followBoat: false,
+        }),
+      setRouteStart: (routeStart) =>
+        set({ routeStart, routePreview: null, tapMode: routeStart ? "route-finish" : "route-start" }),
+      setRouteFinish: (routeFinish) => set({ routeFinish, routePreview: null, tapMode: "none" }),
+      setRoutePreview: (routePreview) => set({ routePreview }),
+      setRoutePrefs: (p) => set({ routePrefs: { ...get().routePrefs, ...p, limits: { ...get().routePrefs.limits, ...(p.limits ?? {}) } } }),
+      endRoutePlan: () =>
+        set({
+          routeStart: null,
+          routeFinish: null,
+          routePreview: null,
+          tapMode: get().tapMode.startsWith("route-") ? "none" : get().tapMode,
+          panel: null,
+        }),
       setDepthUnit: (depthUnit) => {
         setUnits({ depth: depthUnit });
         set({ depthUnit });
@@ -1328,6 +1412,7 @@ export const useHelm = create<HelmState & HelmActions>()(
         anchor: s.anchor?.demo ? null : s.anchor,
         guideDone: s.guideDone,
         remoteWatch: s.remoteWatch,
+        routePrefs: s.routePrefs,
       }),
       merge: (persisted, current) => {
         const p = (persisted ?? {}) as Partial<HelmState>;
@@ -1351,6 +1436,10 @@ export const useHelm = create<HelmState & HelmActions>()(
           autoNight: typeof p.autoNight === "boolean" ? p.autoNight : current.autoNight,
           depthUnit: applyDepthUnit(p.depthUnit, current.depthUnit),
           guideDone: typeof p.guideDone === "boolean" ? p.guideDone : current.guideDone,
+          routePrefs: readRoutePrefs(p.routePrefs),
+          routeStart: null,
+          routeFinish: null,
+          routePreview: null,
           remoteWatch:
             p.remoteWatch &&
             isTopic(p.remoteWatch.topic) &&

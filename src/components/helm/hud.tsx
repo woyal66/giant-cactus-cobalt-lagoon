@@ -218,7 +218,7 @@ export function TopHud() {
         </div>
       </div>
 
-      {tapMode !== "none" && anchorStep !== "circle" ? (
+      {tapMode !== "none" && !tapMode.startsWith("route-") && anchorStep !== "circle" ? (
         <div className="pointer-events-auto mx-auto mt-1.5 flex max-w-6xl items-center gap-1.5 rounded-md bg-card/95 px-2 py-1.5 text-xs text-foreground shadow-[var(--shadow-border)]">
           <p className="min-w-0 flex-1 truncate">
             {tapMode === "place-boat"

@@ -6,6 +6,7 @@ import {
   Map as MapIcon,
   Pencil,
   Radio,
+  Route as RouteIcon,
   Square,
   Undo2,
 } from "lucide-react";
@@ -129,7 +130,7 @@ export function BottomDock() {
 
   return (
     <nav className="pointer-events-none absolute inset-x-0 bottom-0 z-20 p-2 pb-[max(0.5rem,env(safe-area-inset-bottom))]">
-      <div className="pointer-events-auto mx-auto grid max-w-lg grid-cols-5 gap-0.5 rounded-xl border border-border bg-card p-1 shadow-[var(--shadow-border)]">
+      <div className="pointer-events-auto mx-auto grid max-w-lg grid-cols-6 gap-0.5 rounded-xl border border-border bg-card p-1 shadow-[var(--shadow-border)]">
         <DockBtn
           active={panel === "atlas"}
           label="Atlas"
@@ -143,6 +144,17 @@ export function BottomDock() {
           onClick={() => toggle("passages")}
         >
           <BookOpen />
+        </DockBtn>
+        <DockBtn
+          active={panel === "route"}
+          label="Route"
+          onClick={() => {
+            const s = useHelm.getState();
+            if (s.panel === "route" || s.tapMode.startsWith("route-")) s.endRoutePlan();
+            else s.beginRoutePlan();
+          }}
+        >
+          <RouteIcon />
         </DockBtn>
         <DockBtn
           active={panel === "anchor"}

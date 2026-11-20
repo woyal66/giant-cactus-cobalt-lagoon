@@ -223,7 +223,8 @@ Anchor Mate is paid, so before launch:
 | Esri World Imagery and Clarity | Reef photos | An ArcGIS Location Platform account and key → `VITE_ESRI_KEY`. Clarity has no commercial terms, so it's hidden in the store build. |
 | Sentinel-2 cloudless (EOX) | Wide-area colour | The 2018–2024 mosaics are non-commercial. A commercial licence comes from EOX (cloudless@eox.at). |
 | **MapTiler Satellite** (recommended) | Licensed satellite and offline packs | A paid MapTiler Cloud plan → `VITE_MAPTILER_KEY`. Its terms cover saving tiles on the device. |
-| Open-Meteo | Wind, waves, currents, model tide | A commercial API plan → `VITE_OPEN_METEO_KEY`. Requests switch over automatically. |
+| Open-Meteo | Wind, waves, currents, model tide, and the passage planner (about 4 requests per plan) | A commercial API plan → `VITE_OPEN_METEO_KEY`. Requests switch over automatically. |
+| Natural Earth coastline | Passage planner land avoidance | Public domain. Bundled with the app (3 MB), so nothing is needed. |
 | BOM tide tables | Official port tides | BOM content is personal use by default. Ask BOM about a data licence, and show their copyright and disclaimer. |
 | OpenSeaMap seamarks and depths | Chart overlays | CC BY-SA. Credit is shown. For heavy use, contact the project. |
 | GBRMPA reef outlines and zoning (eAtlas) | Reef and marine park overlays | CC BY. Credit is shown. The zoning legend says it's a guide, not the law. |

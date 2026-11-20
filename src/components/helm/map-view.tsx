@@ -755,6 +755,31 @@ export function MapView() {
           opacity: 0.22,
           lineJoin: "round",
         });
+        // Passage planner: suggested route plus start (green) and finish (chequered) marks.
+        const planLine: Polyline = L.polyline([], {
+          color: "#f0c14a",
+          weight: 4,
+          opacity: 0.95,
+          lineJoin: "round",
+          interactive: false,
+        });
+        const planStart = L.circleMarker([0, 0], {
+          radius: 9,
+          color: "#ffffff",
+          weight: 3,
+          fillColor: "#2bb673",
+          fillOpacity: 1,
+          interactive: false,
+        });
+        const planFinish = L.circleMarker([0, 0], {
+          radius: 9,
+          color: "#ffffff",
+          weight: 3,
+          fillColor: "#e5484d",
+          fillOpacity: 1,
+          interactive: false,
+        });
+        let planStamp = "";
         const draftLine: Polyline = L.polyline([], {
           color: primary,
           weight: 3,
@@ -854,6 +879,7 @@ export function MapView() {
         routeLine.addTo(map);
         draftLine.addTo(map);
         swingLine.addTo(map);
+        planLine.addTo(map);
         crumbLine.addTo(map);
         packGroup.addTo(map);
         tubeGroup.addTo(map);
@@ -1416,6 +1442,30 @@ export function MapView() {
               draftLine.setLatLngs([]);
             }
           }
+          const pStamp = `${s.routeStart?.lat},${s.routeStart?.lng}|${s.routeFinish?.lat},${s.routeFinish?.lng}|${s.routePreview?.length ?? 0}|${s.routePreview?.[1]?.lat ?? ""}`;
+          if (pStamp !== planStamp) {
+            planStamp = pStamp;
+            planLine.setLatLngs((s.routePreview ?? []).map((p) => [p.lat, p.lng] as [number, number]));
+            // Frame the whole route in the space above the planner sheet.
+            if (s.routePreview && s.routePreview.length >= 2) {
+              const h = map.getSize().y;
+              map.fitBounds(
+                L.latLngBounds(s.routePreview.map((p) => [p.lat, p.lng] as [number, number])),
+                { paddingTopLeft: [28, 90], paddingBottomRight: [28, Math.round(h * 0.5) + 16], maxZoom: 15, animate: true },
+              );
+            }
+            for (const [mk, at] of [
+              [planStart, s.routeStart],
+              [planFinish, s.routeFinish],
+            ] as const) {
+              if (at) {
+                mk.setLatLng([at.lat, at.lng]);
+                if (!map.hasLayer(mk)) mk.addTo(map);
+              } else if (map.hasLayer(mk)) {
+                map.removeLayer(mk);
+              }
+            }
+          }
           // Only clear once; redrawing an empty path on every store change was wasted work.
           if (rangeLine.getLatLngs().length) rangeLine.setLatLngs([]);
           paintGrid();
@@ -1696,6 +1746,14 @@ export function MapView() {
               ...wp,
               label: `WP ${s.draft.length + 1}`,
             });
+            return;
+          }
+          if (s.tapMode === "route-start") {
+            s.setRouteStart(wp);
+            return;
+          }
+          if (s.tapMode === "route-finish") {
+            s.setRouteFinish(wp);
             return;
           }
           if (s.tapMode === "place-boat") {

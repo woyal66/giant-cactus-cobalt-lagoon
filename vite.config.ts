@@ -150,6 +150,8 @@ export default defineConfig(({ command, isPreview }) => ({
     port: 8081,
     strictPort: true,
   },
+  // The route planner worker loads its coastline lazily, which needs ES-module workers.
+  worker: { format: "es" },
   resolve: { tsconfigPaths: true },
   plugins: [
     pgliteBootstrapPlugin(),

@@ -34,7 +34,9 @@ a server function, give the phone build an equivalent or it silently returns `nu
 - `src/lib/trial-reminder.ts`: trial-ending notice (local notification id 900) and banner.
 - `components/helm/first-run-guide.tsx`: onboarding; `runAlarmDemo` uses a `demo: true` anchor that is never persisted. `simulateAnchorDrag` pauses live GPS for 30 s (`demoHoldUntil`).
 - Marine park zones: `ZONING_WMS_LAYERS` / `PARK_ZONES` in `imagery.ts`.
-- `docs/passage-planner-plan.md`: plan for weather routing (not built).
+- **Passage planner** (`src/lib/routing/`): `polar.ts` (built-in polars by boat type, √LWL scaling, engine only in light air), `field.ts` (gridded wind/gust/wave/current, vector interpolation), `router.ts` (isochrone router; fastest/comfort/safest differ only in step cost; tack/gybe cost `MANOEUVRE_H`), `plan.ts` (departure window × plans, model spread, traffic lights), `land.ts` (Natural Earth 1:10m coastline rasterised per corridor; **no reefs**), `fetch-field.ts` (Open-Meteo multi-location, ECMWF + GFS + marine), `worker.ts` / `client.ts` (runs in a Web Worker). UI: `components/helm/route-planner.tsx`, dock "Route" button, tap modes `route-start` / `route-finish`, chart preview `routePreview`.
+- `src/lib/gpx-import.ts`: GPX import into Tracks (routes, tracks, waypoints; dedupes our own route+track export).
+- `docs/passage-planner-plan.md`: the plan; phases 0–2 are now built (see its status line).
 - Anchor watch: saved immediately on change and restored on relaunch (`isAnchorWatch` in the store). Other state is saved at most every 4 s and flushed on backgrounding.
 - `src/components/legal/terms.tsx`, `src/routes/privacy.tsx`: legal text shown in-app and on the website. Keep in sync with what the stores link to.
 
