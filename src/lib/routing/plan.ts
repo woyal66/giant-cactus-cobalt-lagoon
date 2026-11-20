@@ -32,6 +32,8 @@ export type Choice = { row: DepartureRow; result: Extract<RouteResult, { ok: tru
 export type PlanOutput = {
   rows: DepartureRow[];
   best: Record<RouteMode, Choice | null>;
+  /** 16 compass points around the finish: true = land within ~3 km (sheltered from wind from there). */
+  shelter?: boolean[];
 };
 
 export type PlanInput = {

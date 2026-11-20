@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { clearAround, isLand, landObstacle, rasterize, type Polygon } from "./land.ts";
+import { clearAround, isLand, landObstacle, rasterize, shelterAround, type Polygon } from "./land.ts";
 
 const island: Polygon = [[[152.2, -23.6], [152.3, -23.6], [152.3, -23.4], [152.2, -23.4], [152.2, -23.6]]];
 const lagoon: Polygon = [
@@ -25,4 +25,11 @@ test("segment test catches a crossing, clearAround frees an anchorage", () => {
   clearAround(m, [{ lat: -23.5, lng: 152.21 }], 2000);
   assert.equal(isLand(m, { lat: -23.5, lng: 152.21 }), false);
   assert.equal(isLand(m, { lat: -23.5, lng: 152.28 }), true);
+});
+
+test("shelter: land to the east shelters an anchorage from easterlies only", () => {
+  const m = rasterize([island], box, 0.005);
+  const s = shelterAround(m, { lat: -23.5, lng: 152.185 }, 3000);
+  assert.equal(s[4], true, "east (index 4) is the island");
+  assert.equal(s[12], false, "west is open water");
 });

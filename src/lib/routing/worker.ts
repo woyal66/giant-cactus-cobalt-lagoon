@@ -4,7 +4,7 @@
  * The coastline is loaded once per app session and kept here.
  */
 import { isDaylight } from "../sun.ts";
-import { clearAround, landObstacle, loadLandPolygons, rasterize, type BBox, type Polygon } from "./land.ts";
+import { clearAround, landObstacle, loadLandPolygons, rasterize, shelterAround, type BBox, type Polygon } from "./land.ts";
 import { planPassage, type PlanInput, type PlanOutput } from "./plan.ts";
 
 export type PlanRequest = Omit<PlanInput, "obstacle" | "isDay"> & { id: number; box: BBox };
@@ -19,8 +19,9 @@ self.onmessage = async (e: MessageEvent<PlanRequest>) => {
     const polys = await land.catch(() => [] as Polygon[]);
     const span = Math.max(req.box.east - req.box.west, req.box.north - req.box.south);
     const mask = rasterize(polys, req.box, Math.max(0.003, span / 700));
+    const shelter = polys.length ? shelterAround(mask, req.finish) : undefined;
     clearAround(mask, [req.start, req.finish], 2500);
-    const out = planPassage({ ...req, obstacle: landObstacle(mask), isDay: isDaylight });
+    const out = { ...planPassage({ ...req, obstacle: landObstacle(mask), isDay: isDaylight }), shelter };
     (self as unknown as Worker).postMessage({ id: req.id, ok: true, out } satisfies PlanReply);
   } catch (err) {
     (self as unknown as Worker).postMessage({

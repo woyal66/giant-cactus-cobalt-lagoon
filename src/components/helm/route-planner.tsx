@@ -5,6 +5,11 @@ import { Button } from "@/components/ui/button";
 import { Sheet } from "@/components/helm/panels";
 import { RouteSettings, SettingsSummary } from "@/components/helm/route-settings";
 import { RouteTimeline } from "@/components/helm/route-timeline";
+import { ArrivalCard } from "@/components/helm/arrival-card";
+import { forecastAge, saveActivePassage } from "@/lib/routing/passage-store";
+import type { WeatherField } from "@/lib/routing/field";
+import type { BoatPerf } from "@/lib/routing/polar";
+import type { Limits, RouteRules } from "@/lib/routing/router";
 import { formatHeading, formatMeters, bearingDegrees, haversineMeters } from "@/lib/geo";
 import { formatDepth } from "@/lib/units";
 import { shareGpx } from "@/lib/share-gpx";
@@ -14,6 +19,16 @@ import type { RouteMetrics, RouteMode, RoutePoint } from "@/lib/routing/router";
 import { useHelm, type LocalDraft } from "@/store/helm";
 
 const H = 3_600_000;
+
+type PlanContext = {
+  fields: WeatherField[];
+  box: { south: number; west: number; north: number; east: number };
+  forecastAt: number;
+  boat: BoatPerf;
+  limits: Limits;
+  rules: RouteRules;
+  models: string[];
+};
 
 function when(at: number): string {
   const d = new Date(at);
@@ -109,6 +124,7 @@ function PlannerSheet() {
   const [windowH, setWindowH] = useState(24);
   const [busy, setBusy] = useState<string | null>(null);
   const [out, setOut] = useState<PlanOutput | null>(null);
+  const [ctx, setCtx] = useState<PlanContext | null>(null);
   const [picked, setPicked] = useState<{ mode: RouteMode; departAt: number } | null>(null);
   const distM = haversineMeters(start, finish);
 
@@ -119,26 +135,28 @@ function PlannerSheet() {
     setOut(null);
     setPicked(null);
     setPreview(null);
+    const boat = {
+      type: prefs.boatType,
+      loaM: hull.loaM,
+      motorBelowKn: prefs.motorBelowKn,
+      motorWindBelowKn: prefs.motorWindBelowKn,
+      motorOnNose: prefs.motorOnNose,
+      motorKn: prefs.motorKn,
+    };
     runPlan({
       start,
       finish,
       windowStart,
       windowEnd: windowStart + windowH * H,
-      boat: {
-        type: prefs.boatType,
-        loaM: hull.loaM,
-        motorBelowKn: prefs.motorBelowKn,
-        motorWindBelowKn: prefs.motorWindBelowKn,
-        motorOnNose: prefs.motorOnNose,
-        motorKn: prefs.motorKn,
-      },
+      boat,
       limits: prefs.limits,
       rules: prefs.rules,
       models: prefs.models,
       onStatus: setBusy,
     })
-      .then((o) => {
+      .then(({ out: o, fields, box, forecastAt }) => {
         setOut(o);
+        setCtx({ fields, box, forecastAt, boat, limits: prefs.limits, rules: prefs.rules, models: prefs.models });
         const first = o.best.safest ?? o.best.fastest ?? o.best.comfort;
         if (first) {
           setPicked({ mode: first.result.mode, departAt: first.row.departAt });
@@ -215,7 +233,7 @@ function PlannerSheet() {
           </Button>
         </>
       ) : (
-        <Results out={out} picked={pickedResult} onChoose={choose} onAgain={() => setOut(null)} />
+        <Results out={out} ctx={ctx} picked={pickedResult} onChoose={choose} onAgain={() => setOut(null)} />
       )}
     </Sheet>
   );
@@ -230,11 +248,13 @@ function agreement(row: DepartureRow): string {
 
 function Results({
   out,
+  ctx,
   picked,
   onChoose,
   onAgain,
 }: {
   out: PlanOutput;
+  ctx: PlanContext | null;
   picked: Choice | null;
   onChoose: (mode: RouteMode, row: DepartureRow) => void;
   onAgain: () => void;
@@ -286,7 +306,7 @@ function Results({
         })}
       </div>
 
-      {picked ? <PickedActions picked={picked} /> : null}
+      {picked ? <PickedActions picked={picked} ctx={ctx} shelter={out.shelter} /> : null}
 
       <p className="mt-3 mb-1 text-[10px] tracking-[0.14em] text-muted-foreground uppercase">All departures</p>
       <ul className="grid gap-1">
@@ -338,14 +358,44 @@ function asDraft(title: string, pts: RoutePoint[]): LocalDraft {
   };
 }
 
-function PickedActions({ picked }: { picked: Choice }) {
+function PickedActions({ picked, ctx, shelter }: { picked: Choice; ctx: PlanContext | null; shelter?: boolean[] }) {
   const end = useHelm((s) => s.endRoutePlan);
   const prefs = useHelm((s) => s.routePrefs);
+  const start = useHelm((s) => s.routeStart);
+  const finish = useHelm((s) => s.routeFinish);
   const r = picked.result;
   const title = `${PLAN_LOOK[r.mode].title} · ${when(picked.row.departAt)}`;
+  /** Keep the plan and its forecast on the phone, for re-routing and the passage tools offshore. */
+  const keepOffline = (id: string) => {
+    if (!ctx || !start || !finish) return;
+    void saveActivePassage({
+      id,
+      title,
+      start,
+      finish,
+      mode: r.mode,
+      departAt: picked.row.departAt,
+      arriveAt: r.arriveAt,
+      points: r.points,
+      boat: ctx.boat,
+      limits: ctx.limits,
+      rules: ctx.rules,
+      models: ctx.models,
+      fields: ctx.fields,
+      box: ctx.box,
+      forecastAt: ctx.forecastAt,
+      savedAt: Date.now(),
+    }).catch(() => toast.error("Couldn't save the forecast for offline use"));
+  };
   return (
     <div className="mt-2 rounded-lg border border-border bg-background px-3 py-2">
       <RouteTimeline points={r.points} sails={prefs.sails} maxWindKn={prefs.limits.maxWindKn} />
+      {finish ? <ArrivalCard finish={finish} eta={r.arriveAt} shelter={shelter} /> : null}
+      {ctx ? (
+        <p className="mt-1 text-[11px] text-muted-foreground">
+          Forecast {forecastAge(ctx.forecastAt)} ({ctx.models.join(", ").toUpperCase()}). Follow or Save keeps it on the phone for offline re-routing.
+        </p>
+      ) : null}
       <div className="mt-2" />
       {r.warnings.length ? (
         <ul className="mb-2 list-disc space-y-0.5 pl-4 text-[12px] leading-snug text-amber-300">
@@ -374,6 +424,7 @@ function PickedActions({ picked }: { picked: Choice }) {
               return;
             }
             useHelm.setState({ drafts: [d, ...s.drafts].slice(0, 40) });
+            keepOffline(d.localId);
             s.setActivePassage(d);
             s.setChartUp("heading");
             s.setBoatLow(true);
@@ -390,7 +441,8 @@ function PickedActions({ picked }: { picked: Choice }) {
             const d = asDraft(title, r.points);
             const s = useHelm.getState();
             useHelm.setState({ drafts: [d, ...s.drafts].slice(0, 40) });
-            toast.success("Saved to Tracks");
+            keepOffline(d.localId);
+            toast.success("Saved to Tracks, with its forecast for offline use");
           }}
         >
           Save

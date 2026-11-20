@@ -94,6 +94,28 @@ export function clearAround(m: LandMask, pts: LatLng[], radiusM: number) {
   }
 }
 
+/**
+ * Shelter at an anchorage: for 16 compass points, is there land within `withinM`
+ * in that direction? Wind FROM a sheltered direction blows over land first.
+ * Run on the mask before clearAround(), which empties the cells near the finish.
+ */
+export function shelterAround(m: LandMask, p: LatLng, withinM = 3000): boolean[] {
+  const out: boolean[] = [];
+  for (let k = 0; k < 16; k += 1) {
+    const brg = (k * 22.5 * Math.PI) / 180;
+    let hit = false;
+    for (let d = 250; d <= withinM && !hit; d += 150) {
+      const q = {
+        lat: p.lat + (d * Math.cos(brg)) / 111_320,
+        lng: p.lng + (d * Math.sin(brg)) / (111_320 * Math.cos((p.lat * Math.PI) / 180)),
+      };
+      if (isLand(m, q)) hit = true;
+    }
+    out.push(hit);
+  }
+  return out;
+}
+
 /** Obstacle test for the router: samples the segment every half cell. */
 export function landObstacle(m: LandMask) {
   const step = Math.min((m.east - m.west) / m.nx, (m.north - m.south) / m.ny) / 2;

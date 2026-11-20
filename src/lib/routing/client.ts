@@ -34,7 +34,40 @@ export type PlanRun = {
 /** Keep fetched weather for 30 min so re-planning with new limits is instant. */
 const cache = new Map<string, { at: number; fields: WeatherField[] }>();
 
-export async function runPlan(run: PlanRun): Promise<PlanOutput> {
+export type PlanRunResult = { out: PlanOutput; fields: WeatherField[]; box: PlanRequest["box"]; forecastAt: number };
+
+/** Re-plan on a forecast already on the phone (offline re-routing). */
+export function planOnFields(run: PlanRun & { fields: WeatherField[]; box: PlanRequest["box"] }): Promise<PlanOutput> {
+  return sendToWorker({
+    id: (seq += 1),
+    start: run.start,
+    finish: run.finish,
+    windowStart: run.windowStart,
+    windowEnd: run.windowEnd,
+    fields: run.fields,
+    boat: run.boat,
+    limits: run.limits,
+    rules: run.rules,
+    box: run.box,
+  });
+}
+
+function sendToWorker(req: PlanRequest): Promise<PlanOutput> {
+  const w = getWorker();
+  return new Promise<PlanOutput>((resolve, reject) => {
+    const onMsg = (e: MessageEvent<PlanReply>) => {
+      if (e.data.id !== req.id) return;
+      w.removeEventListener("message", onMsg);
+      if (e.data.ok) resolve(e.data.out);
+      else reject(new Error(e.data.error));
+    };
+    w.addEventListener("message", onMsg);
+    w.addEventListener("error", (err) => reject(new Error(err.message || "Routing failed")), { once: true });
+    w.postMessage(req);
+  });
+}
+
+export async function runPlan(run: PlanRun): Promise<PlanRunResult> {
   const grid = corridor(run.start, run.finish);
   const directNm = haversineMeters(run.start, run.finish) / 1852;
   const days = (run.windowEnd - Date.now()) / 86_400_000 + directNm / 4 / 24 + 1;
@@ -65,16 +98,6 @@ export async function runPlan(run: PlanRun): Promise<PlanOutput> {
     rules: run.rules,
     box: grid,
   };
-  const w = getWorker();
-  return new Promise<PlanOutput>((resolve, reject) => {
-    const onMsg = (e: MessageEvent<PlanReply>) => {
-      if (e.data.id !== id) return;
-      w.removeEventListener("message", onMsg);
-      if (e.data.ok) resolve(e.data.out);
-      else reject(new Error(e.data.error));
-    };
-    w.addEventListener("message", onMsg);
-    w.addEventListener("error", (err) => reject(new Error(err.message || "Routing failed")), { once: true });
-    w.postMessage(req);
-  });
+  const out = await sendToWorker(req);
+  return { out, fields: fields.fields, box: grid, forecastAt: fields.at };
 }
