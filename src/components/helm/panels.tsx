@@ -639,8 +639,8 @@ function OfflinePacks() {
   };
 
   useEffect(() => {
-    refresh();
-  }, []);
+    void listPacks().then(setPacks);
+  }, [setPacks]);
 
   useEffect(() => {
     if (!packBox) return;

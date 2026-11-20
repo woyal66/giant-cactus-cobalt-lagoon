@@ -21,7 +21,7 @@ import "./styles.css";
 function LoginNote() {
   return (
     <main className="min-h-dvh bg-background px-5 py-8 text-foreground">
-      <p className="text-[10px] tracking-[0.18em] text-muted-foreground uppercase">Anchor Mate</p>
+      <p className="text-t12 text-muted-foreground">Anchor Mate</p>
       <h1 className="font-display mt-1 text-4xl font-semibold">On this phone</h1>
       <p className="mt-4 text-sm leading-relaxed text-muted-foreground">
         Tracks and the anchor watch stay on this phone. Cloud sign-in is not part of the store app.

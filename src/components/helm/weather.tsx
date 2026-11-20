@@ -1,13 +1,4 @@
-import { useRef, useState, type ComponentType, type PointerEvent } from "react";
-import {
-  Cloud,
-  CloudFog,
-  CloudLightning,
-  CloudRain,
-  CloudSnow,
-  CloudSun,
-  Sun,
-} from "lucide-react";
+import { useRef, useState, type PointerEvent } from "react";
 import { Button } from "@/components/ui/button";
 import { WeatherTable } from "@/components/helm/weather-table";
 import { toast } from "sonner";
@@ -15,7 +6,6 @@ import { useSpotWx, useWx } from "@/hooks/weather";
 import {
   beaufort,
   clockLabel,
-  currentVsHeading,
   dayClock,
   dayStamp,
   formatKn,
@@ -27,26 +17,21 @@ import {
   hourLabel,
   axisMarks,
   nearestSample,
-  skyLabel,
   sliceByHorizon,
   windowStats,
   windCardinal,
   clampWxHorizon,
   WX_MODEL_LABEL,
   type CurrentHour,
-  type SeaState,
   type WaveHour,
   type WxForecast,
   type WxHour,
-  type WxSky,
 } from "@/lib/weather";
 import { bearingDegrees, formatHeading, formatLat, formatLng, formatMeters, haversineMeters } from "@/lib/geo";
-import { hoursUntil } from "@/lib/anchor";
 import { cn } from "@/lib/utils";
 import { isDaylight, nightSpans } from "@/lib/sun";
 import {
   latDatumM,
-  nextTurn,
   tideAt,
   tideRange,
   tideRiseAt,
@@ -63,16 +48,6 @@ import { useHelm, useUnitsKey } from "@/store/helm";
 import { formatDepth, getUnits } from "@/lib/units";
 import { MoonCard } from "@/components/helm/moon-card";
 
-const SKY_ICON: Record<WxSky, ComponentType<{ className?: string }>> = {
-  clear: Sun,
-  partly: CloudSun,
-  cloud: Cloud,
-  fog: CloudFog,
-  rain: CloudRain,
-  heavy: CloudRain,
-  storm: CloudLightning,
-  snow: CloudSnow,
-};
 
 function WindArrow({ deg, className }: { deg: number; className?: string }) {
   return (
@@ -457,7 +432,6 @@ function WxBody({
 
 const GRAPH_W = 320;
 const GRAPH_H = 228;
-const CUR_H = 128;
 const PAD_L = 34;
 const PAD_R = 36;
 const PAD_T = 14;
@@ -895,219 +869,6 @@ function ReadoutCell({
         {hint ? <p className="mt-0.5 text-t13 text-muted-foreground">{hint}</p> : null}
       </div>
     </div>
-  );
-}
-
-function CurrentNow({ sea }: { sea: SeaState }) {
-  const heading = useHelm((s) => s.boat?.heading ?? s.lastFix?.heading ?? null);
-  if (sea.currentKn == null || sea.currentDir == null) return null;
-  const vs =
-    heading != null
-      ? currentVsHeading(sea.currentKn, sea.currentDir, heading)
-      : null;
-  const along =
-    vs == null
-      ? null
-      : Math.abs(vs.alongKn) < 0.15
-        ? "abeam"
-        : vs.alongKn > 0
-          ? `${formatKn(vs.alongKn)} kn with you`
-          : `${formatKn(-vs.alongKn)} kn against`;
-  const across =
-    vs == null || Math.abs(vs.acrossKn) < 0.15
-      ? null
-      : `${formatKn(Math.abs(vs.acrossKn))} kn set ${vs.acrossKn > 0 ? "stb" : "port"}`;
-  return (
-    <div className="mt-3 rounded-md border border-border bg-card/60 px-2.5 py-2">
-      <p className="text-t12 text-muted-foreground">Current</p>
-      <p className="font-display text-2xl leading-none font-semibold tabular-nums">
-        {formatKn(sea.currentKn)}
-        <span className="ml-1 text-xs font-medium text-muted-foreground">kn</span>
-        <span className="ml-2 text-base font-medium text-muted-foreground">
-          to {windCardinal(sea.currentDir)}
-        </span>
-      </p>
-      {along ? (
-        <p className="mt-1 text-t14 text-muted-foreground">
-          {along}
-          {across ? ` · ${across}` : ""}
-        </p>
-      ) : (
-        <p className="mt-1 text-t14 text-muted-foreground">Place heading to see with / against.</p>
-      )}
-    </div>
-  );
-}
-
-function SeaLayerGraph({
-  points,
-  horizonH,
-  t0,
-  cursorAt,
-  onCursor,
-  maxY,
-  unit,
-  fill,
-  lat,
-  lng,
-}: {
-  points: Array<{ at: number; v: number; dirDeg: number }>;
-  horizonH: number;
-  t0: number;
-  cursorAt: number;
-  onCursor: (at: number) => void;
-  maxY: number;
-  unit: string;
-  fill?: boolean;
-  lat?: number;
-  lng?: number;
-}) {
-  const svgRef = useRef<SVGSVGElement>(null);
-  const dragging = useRef(false);
-  if (points.length < 2) return null;
-  const now = Date.now();
-  const tEnd = t0 + horizonH * 3_600_000;
-  const innerH = CUR_H - 10 - 22;
-  const d = graphLineTimed(
-    points.map((h) => ({ at: h.at, v: h.v })),
-    t0,
-    horizonH,
-    GRAPH_W,
-    CUR_H,
-    maxY,
-    PAD_L,
-    PAD_R,
-    10,
-    22,
-  );
-  const cursor = Math.min(tEnd, Math.max(t0, cursorAt));
-  const cursorX = graphXAt(cursor, t0, horizonH, GRAPH_W, PAD_L, PAD_R);
-  const nowX = graphXAt(now, t0, horizonH, GRAPH_W, PAD_L, PAD_R);
-  const arrowEvery = horizonH <= 24 ? 3 : horizonH <= 48 ? 4 : 12;
-  const yAt = (v: number) => 10 + innerH - (v / Math.max(0.4, maxY)) * innerH;
-  const cursorHour = nearestSample(points, cursor);
-
-  const onDown = (ev: PointerEvent<SVGSVGElement>) => {
-    const svg = svgRef.current;
-    if (!svg) return;
-    dragging.current = true;
-    try {
-      svg.setPointerCapture(ev.pointerId);
-    } catch {
-      /* ignore */
-    }
-    onCursor(pointerToAt(ev, svg, t0, horizonH));
-  };
-
-  return (
-    <svg
-      ref={svgRef}
-      viewBox={`0 0 ${GRAPH_W} ${CUR_H}`}
-      className={fill ? "size-full touch-none" : "h-auto w-full touch-none"}
-      preserveAspectRatio={fill ? "none" : "xMidYMid meet"}
-      aria-label={`Sea ${unit} graph`}
-      onPointerDown={onDown}
-      onPointerMove={(ev) => {
-        if (!dragging.current || !svgRef.current) return;
-        onCursor(pointerToAt(ev, svgRef.current, t0, horizonH));
-      }}
-      onPointerUp={() => {
-        dragging.current = false;
-      }}
-      onPointerCancel={() => {
-        dragging.current = false;
-      }}
-    >
-      {lat != null && lng != null ? (
-        <NightShade
-          lat={lat}
-          lng={lng}
-          t0={t0}
-          horizonH={horizonH}
-          height={CUR_H}
-          padT={10}
-          padB={22}
-        />
-      ) : null}
-      {[maxY, maxY / 2].map((g) => {
-        const y = yAt(g);
-        return (
-          <g key={g}>
-            <line
-              x1={PAD_L}
-              x2={GRAPH_W - PAD_R}
-              y1={y}
-              y2={y}
-              stroke="currentColor"
-              className="text-border"
-              strokeWidth="1"
-            />
-            <text x="2" y={y + 3} className="fill-muted-foreground" fontSize="9">
-              {g}
-              {g === maxY ? ` ${unit}` : ""}
-            </text>
-          </g>
-        );
-      })}
-      <path
-        d={d}
-        fill="none"
-        stroke="currentColor"
-        className="text-sky-300"
-        strokeWidth="2.2"
-        strokeLinejoin="round"
-      />
-      {points.map((h, i) => {
-        if (i % arrowEvery !== 0) return null;
-        // Hours outside the window were being clamped onto the graph edges.
-        if (h.at < t0 || h.at > t0 + horizonH * 3_600_000) return null;
-        const x = graphXAt(h.at, t0, horizonH, GRAPH_W, PAD_L, PAD_R);
-        const y = yAt(h.v);
-        return <PlotArrow key={h.at} x={x} y={y} deg={h.dirDeg} fill="fill-sky-300" />;
-      })}
-      {cursorHour ? (
-        <PlotArrow
-          x={cursorX}
-          y={yAt(cursorHour.v)}
-          deg={cursorHour.dirDeg}
-          fill="fill-sky-200"
-          size={1.12}
-        />
-      ) : null}
-      {now >= t0 && now <= tEnd ? (
-        <line
-          x1={nowX}
-          x2={nowX}
-          y1={10}
-          y2={CUR_H - 22}
-          stroke="currentColor"
-          className="text-foreground"
-          strokeWidth="1.2"
-          strokeDasharray="3 3"
-        />
-      ) : null}
-      <line
-        x1={cursorX}
-        x2={cursorX}
-        y1={10}
-        y2={CUR_H - 22}
-        stroke="currentColor"
-        className="text-primary"
-        strokeWidth="1.6"
-      />
-      {axisMarks(t0, horizonH).map((tick) => (
-        <text
-          key={tick.at}
-          x={graphXAt(tick.at, t0, horizonH, GRAPH_W, PAD_L, PAD_R)}
-          y={CUR_H - 5}
-          textAnchor="middle"
-          className="fill-muted-foreground"
-          fontSize="9"
-        >
-          {tick.day ? `${tick.day} ${tick.time}` : tick.time}
-        </text>
-      ))}
-    </svg>
   );
 }
 
@@ -1828,46 +1589,6 @@ function ForecastGraph({
   );
 }
 
-function TideNow({
-  hours,
-  turns,
-  t0,
-  horizonH,
-}: {
-  hours: TideHour[];
-  turns: TideTurn[];
-  t0: number;
-  horizonH: number;
-}) {
-  const now = hours[0];
-  if (!now) return null;
-  const hw = nextTurn(turns, "high", now.at);
-  const lw = nextTurn(turns, "low", now.at);
-  const datum = latDatumM(hours);
-  const nowLat = toLatM(now.m, datum);
-  const hwLat = hw ? toLatM(hw.m, datum) : null;
-  const lwLat = lw ? toLatM(lw.m, datum) : null;
-  const rise =
-    hw ? Math.max(0, Math.round((hw.m - now.m) * 10) / 10) : 0;
-  return (
-    <div className="mt-3 rounded-md border border-border bg-card/60 px-2.5 py-2">
-      <p className="text-t12 text-muted-foreground">
-        Tide LAT
-      </p>
-      <p className="font-display text-2xl leading-none font-semibold tabular-nums">
-        {nowLat.toFixed(2)}
-        <span className="ml-1 text-xs font-medium text-muted-foreground">m LAT</span>
-      </p>
-      <p className="mt-1 text-t14 text-muted-foreground">
-        {hw
-          ? `HW ${hwLat != null ? formatDepth(hwLat) : "—"} ${hourLabel(hw.at)} ${hoursUntil(hw.at)} · ${formatDepth(rise, { signed: true })}`
-          : "No high in this window"}
-        {lw ? ` · LW ${lwLat != null ? formatDepth(lwLat) : "—"} ${hourLabel(lw.at)}` : ""}
-      </p>
-    </div>
-  );
-}
-
 export function AnchorWxCard() {
   useUnitsKey();
   const wx = useWx();
@@ -2050,19 +1771,6 @@ export function AnchorWxCard() {
       >
         Full forecast
       </Button>
-    </div>
-  );
-}
-
-function Stat({ label, value }: { label: string; value: string }) {
-  return (
-    <div>
-      <p className="text-t12 text-muted-foreground">
-        {label}
-      </p>
-      <p className="font-display text-lg leading-none font-semibold tabular-nums">
-        {value}
-      </p>
     </div>
   );
 }

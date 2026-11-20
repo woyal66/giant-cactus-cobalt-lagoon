@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { Suspense, lazy, useEffect } from "react";
 import { Toaster } from "sonner";
 import { MapView } from "@/components/helm/map-view";
 import { BottomDock } from "@/components/helm/dock";
@@ -19,7 +19,6 @@ import {
 } from "@/components/helm/panels";
 import { BoatPanel } from "@/components/helm/boat-panel";
 import { FirstRunGuide } from "@/components/helm/first-run-guide";
-import { RoutePlanner } from "@/components/helm/route-planner";
 import { PassageHud } from "@/components/helm/passage-hud";
 import { RadarChip } from "@/components/helm/radar-chip";
 import { MeasureBar } from "@/components/helm/measure-bar";
@@ -39,6 +38,9 @@ import { getPublicPassage } from "@/lib/passages";
 import { listPacks } from "@/lib/offline-tiles";
 import { useHelm, useUnitsKey } from "@/store/helm";
 import { formatMeters, haversineMeters } from "@/lib/geo";
+
+// The passage planner (and its settings, graph and window finder) loads when first opened.
+const RoutePlanner = lazy(() => import("@/components/helm/route-planner").then((m) => ({ default: m.RoutePlanner })));
 
 export function HelmApp() {
   useGpsWatch();
@@ -69,6 +71,7 @@ export function HelmApp() {
   const look = useHelm((s) => s.look);
   const sunPunch = useHelm((s) => s.sunPunch);
   const clarity = useHelm((s) => s.reefClarity);
+  const plannerOn = useHelm((s) => s.panel === "route" || s.tapMode === "route-start" || s.tapMode === "route-finish");
   const textSize = useHelm((s) => s.textSize);
   useEffect(() => {
     document.documentElement.dataset.text = textSize;
@@ -114,7 +117,11 @@ export function HelmApp() {
       <MeasureBar />
       <PerfChip />
       <PassageHud />
-      <RoutePlanner />
+      {plannerOn ? (
+        <Suspense fallback={null}>
+          <RoutePlanner />
+        </Suspense>
+      ) : null}
       <AlarmOverlay />
       <FirstRunGuide />
       <Toaster

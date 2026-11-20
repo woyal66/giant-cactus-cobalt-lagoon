@@ -1423,7 +1423,6 @@ export function MapView() {
           }
 
           const placing = s.tapMode === "drop-anchor";
-          const resizing = s.tapMode === "resize-swing";
 
           const bow = s.boat
             ? bowFromGps(s.boat, s.boat.heading, s.hull)

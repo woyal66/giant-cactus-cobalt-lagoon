@@ -1,5 +1,4 @@
 import { useEffect, useState } from "react";
-import QRCode from "qrcode";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -41,7 +40,11 @@ export function RemoteWatchCard() {
       return;
     }
     let live = true;
-    void QRCode.toDataURL(url, { margin: 1, width: 220, color: { dark: "#071318", light: "#ffffff" } })
+    // The QR library only loads when pairing a second phone.
+    void import("qrcode")
+      .then(({ default: QRCode }) =>
+        QRCode.toDataURL(url, { margin: 1, width: 220, color: { dark: "#071318", light: "#ffffff" } }),
+      )
       .then((d) => {
         if (live) setQr(d);
       })
