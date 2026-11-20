@@ -109,16 +109,19 @@ export function planPassage(input: PlanInput): PlanOutput {
   if (!main) throw new Error("No weather to route on.");
   const rules = input.rules ?? DEFAULT_RULES;
   const rows: DepartureRow[] = [];
-  for (const departAt of departureTimes(input.windowStart, input.windowEnd, input.maxDepartures)) {
+  const times = departureTimes(input.windowStart, input.windowEnd, input.maxDepartures);
+  // Many departures: scan them with a quicker pass, then route the chosen ones in full.
+  const coarse = times.length > 3;
+  for (const departAt of times) {
     const results = {} as Record<RouteMode, RouteResult>;
     for (const mode of MODES) {
-      results[mode] = route({ ...input, departAt, field: main, mode });
+      results[mode] = route({ ...input, departAt, field: main, mode, coarse });
     }
     let spreadH: number | null = null;
     if (results.fastest.ok && others.length) {
       const arrivals = [results.fastest.arriveAt];
       for (const f of others) {
-        const r = route({ ...input, departAt, field: f, mode: "fastest" });
+        const r = route({ ...input, departAt, field: f, mode: "fastest", coarse: true });
         if (r.ok) arrivals.push(r.arriveAt);
       }
       if (arrivals.length > 1) spreadH = (Math.max(...arrivals) - Math.min(...arrivals)) / H;
@@ -143,12 +146,22 @@ export function planPassage(input: PlanInput): PlanOutput {
     }
     return best;
   };
-  return {
-    rows,
-    best: {
-      fastest: pick("fastest", (r) => r.metrics.hours),
-      comfort: pick("comfort", (r) => comfortScore(r)),
-      safest: pick("safest", (r, row) => safetyScore(r, input.limits, row.spreadH)),
-    },
+  const best: Record<RouteMode, Choice | null> = {
+    fastest: pick("fastest", (r) => r.metrics.hours),
+    comfort: pick("comfort", (r) => comfortScore(r)),
+    safest: pick("safest", (r, row) => safetyScore(r, input.limits, row.spreadH)),
   };
+  if (coarse) {
+    // Re-route the winners at full detail so the route shown and followed is precise.
+    for (const mode of MODES) {
+      const c = best[mode];
+      if (!c) continue;
+      const fine = route({ ...input, departAt: c.row.departAt, field: main, mode });
+      if (fine.ok) {
+        c.row.results[mode] = fine;
+        best[mode] = { row: c.row, result: fine };
+      }
+    }
+  }
+  return { rows, best };
 }

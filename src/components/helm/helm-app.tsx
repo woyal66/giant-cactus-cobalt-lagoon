@@ -20,6 +20,7 @@ import {
 import { BoatPanel } from "@/components/helm/boat-panel";
 import { FirstRunGuide } from "@/components/helm/first-run-guide";
 import { RoutePlanner } from "@/components/helm/route-planner";
+import { PassageHud } from "@/components/helm/passage-hud";
 import {
   useAnchorWatch,
   useAutoNight,
@@ -97,6 +98,7 @@ export function HelmApp() {
       <WxStrip />
       <BottomDock />
       <Disclaimer />
+      <PassageHud />
       <RoutePlanner />
       <AlarmOverlay />
       <FirstRunGuide />

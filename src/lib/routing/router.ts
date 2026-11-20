@@ -64,6 +64,8 @@ export type RouteInput = {
   obstacle?: Obstacle;
   isDay?: IsDay;
   rules?: RouteRules;
+  /** Quicker, rougher pass (15° headings, longer steps) for scanning many departures. */
+  coarse?: boolean;
 };
 
 export type RoutePoint = LatLng & {
@@ -131,6 +133,8 @@ export type RouteResult =
 type Node = LatLng & {
   at: number;
   cost: number;
+  /** Distance from the start, metres (cached for pruning). */
+  fromStart: number;
   parent: Node | null;
   /** Which side the wind is on (-1 / 1), 0 at the start or under engine. */
   side: number;
@@ -195,6 +199,29 @@ export function waterWind(c: Pick<Conditions, "windKn" | "windDir" | "curKn" | "
   return { kn, dir };
 }
 
+/** Everything about a position and time that doesn't depend on the heading. */
+type Here = {
+  ww: { kn: number; dir: number };
+  wave: ReturnType<typeof effectiveWave>;
+  thunder: Risk;
+  squall: boolean;
+  wot: boolean;
+};
+
+function hereOf(c: Conditions): Here {
+  const wave = effectiveWave(c.waveM, c.wavePerS, c.waveDir, c.curKn, c.curDir);
+  return {
+    // The boat sails in the wind over the moving water, not the forecast (ground) wind:
+    // a current against the wind adds to the breeze, a current with it takes away.
+    ww: waterWind(c),
+    // Waves running into an opposing current stand up.
+    wave,
+    thunder: thunderRisk(c),
+    squall: isSquall(c),
+    wot: wave.amp >= 1.15 || windAgainstCurrent(c),
+  };
+}
+
 export function stepOn(
   boat: BoatPerf,
   c: Conditions,
@@ -202,14 +229,11 @@ export function stepOn(
   mode: RouteMode,
   limits: Limits,
   rules: RouteRules = DEFAULT_RULES,
+  here: Here = hereOf(c),
 ): Step {
-  // The boat sails in the wind over the moving water, not the forecast (ground) wind:
-  // a current against the wind adds to the breeze, a current with it takes away.
-  const ww = waterWind(c);
+  const { ww, wave, thunder, squall, wot } = here;
   const twa = norm180(ww.dir - headingDeg);
   const sp = boatSpeed(boat, ww.kn, twa);
-  // Waves running into an opposing current stand up.
-  const wave = effectiveWave(c.waveM, c.wavePerS, c.waveDir, c.curKn, c.curDir);
   const stw = sp.stwKn * waveFactor(wave.heightM, c.waveDir - headingDeg, boat.loaM);
   // Ground velocity = water velocity + current.
   const hr = (headingDeg * Math.PI) / 180;
@@ -219,10 +243,6 @@ export function stepOn(
   const sog = Math.hypot(vx, vy);
   const cog = ((Math.atan2(vx, vy) * 180) / Math.PI + 360) % 360;
   const curAlong = c.curKn * Math.cos(((c.curDir - cog) * Math.PI) / 180);
-
-  const thunder = thunderRisk(c);
-  const squall = isSquall(c);
-  const wot = wave.amp >= 1.15 || windAgainstCurrent(c);
 
   const margin = mode === "safest" ? 0.85 : 1;
   const over =
@@ -406,14 +426,16 @@ export function route(input: RouteInput): RouteResult {
   const directM = haversineMeters(start, finish);
   if (directM < 200) return fail("Start and finish are too close together.");
   const directNm = directM / NM;
-  const dtH = stepHours(directNm);
+  const dtH = stepHours(directNm) * (input.coarse ? 1.5 : 1);
+  const headingStep = input.coarse ? 15 : HEADING_STEP;
   const end = fieldEnd(field);
   const maxSteps = Math.ceil(Math.min((end - departAt) / H, 24 * 10) / dtH);
   // Sector width for pruning: finer for short trips.
-  const sectorDeg = directNm < 20 ? 2 : directNm < 100 ? 1.5 : 1;
+  const sectorDeg = (directNm < 20 ? 2 : directNm < 100 ? 1.5 : 1) * (input.coarse ? 2 : 1);
   const maxRange = directM * 1.8;
+  const directBrg = bearingDegrees(start, finish);
 
-  let front: Node[] = [{ ...start, at: departAt, cost: 0, parent: null, leg: null, side: 0 }];
+  let front: Node[] = [{ ...start, at: departAt, cost: 0, fromStart: 0, parent: null, leg: null, side: 0 }];
   let best: Node | null = null;
 
   for (let step = 0; step < maxSteps && front.length; step += 1) {
@@ -421,11 +443,12 @@ export function route(input: RouteInput): RouteResult {
     for (const n of front) {
       if (n.at > end) continue;
       const c = conditionsAt(field, n.lat, n.lng, n.at);
+      const here = hereOf(c);
       // Try to finish from here first.
       const toFinish = bearingDegrees(n, finish);
       const remainM = haversineMeters(n, finish);
       for (const h of finishHeadings(boat, c, toFinish)) {
-        const s = stepOn(boat, c, h, mode, limits, rules);
+        const s = stepOn(boat, c, h, mode, limits, rules, here);
         if (!Number.isFinite(s.penalty) || s.sogKn < 0.5) continue;
         // Component of ground speed toward the finish.
         const made = s.sogKn * Math.cos(((s.cogDeg - toFinish) * Math.PI) / 180);
@@ -442,33 +465,40 @@ export function route(input: RouteInput): RouteResult {
             ...finish,
             at,
             cost,
+            fromStart: directM,
             parent: n,
             leg: legOf(c, s),
             side,
           };
         }
       }
-      for (let h = 0; h < 360; h += HEADING_STEP) {
-        const s = stepOn(boat, c, h, mode, limits, rules);
+      for (let h = 0; h < 360; h += headingStep) {
+        // Headings more than 120° off the finish never help; skipping them halves the work.
+        if (norm180(h - toFinish) > 120) continue;
+        const s = stepOn(boat, c, h, mode, limits, rules, here);
         if (!Number.isFinite(s.penalty) || s.sogKn < 0.3) continue;
         const p = destPoint(n, s.cogDeg, s.sogKn * dtH * NM);
         if (haversineMeters(p, finish) > maxRange) continue;
         if (obstacle?.(n, p)) continue;
         const side = sideOf(c.windDir, h, s.motoring);
         const turn = manoeuvre(n.side, side);
+        const d = haversineMeters(start, p);
         const node: Node = {
           ...p,
           at: n.at + (dtH + turn) * H,
           cost: n.cost + dtH * s.penalty + turn,
+          fromStart: d,
           parent: n,
           leg: legOf(c, s),
           side,
         };
-        const key = Math.round(bearingDegrees(start, p) / sectorDeg);
-        const d = haversineMeters(start, p);
+        const fromStartBrg = bearingDegrees(start, p);
+        // Points behind the start (more than 110° off the direct line) are dead ends.
+        if (d > 500 && norm180(fromStartBrg - directBrg) > 110) continue;
+        const key = Math.round(fromStartBrg / sectorDeg);
         const prev = sectors.get(key);
         // Keep the furthest point in each sector; on a near tie prefer the cheaper one.
-        if (!prev || d > haversineMeters(start, prev) + 1 || (Math.abs(d - haversineMeters(start, prev)) <= 1 && node.cost < prev.cost)) {
+        if (!prev || d > prev.fromStart + 1 || (Math.abs(d - prev.fromStart) <= 1 && node.cost < prev.cost)) {
           sectors.set(key, node);
         }
       }
