@@ -447,6 +447,10 @@ export function LayersPanel() {
   const setParkZones = useHelm((s) => s.setParkZones);
   const setReefOutlines = useHelm((s) => s.setReefOutlines);
   const radar = useHelm((s) => s.radar);
+  const sharpTiles = useHelm((s) => s.sharpTiles);
+  const setSharpTiles = useHelm((s) => s.setSharpTiles);
+  const reefClarity = useHelm((s) => s.reefClarity);
+  const setReefClarity = useHelm((s) => s.setReefClarity);
   const setRadar = useHelm((s) => s.setRadar);
   const crumbOn = useHelm((s) => s.crumbOn);
   const setCrumbOn = useHelm((s) => s.setCrumbOn);
@@ -528,6 +532,8 @@ export function LayersPanel() {
         </Button>
       </div>
       <div className="mb-2 grid gap-1.5">
+        <ToggleRow label="Sharp photos (HD, about 4× the data)" on={sharpTiles} onChange={setSharpTiles} />
+        <ToggleRow label="Reef clarity (more contrast to read depth)" on={reefClarity} onChange={setReefClarity} />
         <ToggleRow label="Place names" on={labels} onChange={setLabels} />
         <ToggleRow label="Lat / long lines" on={graticule} onChange={setGraticule} />
         <ToggleRow label="Seamarks" on={seamarks} onChange={setSeamarks} />

@@ -240,6 +240,10 @@ export type HelmState = {
   /** Second phone pairing for remote watch (ntfy topic). */
   remoteWatch: { topic: string; boatName: string } | null;
   sunPunch: 1 | 2 | 3;
+  /** Fetch the next zoom level and show it at half size, so photos are sharp on high-density screens. */
+  sharpTiles: boolean;
+  /** Extra contrast and colour on the satellite photo for reading water depth. */
+  reefClarity: boolean;
   rode: RodeSetup;
   hull: BoatSetup;
   alarmSound: AlarmSoundId;
@@ -349,6 +353,8 @@ type HelmActions = {
   setLengthUnit: (v: LengthUnit) => void;
   cycleLook: () => void;
   setSunPunch: (n: 1 | 2 | 3) => void;
+  setSharpTiles: (v: boolean) => void;
+  setReefClarity: (v: boolean) => void;
   setRode: (partial: Partial<RodeSetup>) => void;
   setHull: (partial: Partial<BoatSetup>) => void;
   setAlarmSound: (id: AlarmSoundId) => void;
@@ -451,6 +457,8 @@ function persistSig(state: Record<string, unknown>): string {
     state.parkZones,
     state.radar,
     state.sunlight,
+    state.sharpTiles,
+    state.reefClarity,
     state.look,
     state.autoNight,
     state.depthUnit,
@@ -780,6 +788,8 @@ export const useHelm = create<HelmState & HelmActions>()(
       routePrefs: DEFAULT_ROUTE_PREFS,
       lengthUnit: "m",
       sunPunch: 2,
+      sharpTiles: typeof window !== "undefined" && (window.devicePixelRatio ?? 1) >= 2,
+      reefClarity: false,
       rode: DEFAULT_RODE,
       hull: DEFAULT_BOAT,
       alarmSound: "klaxon",
@@ -1360,6 +1370,8 @@ export const useHelm = create<HelmState & HelmActions>()(
         set({ look, sunlight: look === "sunlight" });
       },
       setSunPunch: (sunPunch) => set({ sunPunch, sunlight: true, look: "sunlight" }),
+      setSharpTiles: (sharpTiles) => set({ sharpTiles }),
+      setReefClarity: (reefClarity) => set({ reefClarity }),
       setRode: (partial) => {
         const rode = clampRode({ ...get().rode, ...partial }, get().rode);
         const hull = clampBoat({
@@ -1538,6 +1550,8 @@ export const useHelm = create<HelmState & HelmActions>()(
         depthUnit: s.depthUnit,
         lengthUnit: s.lengthUnit,
         sunPunch: s.sunPunch,
+        sharpTiles: s.sharpTiles,
+        reefClarity: s.reefClarity,
         drafts: s.drafts,
         lastFix: s.lastFix,
         rode: s.rode,
@@ -1599,6 +1613,8 @@ export const useHelm = create<HelmState & HelmActions>()(
               ? { topic: p.remoteWatch.topic, boatName: p.remoteWatch.boatName.slice(0, 40) }
               : null,
           lengthUnit: applyLengthUnit(p.lengthUnit, current.lengthUnit),
+          sharpTiles: typeof p.sharpTiles === "boolean" ? p.sharpTiles : current.sharpTiles,
+          reefClarity: typeof p.reefClarity === "boolean" ? p.reefClarity : current.reefClarity,
           look: isLookMode(p.look)
             ? p.look
             : p.sunlight === true

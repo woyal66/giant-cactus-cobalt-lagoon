@@ -147,6 +147,13 @@
 
 .rp-sunlight .leaflet-tile-pane,
 .rp-sunlight .leaflet-satOverlay-pane,
+/* Reef clarity: stretch contrast and colour so sand, coral and deep water separate. */
+.rp-clarity .leaflet-tile-pane,
+.rp-clarity .leaflet-satOverlay-pane,
+.rp-clarity .leaflet-satHi-pane {
+  filter: contrast(1.28) saturate(1.45) brightness(1.05);
+}
+
 .rp-sunlight .leaflet-satHi-pane {
   filter: contrast(1.32) saturate(1.38) brightness(1.1);
 }

@@ -67,6 +67,7 @@ export function HelmApp() {
 
   const look = useHelm((s) => s.look);
   const sunPunch = useHelm((s) => s.sunPunch);
+  const clarity = useHelm((s) => s.reefClarity);
   const watchOn = useHelm((s) => Boolean(s.anchor?.radiusLocked));
   const dragging = useHelm((s) => s.alarmOn);
   const gpsLost = useHelm((s) => s.gpsLost);
@@ -76,7 +77,7 @@ export function HelmApp() {
     <div
       className={`relative h-dvh w-full overflow-hidden bg-background text-foreground${
         look === "sunlight" ? " rp-sunlight" : look === "night" ? " rp-night" : ""
-      }`}
+      }${clarity && look === "normal" ? " rp-clarity" : ""}`}
       data-sun-punch={look === "sunlight" ? String(sunPunch) : undefined}
     >
       <MapView key="sat-v15" />

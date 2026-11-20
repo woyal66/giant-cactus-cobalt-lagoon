@@ -256,10 +256,36 @@ async function fetchRealTile(
 /** Tiles that scroll away mid-download are aborted so the visible ones load first. */
 const tileAborts = new WeakMap<HTMLElement, AbortController>();
 
+/** The quarter of a tile one zoom level up, scaled to a full tile. */
+async function cropQuadrant(blob: Blob, qx: number, qy: number): Promise<Blob | null> {
+  try {
+    const bmp = await createImageBitmap(blob);
+    const half = bmp.width / 2;
+    const c = document.createElement("canvas");
+    c.width = bmp.width;
+    c.height = bmp.height;
+    const g = c.getContext("2d");
+    if (!g) {
+      bmp.close();
+      return null;
+    }
+    g.imageSmoothingQuality = "high";
+    g.drawImage(bmp, qx * half, qy * half, half, half, 0, 0, c.width, c.height);
+    bmp.close();
+    return await new Promise((resolve) => c.toBlob((b) => resolve(b), "image/jpeg", 0.92));
+  } catch {
+    return null;
+  }
+}
+
+type TileSource = { id: string; url: string; cacheKey?: string };
+
 function loadSatTile(
   tile: HTMLImageElement,
-  sources: { id: string; url: string; cacheKey?: string }[],
+  sources: TileSource[],
   done: DoneCallback,
+  /** Same place one zoom level down: used when no source has this tile (sharp mode offline, coverage gaps). */
+  parent?: { sources: TileSource[]; qx: number; qy: number },
 ) {
   const ctrl = new AbortController();
   tileAborts.set(tile, ctrl);
@@ -285,6 +311,17 @@ function loadSatTile(
       if (!blob) continue;
       paint(blob, src.id);
       return;
+    }
+    if (parent) {
+      for (const src of parent.sources) {
+        if (tile.dataset.gen !== String(satEpoch) || ctrl.signal.aborted) return;
+        const blob = await fetchRealTile(src.url, src.cacheKey, ctrl.signal);
+        if (!blob) continue;
+        const part = await cropQuadrant(blob, parent.qx, parent.qy);
+        if (!part) continue;
+        paint(part, src.id);
+        return;
+      }
     }
     if (tile.dataset.gen !== String(satEpoch) || ctrl.signal.aborted) return;
     const first = sources[0];
@@ -313,11 +350,18 @@ function satLayer(
     cacheSource?: OfflineSource;
     /** Tried in order. First real photo wins. Sentinel-only passes one. */
     sources?: (coords: Coords) => { id: string; url: string; cacheKey?: string }[];
+    /**
+     * Sharp mode for high-density screens: 128 px tiles from one zoom level deeper, so each
+     * photo pixel lands on one screen pixel instead of being stretched 2–3×.
+     */
+    hd?: boolean;
   },
 ): TileLayer {
+  const hd = Boolean(opts.hd && opts.sources);
   const options: TileLayerOptions = {
     maxZoom: MAX_ZOOM,
-    maxNativeZoom: opts.maxNativeZoom,
+    maxNativeZoom: hd ? opts.maxNativeZoom - 1 : opts.maxNativeZoom,
+    ...(hd ? { tileSize: 128, zoomOffset: 1 } : {}),
     minZoom: 3,
     detectRetina: false,
     keepBuffer: 6,
@@ -358,8 +402,10 @@ function satLayer(
       tile.alt = "";
       tile.dataset.gen = String(satEpoch);
       tile.setAttribute("role", "presentation");
+      // Leaflet's coords.z leaves out zoomOffset; the tile servers need the real level.
+      const at = hd ? ({ x: coords.x, y: coords.y, z: coords.z + 1 } as Coords) : coords;
       const list = opts.sources
-        ? opts.sources(coords)
+        ? opts.sources(at)
         : [
             {
               id: opts.cacheSource ?? "sat",
@@ -386,7 +432,15 @@ function satLayer(
         }
       }
       tile.src = TRANSPARENT_GIF;
-      loadSatTile(tile, list, done);
+      const parent =
+        opts.sources && at.z > 3
+          ? {
+              sources: opts.sources({ x: at.x >> 1, y: at.y >> 1, z: at.z - 1 } as Coords),
+              qx: at.x & 1,
+              qy: at.y & 1,
+            }
+          : undefined;
+      loadSatTile(tile, list, done, parent);
       return tile;
     };
   }
@@ -532,10 +586,12 @@ export function MapView() {
                 cacheKey: `${src}/${c.z}/${c.x}/${c.y}`,
               }))
             : tileChoice(id, c);
+        let activeHd = useHelm.getState().sharpTiles;
         let photo = satLayer(L, SENTINEL_URL, {
           maxNativeZoom: nativeZoom(activeImagery),
           attribution: attrFor(activeImagery),
           sources: sourcesFor(activeImagery),
+          hd: activeHd,
         });
         photo.addTo(map);
         let incoming: TileLayer | null = null;
@@ -1070,8 +1126,8 @@ export function MapView() {
           m.setBearing(deg);
         };
 
-        const applyImagery = (id: ImageryId) => {
-          if (!map || id === activeImagery) return;
+        const applyImagery = (id: ImageryId, hd: boolean) => {
+          if (!map || (id === activeImagery && hd === activeHd)) return;
           if (incoming) {
             map.removeLayer(incoming);
             incoming = null;
@@ -1080,6 +1136,7 @@ export function MapView() {
             maxNativeZoom: nativeZoom(id),
             attribution: attrFor(id),
             sources: sourcesFor(id),
+            hd,
           });
           next.addTo(map);
           incoming = next;
@@ -1090,6 +1147,7 @@ export function MapView() {
             if (map.hasLayer(photo)) map.removeLayer(photo);
             photo = next;
             activeImagery = id;
+            activeHd = hd;
             incoming = null;
           };
           next.once("load", commit);
@@ -1157,7 +1215,7 @@ export function MapView() {
             map.getContainer().style.touchAction = "";
           }
 
-          applyImagery(s.imagery);
+          applyImagery(s.imagery, s.sharpTiles);
 
           const look = s.look;
           const sun = look === "sunlight";

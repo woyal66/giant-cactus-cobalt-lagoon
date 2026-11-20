@@ -39,6 +39,8 @@ export const BACKUP_SETTING_KEYS = [
   "wxModels",
   "wxHorizonH",
   "radar",
+  "sharpTiles",
+  "reefClarity",
   "routePrefs",
 ] as const;
 

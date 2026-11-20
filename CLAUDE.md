@@ -23,6 +23,7 @@ a server function, give the phone build an equivalent or it silently returns `nu
 - `src/lib/background-gps.ts`: lock-screen GPS (`@capacitor-community/background-geolocation`). Used by `useGpsWatch` in `src/hooks/helm-runtime.ts` whenever an anchor, recording or passage is active on native; emits `helm:fix` so `useAnchorWatch` evaluates on every fix.
 - `src/lib/watch-guard.ts`, `src/lib/anchor.ts`: alarm logic (pure, tested).
 - `src/lib/watch-notify.ts`: alarm notifications (Android channel `anchor-alarm`, max importance).
+- Satellite sharpness: `satLayer` in `map-view.tsx` has a sharp mode (`sharpTiles`, default on for screens of 2× density or more) that uses 128 px tiles one zoom deeper (`zoomOffset: 1`, `maxNativeZoom − 1`); any tile no source has is filled from the quarter of its parent (`cropQuadrant`), so offline packs saved one level lower still show. `reefClarity` adds a contrast filter (`.rp-clarity`).
 - `src/lib/imagery.ts`: map sources and licensing switches (`VITE_MAPTILER_KEY`, `VITE_ESRI_KEY`, `VITE_LICENSED_IMAGERY_ONLY`). `src/lib/open-meteo.ts` adds the commercial Open-Meteo key.
 - `src/lib/weather.ts`: forecasts are saved per ~10 km cell and revived offline (`reviveForecast`).
 - `src/lib/critical-alert.ts` ↔ `ios/App/App/CriticalAlertPlugin.swift` (registered in `MainViewController.swift`): iPhone alarms as Critical Alerts (needs Apple entitlement, see STORE-RELEASE 7a) or Time Sensitive.
