@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Sheet } from "@/components/helm/panels";
 import { RouteSettings, SettingsSummary } from "@/components/helm/route-settings";
+import { RouteTimeline } from "@/components/helm/route-timeline";
 import { formatHeading, formatMeters, bearingDegrees, haversineMeters } from "@/lib/geo";
 import { formatDepth } from "@/lib/units";
 import { shareGpx } from "@/lib/share-gpx";
@@ -339,10 +340,13 @@ function asDraft(title: string, pts: RoutePoint[]): LocalDraft {
 
 function PickedActions({ picked }: { picked: Choice }) {
   const end = useHelm((s) => s.endRoutePlan);
+  const prefs = useHelm((s) => s.routePrefs);
   const r = picked.result;
   const title = `${PLAN_LOOK[r.mode].title} · ${when(picked.row.departAt)}`;
   return (
     <div className="mt-2 rounded-lg border border-border bg-background px-3 py-2">
+      <RouteTimeline points={r.points} sails={prefs.sails} maxWindKn={prefs.limits.maxWindKn} />
+      <div className="mt-2" />
       {r.warnings.length ? (
         <ul className="mb-2 list-disc space-y-0.5 pl-4 text-[12px] leading-snug text-amber-300">
           {r.warnings.map((w) => (

@@ -780,6 +780,14 @@ export function MapView() {
           interactive: false,
         });
         let planStamp = "";
+        const planCursor = L.circleMarker([0, 0], {
+          radius: 7,
+          color: "#071318",
+          weight: 3,
+          fillColor: "#f0c14a",
+          fillOpacity: 1,
+          interactive: false,
+        });
         const draftLine: Polyline = L.polyline([], {
           color: primary,
           weight: 3,
@@ -1465,6 +1473,12 @@ export function MapView() {
                 map.removeLayer(mk);
               }
             }
+          }
+          if (s.routeCursor) {
+            planCursor.setLatLng([s.routeCursor.lat, s.routeCursor.lng]);
+            if (!map.hasLayer(planCursor)) planCursor.addTo(map);
+          } else if (map.hasLayer(planCursor)) {
+            map.removeLayer(planCursor);
           }
           // Only clear once; redrawing an empty path on every store change was wasted work.
           if (rangeLine.getLatLngs().length) rangeLine.setLatLngs([]);

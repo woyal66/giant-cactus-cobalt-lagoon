@@ -201,6 +201,8 @@ export type HelmState = {
   routeStart: LatLng | null;
   routeFinish: LatLng | null;
   routePreview: LatLng[] | null;
+  /** Point on the route the timeline is scrubbed to. Not persisted. */
+  routeCursor: LatLng | null;
   /** Planner choices, remembered between trips. */
   routePrefs: RoutePrefs;
   hookPreview: LatLng | null;
@@ -324,6 +326,7 @@ type HelmActions = {
   setRouteStart: (p: LatLng | null) => void;
   setRouteFinish: (p: LatLng | null) => void;
   setRoutePreview: (pts: LatLng[] | null) => void;
+  setRouteCursor: (p: LatLng | null) => void;
   setRoutePrefs: (p: Partial<RoutePrefs>) => void;
   endRoutePlan: () => void;
   setLengthUnit: (v: LengthUnit) => void;
@@ -726,6 +729,7 @@ export const useHelm = create<HelmState & HelmActions>()(
       routeStart: null,
       routeFinish: null,
       routePreview: null,
+      routeCursor: null,
       routePrefs: DEFAULT_ROUTE_PREFS,
       lengthUnit: "m",
       sunPunch: 2,
@@ -1264,7 +1268,8 @@ export const useHelm = create<HelmState & HelmActions>()(
       setRouteStart: (routeStart) =>
         set({ routeStart, routePreview: null, tapMode: routeStart ? "route-finish" : "route-start" }),
       setRouteFinish: (routeFinish) => set({ routeFinish, routePreview: null, tapMode: "none" }),
-      setRoutePreview: (routePreview) => set({ routePreview }),
+      setRoutePreview: (routePreview) => set({ routePreview, routeCursor: null }),
+      setRouteCursor: (routeCursor) => set({ routeCursor }),
       setRoutePrefs: (p) => {
         const cur = get().routePrefs;
         set({
