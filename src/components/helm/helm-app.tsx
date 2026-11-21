@@ -21,7 +21,6 @@ import { BoatPanel } from "@/components/helm/boat-panel";
 import { FirstRunGuide } from "@/components/helm/first-run-guide";
 import { PassageHud } from "@/components/helm/passage-hud";
 import { RadarChip } from "@/components/helm/radar-chip";
-import { MeasureBar } from "@/components/helm/measure-bar";
 import { DepthChip } from "@/components/helm/depth-chip";
 import { WxMapBar } from "@/components/helm/wx-map-bar";
 import { PinCard } from "@/components/helm/pin-card";
@@ -123,7 +122,6 @@ export function HelmApp() {
       <BottomDock />
       <Disclaimer />
       <RadarChip />
-      <MeasureBar />
       {reef3d ? (
         <Suspense fallback={null}>
           <Reef3D onClose={() => useHelm.setState({ reef3d: false })} />

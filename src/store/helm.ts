@@ -214,9 +214,8 @@ export type HelmState = {
     | "draw-fence"
     | "draw-pack"
     | "route-start"
-    | "route-finish"
-    | "measure";
-  /** Measuring tool: points tapped on the chart (not saved). */
+    | "route-finish";
+  /** Measuring tool: the two draggable pins, or empty when off (not saved). */
   measurePts: LatLng[];
   /** Passage planner: start and finish taps, and the route shown on the chart. Not persisted. */
   routeStart: LatLng | null;
@@ -388,8 +387,8 @@ type HelmActions = {
   setWxMap: (p: Partial<Pick<HelmState, "wxMapLayer" | "wxMapStyle" | "wxMapAt" | "wxMapInfo" | "wxMapPlaying">>) => void;
   setTideNowMsl: (v: number | null) => void;
   setBenthic: (v: boolean) => void;
-  addMeasurePt: (p: LatLng) => void;
-  undoMeasurePt: () => void;
+  /** Put the two measuring pins on the chart (default: across the middle of the view). */
+  startMeasure: (a?: LatLng, b?: LatLng) => void;
   endMeasure: () => void;
   setTextSize: (v: TextSize) => void;
   setReefClarity: (v: boolean) => void;
@@ -1454,9 +1453,11 @@ export const useHelm = create<HelmState & HelmActions>()(
         if (get().tideNowMsl !== tideNowMsl) set({ tideNowMsl });
       },
       setBenthic: (benthic) => set({ benthic }),
-      addMeasurePt: (p) => set({ measurePts: [...get().measurePts, { lat: p.lat, lng: p.lng }].slice(-40) }),
-      undoMeasurePt: () => set({ measurePts: get().measurePts.slice(0, -1) }),
-      endMeasure: () => set({ measurePts: [], tapMode: get().tapMode === "measure" ? "none" : get().tapMode }),
+      startMeasure: (a, b) => {
+        if (!a || !b) return;
+        set({ measurePts: [{ lat: a.lat, lng: a.lng }, { lat: b.lat, lng: b.lng }] });
+      },
+      endMeasure: () => set({ measurePts: [] }),
       setTextSize: (textSize) => set({ textSize }),
       setReefClarity: (reefClarity) => set({ reefClarity }),
       setRode: (partial) => {

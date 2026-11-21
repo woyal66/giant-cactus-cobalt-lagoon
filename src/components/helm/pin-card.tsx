@@ -125,9 +125,11 @@ export function PinCard() {
           variant="outline"
           className="h-11"
           onClick={() => {
-            useHelm.setState({ pinCard: false, wxPin: null, measurePts: [{ lat: pin.lat, lng: pin.lng }] });
+            // From here to the boat (or a short way east if there's no fix); drag the second pin anywhere.
+            const to = boat ? { lat: boat.lat, lng: boat.lng } : { lat: pin.lat, lng: pin.lng + 0.005 };
+            useHelm.setState({ pinCard: false, wxPin: null });
             s.setPanel(null);
-            s.setTapMode("measure");
+            s.startMeasure({ lat: pin.lat, lng: pin.lng }, to);
           }}
         >
           Measure from here

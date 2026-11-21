@@ -1665,31 +1665,57 @@ export function MapView() {
           } else if (map.hasLayer(planCursor)) {
             map.removeLayer(planCursor);
           }
+          // Measuring tool: two pins you drag anywhere; distance and bearing on the line.
           const mStamp = `${s.depthUnit}|${s.lengthUnit}|` + s.measurePts.map((p) => `${p.lat.toFixed(6)},${p.lng.toFixed(6)}`).join("|");
           if (mStamp !== measureStamp) {
             measureStamp = mStamp;
             measureGroup.clearLayers();
             const mp = s.measurePts;
-            if (mp.length) {
-              const ll = mp.map((p) => [p.lat, p.lng] as [number, number]);
-              L.polyline(ll, { color: "#000000", weight: 6, opacity: 0.45, interactive: false }).addTo(measureGroup);
-              L.polyline(ll, { color: "#ffffff", weight: 3, dashArray: "8 6", interactive: false }).addTo(measureGroup);
-              for (const p of mp) {
-                L.circleMarker([p.lat, p.lng], { radius: 6, color: "#000", weight: 2, fillColor: "#fff", fillOpacity: 1, interactive: false }).addTo(measureGroup);
-              }
-              for (const leg of measure(mp).legs) {
-                const mid: [number, number] = [(leg.from.lat + leg.to.lat) / 2, (leg.from.lng + leg.to.lng) / 2];
-                L.marker(mid, {
+            if (mp.length === 2) {
+              const shadow = L.polyline([], { color: "#000000", weight: 7, opacity: 0.45, interactive: false }).addTo(measureGroup);
+              const line = L.polyline([], { color: "#ffffff", weight: 3.5, dashArray: "9 7", interactive: false }).addTo(measureGroup);
+              const label = L.marker([0, 0], { interactive: false, keyboard: false, zIndexOffset: 950 }).addTo(measureGroup);
+              const pins = mp.map((pt, i) =>
+                L.marker([pt.lat, pt.lng], {
+                  draggable: true,
+                  keyboard: false,
+                  zIndexOffset: 1000,
                   icon: L.divIcon({
                     className: "rp-divicon",
-                    html: `<span style="font:600 13px system-ui;color:#fff;background:rgba(0,0,0,.78);padding:2px 6px;border-radius:6px;white-space:nowrap">${formatMeters(leg.distM)} · ${formatHeading(leg.bearing)}</span>`,
-                    iconSize: [120, 22],
-                    iconAnchor: [60, 11],
+                    // 48 px touch area around a clear 22 px pin.
+                    html: `<div style="width:48px;height:48px;display:grid;place-items:center"><div style="width:22px;height:22px;border-radius:50%;background:#fff;border:4px solid ${i === 0 ? "#0b7a6b" : "#c2410c"};box-shadow:0 0 0 2px rgba(0,0,0,.55)"></div></div>`,
+                    iconSize: [48, 48],
+                    iconAnchor: [24, 24],
                   }),
-                  interactive: false,
-                  keyboard: false,
-                }).addTo(measureGroup);
+                }).addTo(measureGroup),
+              );
+              const redraw = () => {
+                const a = pins[0]!.getLatLng();
+                const b = pins[1]!.getLatLng();
+                const ll: [number, number][] = [[a.lat, a.lng], [b.lat, b.lng]];
+                shadow.setLatLngs(ll);
+                line.setLatLngs(ll);
+                const leg = measure([{ lat: a.lat, lng: a.lng }, { lat: b.lat, lng: b.lng }]).legs[0];
+                if (!leg) return;
+                label.setLatLng([(a.lat + b.lat) / 2, (a.lng + b.lng) / 2]);
+                label.setIcon(
+                  L.divIcon({
+                    className: "rp-divicon",
+                    html: `<span style="display:inline-block;transform:translate(-50%,-50%);font:600 15px system-ui;color:#fff;background:rgba(0,0,0,.8);padding:4px 9px;border-radius:8px;white-space:nowrap">${formatMeters(leg.distM)} · ${formatHeading(leg.bearing)}</span>`,
+                    iconSize: [0, 0],
+                    iconAnchor: [0, 0],
+                  }),
+                );
+              };
+              for (const pin of pins) {
+                pin.on("drag", redraw);
+                pin.on("dragend", () => {
+                  const pts = pins.map((m) => ({ lat: m.getLatLng().lat, lng: m.getLatLng().lng }));
+                  measureStamp = `${useHelm.getState().depthUnit}|${useHelm.getState().lengthUnit}|` + pts.map((q) => `${q.lat.toFixed(6)},${q.lng.toFixed(6)}`).join("|");
+                  useHelm.setState({ measurePts: pts });
+                });
               }
+              redraw();
               if (!map.hasLayer(measureGroup)) measureGroup.addTo(map);
             } else if (map.hasLayer(measureGroup)) {
               map.removeLayer(measureGroup);
@@ -2008,10 +2034,6 @@ export function MapView() {
               ...wp,
               label: `WP ${s.draft.length + 1}`,
             });
-            return;
-          }
-          if (s.tapMode === "measure") {
-            s.addMeasurePt(wp);
             return;
           }
           if (s.tapMode === "route-start") {

@@ -29,7 +29,7 @@ import { bowFromGps, gpsReachM } from "@/lib/boat";
 import { Badge } from "@/components/ui/badge";
 import { MobGuide } from "@/components/helm/mob-guide";
 import { Button } from "@/components/ui/button";
-import { centreTileSource, closeInOnBoat } from "@/components/helm/map-view";
+import { centreTileSource, closeInOnBoat, getChartBounds } from "@/components/helm/map-view";
 import { WindInstrument } from "@/components/helm/weather";
 import { windCardinal } from "@/lib/weather";
 import { unlockAlarmAudio } from "@/hooks/helm-runtime";
@@ -97,6 +97,7 @@ export function TopHud() {
   const passage = useHelm((s) => s.activePassage);
   const tapMode = useHelm((s) => s.tapMode);
   const wxLayerOn = useHelm((s) => s.wxMapLayer !== "off");
+  const measuring = useHelm((s) => s.measurePts.length > 0);
   const anchorStep = useHelm((s) => s.anchorStep);
   const hookArmed = useHelm((s) => s.hookArmed);
   const demo = useHelm((s) => s.demoPlaying);
@@ -238,16 +239,24 @@ export function TopHud() {
           </button>
           <button
             type="button"
-            aria-label={tapMode === "measure" ? "Stop measuring" : "Measure distance on the chart"}
+            aria-label={measuring ? "Remove the measuring pins" : "Measure distance on the chart"}
             onClick={() => {
               const st = useHelm.getState();
-              if (st.tapMode === "measure") st.endMeasure();
-              else {
-                st.setPanel(null);
-                st.setTapMode("measure");
+              if (st.measurePts.length) {
+                st.endMeasure();
+                return;
               }
+              // Two pins across the middle of the view; drag either one anywhere.
+              const v = getChartBounds();
+              if (!v) return;
+              const lat = (v.north + v.south) / 2;
+              const dLng = (v.east - v.west) * 0.22;
+              const dLat = (v.north - v.south) * 0.08;
+              const mid = (v.east + v.west) / 2;
+              st.setPanel(null);
+              st.startMeasure({ lat: lat + dLat, lng: mid - dLng }, { lat: lat - dLat, lng: mid + dLng });
             }}
-            className={`flex h-10 w-full items-center justify-center rounded-md border py-1.5 shadow-[var(--shadow-border)] ${tapMode === "measure" ? "border-primary bg-primary text-primary-foreground" : "border-border bg-card/95 rp-glass"}`}
+            className={`flex h-10 w-full items-center justify-center rounded-md border py-1.5 shadow-[var(--shadow-border)] ${measuring ? "border-primary bg-primary text-primary-foreground" : "border-border bg-card/95 rp-glass"}`}
           >
             <Ruler className="size-4" aria-hidden />
           </button>
@@ -313,7 +322,7 @@ export function TopHud() {
         </div>
       </div>
 
-      {tapMode !== "none" && tapMode !== "measure" && !tapMode.startsWith("route-") && anchorStep !== "circle" ? (
+      {tapMode !== "none" && !tapMode.startsWith("route-") && anchorStep !== "circle" ? (
         <div className="pointer-events-auto mx-auto mt-1.5 flex max-w-6xl items-center gap-1.5 rounded-md bg-card/95 px-2 py-1.5 text-xs text-foreground shadow-[var(--shadow-border)]">
           <p className="min-w-0 flex-1 truncate">
             {tapMode === "place-boat"
@@ -441,7 +450,7 @@ export function MobHud() {
   const [guide, setGuide] = useState(false);
   if (!mark) return null;
   if (guide) return <MobGuide onClose={() => setGuide(false)} />;
-  if (panel || (tapMode !== "none" && tapMode !== "measure")) return null;
+  if (panel || tapMode !== "none") return null;
   // Steer for where they have probably drifted to by now, not the original mark.
   const minsSince = (Date.now() - mark.at) / 60_000;
   const nowPt = drift?.points.reduce<{ lat: number; lng: number; minutes: number } | null>(
