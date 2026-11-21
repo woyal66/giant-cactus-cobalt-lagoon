@@ -14,6 +14,7 @@ import {
 import { isTopic } from "@/lib/remote-watch";
 import type { DriftPoint } from "@/lib/mob";
 import type { CellTrend } from "@/lib/radar";
+import { WX_MAP_LAYERS, type WxMapLayer } from "@/lib/wx-map";
 import { BOAT_TYPES, type BoatPerf, type BoatType } from "@/lib/routing/polar";
 import { EMPTY_LEARNED, readLearned, type LearnedPolar, type PerfLive } from "@/lib/routing/learned";
 import { DEFAULT_LIMITS, DEFAULT_RULES, type Limits, type RouteRules } from "@/lib/routing/router";
@@ -251,6 +252,12 @@ export type HelmState = {
   sharpTiles: boolean;
   /** Seabed overlay: off, depth shading, or "too shallow for my draft at this tide". */
   depthLayer: "off" | "depth" | "shallow";
+  /** Weather drawn on the chart, its style, and the hour shown (hour not saved). */
+  wxMapLayer: WxMapLayer | "off";
+  wxMapStyle: "particles" | "arrows";
+  wxMapAt: number;
+  wxMapPlaying: boolean;
+  wxMapInfo: { source: "live" | "saved" | "passage" | "none" | "loading"; fetchedAt: number | null; times: number[] } | null;
   /** 3D reef view open (not saved). */
   reef3d: boolean;
   /** Tide height above mean sea level now (m), for the shallow-water overlay. Not saved. */
@@ -374,6 +381,7 @@ type HelmActions = {
   setSunPunch: (n: 1 | 2 | 3) => void;
   setSharpTiles: (v: boolean) => void;
   setDepthLayer: (v: "off" | "depth" | "shallow") => void;
+  setWxMap: (p: Partial<Pick<HelmState, "wxMapLayer" | "wxMapStyle" | "wxMapAt" | "wxMapInfo" | "wxMapPlaying">>) => void;
   setTideNowMsl: (v: number | null) => void;
   setBenthic: (v: boolean) => void;
   addMeasurePt: (p: LatLng) => void;
@@ -485,6 +493,8 @@ function persistSig(state: Record<string, unknown>): string {
     state.sunlight,
     state.sharpTiles,
     state.depthLayer,
+    state.wxMapLayer,
+    state.wxMapStyle,
     state.benthic,
     state.textSize,
     state.reefClarity,
@@ -821,6 +831,11 @@ export const useHelm = create<HelmState & HelmActions>()(
       sunPunch: 2,
       textSize: "large",
       depthLayer: "off",
+      wxMapLayer: "off",
+      wxMapStyle: "particles",
+      wxMapAt: Date.now(),
+      wxMapPlaying: false,
+      wxMapInfo: null,
       reef3d: false,
       tideNowMsl: null,
       benthic: false,
@@ -1423,6 +1438,7 @@ export const useHelm = create<HelmState & HelmActions>()(
       setSunPunch: (sunPunch) => set({ sunPunch, sunlight: true, look: "sunlight" }),
       setSharpTiles: (sharpTiles) => set({ sharpTiles }),
       setDepthLayer: (depthLayer) => set({ depthLayer }),
+      setWxMap: (p) => set(p),
       setTideNowMsl: (tideNowMsl) => {
         if (get().tideNowMsl !== tideNowMsl) set({ tideNowMsl });
       },
@@ -1613,6 +1629,8 @@ export const useHelm = create<HelmState & HelmActions>()(
         sunPunch: s.sunPunch,
         sharpTiles: s.sharpTiles,
         depthLayer: s.depthLayer,
+        wxMapLayer: s.wxMapLayer,
+        wxMapStyle: s.wxMapStyle,
         benthic: s.benthic,
         textSize: s.textSize,
         reefClarity: s.reefClarity,
@@ -1680,6 +1698,10 @@ export const useHelm = create<HelmState & HelmActions>()(
           lengthUnit: applyLengthUnit(p.lengthUnit, current.lengthUnit),
           sharpTiles: typeof p.sharpTiles === "boolean" ? p.sharpTiles : current.sharpTiles,
           depthLayer: p.depthLayer === "depth" || p.depthLayer === "shallow" ? p.depthLayer : "off",
+          wxMapLayer: WX_MAP_LAYERS.some((l) => l.id === p.wxMapLayer) ? (p.wxMapLayer as WxMapLayer) : "off",
+          wxMapStyle: p.wxMapStyle === "arrows" ? "arrows" : "particles",
+          wxMapAt: Date.now(),
+          wxMapInfo: null,
           benthic: p.benthic === true,
           tideNowMsl: null,
           textSize: p.textSize === "standard" || p.textSize === "large" || p.textSize === "xl" ? p.textSize : current.textSize,

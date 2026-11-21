@@ -53,6 +53,9 @@ import { measure } from "@/lib/measure";
 import { createRadar } from "@/components/helm/radar-layer";
 import { radarAvailable } from "@/lib/radar";
 import { createDepthLayer, type DepthLook } from "@/components/helm/depth-layer";
+import { createWxLayer } from "@/components/helm/wx-layer";
+import { loadViewField } from "@/lib/wx-map-data";
+import type { WeatherField } from "@/lib/routing/field";
 import { ATTR_BENTHIC, BENTHIC_LAYERS, BENTHIC_WMS } from "@/lib/imagery";
 
 /** LatLng to put at screen centre so the boat sits just below it. */
@@ -524,6 +527,7 @@ export function MapView() {
     if (!host) return;
     let cancelled = false;
     let stopRadar = () => {};
+    let stopWx = () => {};
     let map: LeafletMap | null = null;
     let unsub: () => void = () => {};
 
@@ -671,6 +675,46 @@ export function MapView() {
         };
         const depthLayer = createDepthLayer(L, MAX_ZOOM, depthLook);
         let depthStamp = "";
+        // Weather on the chart: grid for the view, loaded when a layer is on and after panning away.
+        const wxLayer = createWxLayer(L, map);
+        let wxField: WeatherField | null = null;
+        let wxLoading = false;
+        const wxCovers = (f: WeatherField | null) => {
+          if (!f || !map) return false;
+          const b = map.getBounds();
+          return (
+            f.lat0 <= b.getSouth() &&
+            f.lat0 + (f.ny - 1) * f.dLat >= b.getNorth() &&
+            f.lng0 <= b.getWest() &&
+            f.lng0 + (f.nx - 1) * f.dLng >= b.getEast()
+          );
+        };
+        const wxLoad = () => {
+          const st = useHelm.getState();
+          if (!map || st.wxMapLayer === "off" || wxLoading || wxCovers(wxField)) return;
+          wxLoading = true;
+          st.setWxMap({ wxMapInfo: { source: "loading", fetchedAt: null, times: wxField?.times ?? [] } });
+          const b = map.getBounds();
+          void loadViewField({ south: b.getSouth(), west: b.getWest(), north: b.getNorth(), east: b.getEast() })
+            .then((r) => {
+              wxField = r?.field ?? wxField;
+              useHelm.getState().setWxMap({
+                wxMapInfo: r
+                  ? { source: r.source, fetchedAt: r.field.fetchedAt ?? null, times: r.field.times }
+                  : { source: "none", fetchedAt: null, times: [] },
+              });
+            })
+            .finally(() => {
+              wxLoading = false;
+              const s2 = useHelm.getState();
+              wxLayer.set({ layer: s2.wxMapLayer, style: s2.wxMapStyle, at: s2.wxMapAt, field: wxField });
+            });
+        };
+        map.on("moveend", wxLoad);
+        stopWx = () => {
+          map?.off("moveend", wxLoad);
+          wxLayer.destroy();
+        };
         // Allen Coral Atlas sand / coral / seagrass, only when the build names its map service.
         const benthic: TileLayer | null = BENTHIC_WMS
           ? L.tileLayer.wms(BENTHIC_WMS, {
@@ -1358,6 +1402,8 @@ export function MapView() {
             zonesOn = false;
           }
           radar.set(s.radar && radarAvailable());
+          if (s.wxMapLayer !== "off") wxLoad();
+          wxLayer.set({ layer: s.wxMapLayer, style: s.wxMapStyle, at: s.wxMapAt, field: wxField });
           const dStamp =
             s.depthLayer === "off" ? "off" : `${s.depthLayer}|${(s.tideNowMsl ?? 0).toFixed(1)}|${s.hull.draftM.toFixed(1)}`;
           if (dStamp !== depthStamp) {
@@ -2379,6 +2425,7 @@ export function MapView() {
       cancelled = true;
       paintSeaSet = null;
       stopRadar();
+      stopWx();
       unsub();
       map?.remove();
     };

@@ -79,6 +79,7 @@ export function fieldFromResponses(
     precipMm: layers(),
     code: layers(),
     tempC: layers(),
+    pressureHpa: layers(),
     fetchedAt: Date.now(),
   };
   const put = (dst: Float32Array[], src: (number | null)[] | undefined, k: number, scale = 1, idx?: Map<number, number>) => {
@@ -101,6 +102,7 @@ export function fieldFromResponses(
     put(f.precipMm!, w?.precipitation, k);
     put(f.code!, w?.weather_code, k);
     put(f.tempC!, w?.temperature_2m, k);
+    put(f.pressureHpa!, w?.pressure_msl, k);
     const m = marine?.[k]?.hourly;
     if (m?.time) {
       const idx = new Map(m.time.map((s, i) => [s * 1000, i] as const));
@@ -139,7 +141,7 @@ export async function fetchField(grid: CorridorGrid, model: RouteModel, days: nu
   w.searchParams.set("longitude", lng);
   w.searchParams.set(
     "hourly",
-    "wind_speed_10m,wind_direction_10m,wind_gusts_10m,cape,lifted_index,convective_inhibition,precipitation,weather_code,temperature_2m",
+    "wind_speed_10m,wind_direction_10m,wind_gusts_10m,cape,lifted_index,convective_inhibition,precipitation,weather_code,temperature_2m,pressure_msl",
   );
   w.searchParams.set("wind_speed_unit", "kn");
   w.searchParams.set("models", model.param);

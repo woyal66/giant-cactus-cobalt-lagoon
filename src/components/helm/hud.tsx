@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import {
   LocateFixed,
   Ruler,
+  Wind as WindIcon,
   Satellite,
 } from "lucide-react";
 import { SignedIn, SignedOut, UserButton } from "@/lib/auth/gates";
@@ -95,6 +96,7 @@ export function TopHud() {
   const followCourse = useHelm((s) => s.followCourse);
   const passage = useHelm((s) => s.activePassage);
   const tapMode = useHelm((s) => s.tapMode);
+  const wxLayerOn = useHelm((s) => s.wxMapLayer !== "off");
   const anchorStep = useHelm((s) => s.anchorStep);
   const hookArmed = useHelm((s) => s.hookArmed);
   const demo = useHelm((s) => s.demoPlaying);
@@ -223,6 +225,17 @@ export function TopHud() {
           ) : null}
           <div className="h-1.5" aria-hidden />
           {/* Tools */}
+          <button
+            type="button"
+            aria-label={wxLayerOn ? "Hide weather on the chart" : "Show weather on the chart"}
+            onClick={() => {
+              const st = useHelm.getState();
+              st.setWxMap(st.wxMapLayer === "off" ? { wxMapLayer: "wind", wxMapAt: Date.now() } : { wxMapLayer: "off", wxMapPlaying: false });
+            }}
+            className={`flex h-10 w-full items-center justify-center rounded-md border shadow-[var(--shadow-border)] ${wxLayerOn ? "border-primary bg-primary text-primary-foreground" : "border-border bg-card/95 rp-glass"}`}
+          >
+            <WindIcon className="size-5" aria-hidden />
+          </button>
           <button
             type="button"
             aria-label={tapMode === "measure" ? "Stop measuring" : "Measure distance on the chart"}

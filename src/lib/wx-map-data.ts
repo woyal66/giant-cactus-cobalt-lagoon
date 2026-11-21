@@ -1,0 +1,47 @@
+import { fetchField, ROUTE_MODELS } from "./routing/fetch-field.ts";
+import type { WeatherField } from "./routing/field.ts";
+import type { BBox } from "./routing/land.ts";
+import { loadActivePassage } from "./routing/passage-store.ts";
+import { kvGet, kvSet } from "./kv.ts";
+import { viewGrid } from "./wx-map.ts";
+
+const FRESH_MS = 30 * 60_000;
+const KEEP_MS = 3 * 24 * 3_600_000;
+const mem = new Map<string, WeatherField>();
+
+export type ViewField = { field: WeatherField; source: "live" | "saved" | "passage" };
+
+function covers(f: WeatherField, b: BBox): boolean {
+  const north = f.lat0 + (f.ny - 1) * f.dLat;
+  const east = f.lng0 + (f.nx - 1) * f.dLng;
+  return f.lat0 <= b.south && north >= b.north && f.lng0 <= b.west && east >= b.east;
+}
+
+/**
+ * Weather grid for the chart view (3 days, main model). Recent downloads are reused; each
+ * download is kept on the phone so the layers still play offline. With no signal, falls back
+ * to a saved download for the area, then to the saved passage's forecast.
+ */
+export async function loadViewField(b: BBox): Promise<ViewField | null> {
+  const grid = viewGrid(b);
+  const key = `wx:view:${grid.key}`;
+  const now = Date.now();
+  const hit = mem.get(key);
+  if (hit && now - (hit.fetchedAt ?? 0) < FRESH_MS) return { field: hit, source: "live" };
+  try {
+    const field = await fetchField(grid, ROUTE_MODELS[0]!, 3);
+    mem.set(key, field);
+    void kvSet(key, field).catch(() => undefined);
+    return { field, source: "live" };
+  } catch {
+    const saved = hit ?? (await kvGet<WeatherField>(key).catch(() => undefined));
+    if (saved && now - (saved.fetchedAt ?? 0) < KEEP_MS) {
+      mem.set(key, saved);
+      return { field: saved, source: "saved" };
+    }
+    const passage = await loadActivePassage();
+    const pf = passage?.fields[0];
+    if (pf && covers(pf, b)) return { field: pf, source: "passage" };
+    return null;
+  }
+}

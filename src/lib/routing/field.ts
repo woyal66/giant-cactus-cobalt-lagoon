@@ -34,6 +34,8 @@ export type FieldData = {
   precipMm?: Float32Array[];
   code?: Float32Array[];
   tempC?: Float32Array[];
+  /** Sea-level pressure, hPa (optional; for isobars). */
+  pressureHpa?: Float32Array[];
 };
 
 export type WeatherField = Grid & FieldData & { model: string; fetchedAt?: number };
