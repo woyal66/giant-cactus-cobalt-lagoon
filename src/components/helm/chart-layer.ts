@@ -9,7 +9,14 @@ type LeafletNS = typeof import("leaflet");
  * still fills the screen when the chart is rotated heading-up.
  */
 export async function createChartLayer(L: LeafletNS, mode: ChartMode, night: boolean): Promise<Layer> {
-  const [bridge, { chartStyle }] = await Promise.all([import("@maplibre/maplibre-gl-leaflet"), import("@/lib/chart-style")]);
+  const [bridge, { chartStyle }, maplibre, { registerChartCache }] = await Promise.all([
+    import("@maplibre/maplibre-gl-leaflet"),
+    import("@/lib/chart-style"),
+    import("maplibre-gl"),
+    import("@/lib/chart-cache"),
+  ]);
+  const ml = ((maplibre as unknown as { default?: unknown }).default ?? maplibre) as Parameters<typeof registerChartCache>[0];
+  registerChartCache(ml);
   const Base = (bridge as unknown as { MaplibreGL: { extend: (p: object) => new (o: object) => Layer } }).MaplibreGL;
   const Centred = Base.extend({
     _update(this: {

@@ -113,8 +113,9 @@ export function chartStyle(mode: ChartMode, night = false): StyleSpecification {
   );
   return {
     version: 8,
-    glyphs: CHART_GLYPHS,
-    sources: { omt: { type: "vector", url: CHART_TILES, attribution: ATTR_CHART } },
+    // cached:// serves saved tiles and fonts offline (see chart-cache.ts).
+    glyphs: `cached://${CHART_GLYPHS}`,
+    sources: { omt: { type: "vector", url: `cached://${CHART_TILES}`, attribution: ATTR_CHART } },
     layers,
   };
 }

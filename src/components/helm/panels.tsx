@@ -686,6 +686,7 @@ function OfflinePacks() {
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState<{ done: number; total: number; bytes: number } | null>(null);
+  const [extraStep, setExtraStep] = useState<string | null>(null);
 
   const refresh = () => {
     void listPacks().then(setPacks);
@@ -711,10 +712,17 @@ function OfflinePacks() {
     try {
       const pack = await downloadPack(box, maxZ, name.trim() || packName(box), setProgress);
       const label = name.trim() || packName(box);
+      // Then the rest of the region: seabed, Chart map and weather, so those work offline too.
+      setExtraStep("Seabed depth");
+      const { saveRegionExtras } = await import("@/lib/region-pack");
+      const extras = await saveRegionExtras(box, setExtraStep);
+      const missingParts = [extras.depthTiles ? null : "seabed", extras.chartTiles ? null : "chart map", extras.weather ? null : "weather"].filter(Boolean);
       if (pack.missing) {
-        toast.warning(`${label} saved with ${pack.missing} tiles missing. Download again to fill gaps.`);
+        toast.warning(`${label} saved with ${pack.missing} photo tiles missing. Download again to fill gaps.`);
+      } else if (missingParts.length) {
+        toast.warning(`${label} saved. Couldn't save the ${missingParts.join(", ")}: those need a signal there.`);
       } else {
-        toast.success(`${label} on this phone`);
+        toast.success(`${label} on this phone: photos, seabed, chart map and 3 days of weather`);
       }
       setPackBox(null);
       refresh();
@@ -724,6 +732,7 @@ function OfflinePacks() {
     } finally {
       setBusy(false);
       setProgress(null);
+      setExtraStep(null);
     }
   };
 
@@ -805,7 +814,7 @@ function OfflinePacks() {
           </div>
           <div className="mt-1 flex items-center justify-between gap-2">
             <p className="text-t13 tabular-nums text-muted-foreground">
-              {progress.done}/{progress.total} · {formatBytes(progress.bytes)}
+              {extraStep ? `Saving ${extraStep.toLowerCase()}…` : `Photos ${progress.done}/${progress.total} · ${formatBytes(progress.bytes)}`}
             </p>
             <Button variant="ghost" size="sm" className="h-7" onClick={() => cancelPackDownload()}>
               Cancel

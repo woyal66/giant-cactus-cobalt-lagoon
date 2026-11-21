@@ -9,9 +9,10 @@ export function DepthChip() {
   const tide = useHelm((s) => s.tideNowMsl);
   const draft = useHelm((s) => s.hull.draftM);
   const panel = useHelm((s) => s.panel);
+  const wxOn = useHelm((s) => s.wxMapLayer !== "off");
   if (mode === "off" || panel) return null;
   return (
-    <div className="pointer-events-none absolute bottom-[calc(max(0.5rem,env(safe-area-inset-bottom))+5.2rem)] right-2 z-30 max-w-[15rem] rounded-lg bg-card/95 px-2.5 py-1.5 text-t13 leading-snug shadow-[var(--shadow-border)]">
+    <div className={`pointer-events-none absolute ${wxOn ? "bottom-[calc(max(0.5rem,env(safe-area-inset-bottom))+17rem)]" : "bottom-[calc(max(0.5rem,env(safe-area-inset-bottom))+5.2rem)]"} right-2 z-30 max-w-[15rem] rounded-lg bg-card/95 px-2.5 py-1.5 text-t13 leading-snug shadow-[var(--shadow-border)]`}>
       {mode === "shallow" ? (
         <>
           <p>

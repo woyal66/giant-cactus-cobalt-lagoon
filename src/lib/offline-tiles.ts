@@ -253,7 +253,7 @@ export async function readTile(key: string): Promise<Blob | null> {
   }
 }
 
-async function putTile(key: string, blob: Blob) {
+export async function putTile(key: string, blob: Blob) {
   const db = await openDb();
   await new Promise<void>((resolve, reject) => {
     const tx = db.transaction("tiles", "readwrite");

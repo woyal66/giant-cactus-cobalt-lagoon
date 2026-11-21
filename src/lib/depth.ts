@@ -70,9 +70,17 @@ export function loadDemTile(z: number, x: number, y: number): Promise<DemTile | 
   if (!p) {
     p = (async () => {
       try {
-        const r = await fetch(depthTileUrl(z, x, y), { mode: "cors" });
-        if (!r.ok) return null;
-        const bmp = await createImageBitmap(await r.blob());
+        // Saved with an offline pack? Use that; otherwise download (and keep it).
+        const cacheKey = `depth/${z}/${x}/${y}`;
+        const tiles = typeof indexedDB !== "undefined" ? await import("./offline-tiles.ts") : null;
+        let blob = tiles ? await tiles.readTile(cacheKey) : null;
+        if (!blob) {
+          const r = await fetch(depthTileUrl(z, x, y), { mode: "cors" });
+          if (!r.ok) return null;
+          blob = await r.blob();
+          if (tiles) void tiles.putTile(cacheKey, blob).catch(() => undefined);
+        }
+        const bmp = await createImageBitmap(blob);
         const size = bmp.width;
         const canvas: OffscreenCanvas | HTMLCanvasElement =
           typeof OffscreenCanvas !== "undefined" ? new OffscreenCanvas(size, size) : Object.assign(document.createElement("canvas"), { width: size, height: size });

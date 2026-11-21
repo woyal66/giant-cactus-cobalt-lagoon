@@ -1,6 +1,6 @@
 # Weather on the chart, and a clear "Chart" base map
 
-Status: plan, not built. Goal: one chart that works like a mix of a weather map (wind, current,
+Status: phases 1–4 built (weather layers, Chart base map, spot card / route editing / route card / search, offline regions). Not built: drawing weather in a Web Worker; online place search. Goal: one chart that works like a mix of a weather map (wind, current,
 pressure moving over the map with a time slider), a passage planner, and a clean chartplotter
 view of land and reef — while keeping the satellite photo for reef pilotage.
 
