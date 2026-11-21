@@ -194,7 +194,7 @@ export function WeatherPanel() {
   const brg = pin && boat ? formatHeading(bearingDegrees(boat, pin)) : null;
 
   return (
-    <div className="pointer-events-auto absolute inset-0 z-50 flex flex-col overflow-x-hidden overflow-y-auto bg-card pt-[max(0.4rem,env(safe-area-inset-top))] pb-[max(1.5rem,env(safe-area-inset-bottom))]">
+    <div className="pointer-events-auto absolute inset-0 z-50 flex flex-col overflow-x-hidden overflow-y-auto bg-card pt-[max(0.4rem,var(--safe-area-inset-top,env(safe-area-inset-top)))] pb-[max(1.5rem,var(--safe-area-inset-bottom,env(safe-area-inset-bottom)))]">
       <div ref={measureHead} className="sticky top-0 z-10 border-b border-border/60 bg-card/95 px-3 py-1.5 backdrop-blur-md">
         <div className="flex items-center justify-between gap-2">
           <div className="min-w-0">

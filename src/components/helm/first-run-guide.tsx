@@ -56,7 +56,7 @@ export function FirstRunGuide() {
   if (demo !== "off") {
     // Small card at the bottom so the alarm banner at the top stays visible.
     return (
-      <div className="pointer-events-none absolute inset-x-0 bottom-0 z-[60] p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+      <div className="pointer-events-none absolute inset-x-0 bottom-0 z-[60] p-3 pb-[max(0.75rem,var(--safe-area-inset-bottom,env(safe-area-inset-bottom)))]">
         <div className="pointer-events-auto mx-auto max-w-md rounded-xl border border-border bg-card p-4 shadow-[var(--shadow-border)]">
           <p className="font-display text-lg leading-tight font-semibold">
             {demo === "rang" ? "That's the drag alarm" : "Demo running…"}
@@ -84,7 +84,7 @@ export function FirstRunGuide() {
         role="dialog"
         aria-modal="true"
         aria-labelledby="guide-title"
-        className="w-full rounded-t-2xl border border-border bg-card px-5 pt-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] md:max-w-md md:rounded-2xl"
+        className="w-full rounded-t-2xl border border-border bg-card px-5 pt-5 pb-[max(1.25rem,var(--safe-area-inset-bottom,env(safe-area-inset-bottom)))] md:max-w-md md:rounded-2xl"
       >
         <div className="flex items-center justify-between">
           <div className="grid size-11 place-items-center rounded-xl bg-primary text-primary-foreground">

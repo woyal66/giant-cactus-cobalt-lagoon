@@ -17,7 +17,7 @@ export function MeasureBar() {
   const last = m.legs[m.legs.length - 1];
   const s = useHelm.getState();
   return (
-    <div className="pointer-events-auto absolute inset-x-2 bottom-[calc(max(0.5rem,env(safe-area-inset-bottom))+5.2rem)] z-40 mx-auto max-w-md rounded-xl border border-border bg-card/97 p-3 shadow-[var(--shadow-border)] rp-glass">
+    <div className="pointer-events-auto absolute inset-x-2 bottom-[calc(max(0.5rem,var(--safe-area-inset-bottom,env(safe-area-inset-bottom)))+5.2rem)] z-40 mx-auto max-w-md rounded-xl border border-border bg-card/97 p-3 shadow-[var(--shadow-border)] rp-glass">
       <div className="flex items-baseline justify-between gap-2">
         <p className="font-display text-lg font-semibold">Measure</p>
         {pts.length >= 2 ? (

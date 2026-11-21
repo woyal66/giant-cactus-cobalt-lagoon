@@ -176,7 +176,7 @@ function WatchBadge({ breach, gpsLost }: { breach: boolean; gpsLost: boolean }) 
       type="button"
       aria-label="Anchor watch status. Opens the anchor settings."
       onClick={() => useHelm.getState().setPanel("anchor")}
-      className={`pointer-events-auto absolute top-[calc(max(0.4rem,env(safe-area-inset-top))+4.1rem)] left-1/2 min-h-8 -translate-x-1/2 rounded-full px-3 py-1 text-t13 font-semibold whitespace-nowrap tabular-nums shadow-[var(--shadow-border)] ${
+      className={`pointer-events-auto absolute top-[calc(max(0.4rem,var(--safe-area-inset-top,env(safe-area-inset-top)))+4.1rem)] left-1/2 min-h-8 -translate-x-1/2 rounded-full px-3 py-1 text-t13 font-semibold whitespace-nowrap tabular-nums shadow-[var(--shadow-border)] ${
         breach ? "bg-destructive text-white" : "bg-card/95 text-primary"
       }`}
     >

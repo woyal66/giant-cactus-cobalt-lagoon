@@ -54,7 +54,7 @@ export function BottomDock() {
 
   if (drawMode === "record") {
     return (
-      <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20 p-2 pb-[max(0.5rem,env(safe-area-inset-bottom))]">
+      <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20 p-2 pb-[max(0.5rem,var(--safe-area-inset-bottom,env(safe-area-inset-bottom)))]">
         <div className="pointer-events-auto mx-auto flex max-w-lg items-center gap-2 rounded-xl border border-border bg-card p-1.5 shadow-[var(--shadow-border)]">
           <Button
             variant="danger"
@@ -86,7 +86,7 @@ export function BottomDock() {
 
   if (drawMode !== "idle") {
     return (
-      <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20 p-2 pb-[max(0.5rem,env(safe-area-inset-bottom))]">
+      <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20 p-2 pb-[max(0.5rem,var(--safe-area-inset-bottom,env(safe-area-inset-bottom)))]">
         <div className="pointer-events-auto mx-auto flex max-w-lg items-center gap-2 rounded-xl border border-border bg-card p-1.5 shadow-[var(--shadow-border)]">
           <Button
             variant="danger"
@@ -129,7 +129,7 @@ export function BottomDock() {
   }
 
   return (
-    <nav className="pointer-events-none absolute inset-x-0 bottom-0 z-20 p-2 pb-[max(0.5rem,env(safe-area-inset-bottom))]">
+    <nav className="pointer-events-none absolute inset-x-0 bottom-0 z-20 p-2 pb-[max(0.5rem,var(--safe-area-inset-bottom,env(safe-area-inset-bottom)))]">
       <div className="pointer-events-auto mx-auto grid max-w-lg grid-cols-6 gap-0.5 rounded-xl border border-border bg-card p-1 shadow-[var(--shadow-border)]">
         <DockBtn
           active={panel === "atlas"}
@@ -272,7 +272,7 @@ function AnchorSetBar() {
   }, [tideKey]);
 
   return (
-    <div className="pointer-events-none absolute inset-x-0 bottom-0 z-30 p-2 pb-[max(0.5rem,env(safe-area-inset-bottom))]">
+    <div className="pointer-events-none absolute inset-x-0 bottom-0 z-30 p-2 pb-[max(0.5rem,var(--safe-area-inset-bottom,env(safe-area-inset-bottom)))]">
       <div className="pointer-events-auto mx-auto max-w-lg rounded-xl border border-border bg-card p-3 shadow-[var(--shadow-border)]">
         {step === "place" ? (
           <Prompt

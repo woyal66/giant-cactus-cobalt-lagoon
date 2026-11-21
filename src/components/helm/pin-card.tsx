@@ -42,7 +42,7 @@ export function PinCard() {
   const now = wx.data?.now;
 
   return (
-    <div className="pointer-events-auto absolute inset-x-2 bottom-[calc(max(0.5rem,env(safe-area-inset-bottom))+5.2rem)] z-40 mx-auto max-w-md rounded-xl border border-border bg-card p-3 shadow-[var(--shadow-border)]">
+    <div className="pointer-events-auto absolute inset-x-2 bottom-[calc(max(0.5rem,var(--safe-area-inset-bottom,env(safe-area-inset-bottom)))+5.2rem)] z-40 mx-auto max-w-md rounded-xl border border-border bg-card p-3 shadow-[var(--shadow-border)]">
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <p className="text-t16 font-semibold tabular-nums">

@@ -68,7 +68,7 @@ export function Paywall() {
 
   return (
     <main className="h-dvh overflow-y-auto bg-background text-foreground">
-      <div className="mx-auto flex min-h-full max-w-md flex-col px-5 pt-[max(2rem,env(safe-area-inset-top))] pb-[max(1.5rem,env(safe-area-inset-bottom))]">
+      <div className="mx-auto flex min-h-full max-w-md flex-col px-5 pt-[max(2rem,var(--safe-area-inset-top,env(safe-area-inset-top)))] pb-[max(1.5rem,var(--safe-area-inset-bottom,env(safe-area-inset-bottom)))]">
         <div className="grid size-14 place-items-center rounded-2xl bg-primary text-primary-foreground">
           <Anchor className="size-7" aria-hidden />
         </div>
@@ -249,7 +249,7 @@ function TrialReminder() {
   if (!plan.showBanner || hidden || !expiresAt) return null;
   const m = trialMessage({ ...base, expiresAt });
   return (
-    <div className="pointer-events-none absolute inset-x-0 top-[calc(max(0.4rem,env(safe-area-inset-top))+6.5rem)] z-40 flex justify-center px-3">
+    <div className="pointer-events-none absolute inset-x-0 top-[calc(max(0.4rem,var(--safe-area-inset-top,env(safe-area-inset-top)))+6.5rem)] z-40 flex justify-center px-3">
       <div className="pointer-events-auto w-full max-w-md rounded-xl border border-primary/40 bg-card/95 p-3 shadow-[var(--shadow-border)]">
         <p className="font-display text-base leading-tight font-semibold">{m.title}</p>
         <p className="mt-1 text-t14 leading-snug text-muted-foreground">{m.body}</p>

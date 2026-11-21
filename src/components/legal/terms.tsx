@@ -2,7 +2,7 @@ import { Link } from "@tanstack/react-router";
 import { isFreeApp } from "@/lib/subscription";
 
 /**
- * In-app Terms of Use. Keep in sync with docs/terms.html, the hosted copy that
+ * In-app Terms of Use. Keep in sync with site/terms.html, the hosted copy that
  * the App Store and Google Play listings link to.
  * NOTE: a template, not legal advice. Have it reviewed before release.
  */

@@ -9,7 +9,7 @@ export function PerfChip() {
   if (!perf || panel || mob) return null;
   const tone = perf.pct >= 95 ? "text-primary" : perf.pct >= 80 ? "text-foreground" : "text-amber-400";
   return (
-    <div className="pointer-events-auto absolute top-[calc(max(0.4rem,env(safe-area-inset-top))+6.6rem)] right-2 z-30 grid justify-items-end gap-1">
+    <div className="pointer-events-auto absolute top-[calc(max(0.4rem,var(--safe-area-inset-top,env(safe-area-inset-top)))+6.6rem)] right-2 z-30 grid justify-items-end gap-1">
       <div
         className="rounded-lg bg-card/95 px-2.5 py-1.5 text-right shadow-[var(--shadow-border)]"
         title={`Wind from the ${perf.source}`}

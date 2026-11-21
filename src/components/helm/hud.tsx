@@ -133,7 +133,7 @@ export function TopHud() {
   const tapeUp = Boolean(boat) && tapMode === "none" && panel !== "weather";
 
   return (
-    <header className="pointer-events-none absolute inset-x-0 top-0 z-20 p-2 pt-[max(0.5rem,env(safe-area-inset-top))]">
+    <header className="pointer-events-none absolute inset-x-0 top-0 z-20 p-2 pt-[max(0.5rem,var(--safe-area-inset-top,env(safe-area-inset-top)))]">
       {tapeUp ? <div className="h-[4.1rem] md:hidden" aria-hidden /> : null}
       <div className="pointer-events-auto mx-auto hidden max-w-6xl items-center gap-2 md:flex">
         <div className="flex min-w-0 items-center gap-3 rounded-xl border border-border bg-card/95 px-3 py-2 shadow-[var(--shadow-border)] rp-glass">

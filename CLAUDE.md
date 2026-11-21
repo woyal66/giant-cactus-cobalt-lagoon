@@ -80,4 +80,4 @@ Run the phone UI in a browser: `npx vite --config vite.mobile.config.ts`, then o
 - RevenueCat keys come from `VITE_REVENUECAT_IOS_KEY` / `VITE_REVENUECAT_ANDROID_KEY` (public SDK keys) in a git-ignored `.env.production.local`. Never commit signing keys or `android/keystore.properties`.
 - Don't change `appId` (`com.anchormate.app`) after the first store upload.
 - This is a safety aid: changes to GPS, the watch guard or notifications need tests and a real-device check with the screen locked.
-- Release steps for the owner live in `STORE-RELEASE.md`.
+- Release steps for the owner live in `STORE-RELEASE.md`; Google Play quick path in `store/google-play/GOOGLE-PLAY.md`. `.github/workflows/android-release.yml` builds the signed `.aab` (versionCode = run number); `legal-pages.yml` publishes `site/` (privacy, terms). Safe-area CSS uses `var(--safe-area-inset-*, env(...))` because Capacitor 8 injects the variables on Android.

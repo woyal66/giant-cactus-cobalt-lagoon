@@ -18,9 +18,11 @@ export function Privacy() {
             not sold and it is not sent to an Anchor Mate account.
           </p>
           <p>
-            Wind and tide are requested from Open-Meteo and the Bureau of Meteorology for
-            the place you are looking at. Satellite pictures come from the map providers
-            named in the chart menu.
+            Wind, waves, currents and tides are requested from Open-Meteo and the Bureau of
+            Meteorology for the place you are looking at or planning a passage to. Maps come from the
+            providers named in the chart menu (satellite photos), OpenFreeMap (the Chart map), AWS
+            Terrain Tiles (seabed depth) and, if you turn it on, RainViewer (rain radar). These requests
+            carry the area being shown, not who you are, and are not used to build a profile.
           </p>
           <p>
             Tracks and boat settings are saved on this phone. While an anchor watch or track is

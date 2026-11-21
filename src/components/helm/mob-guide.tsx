@@ -38,7 +38,7 @@ export function MobGuide({ onClose }: { onClose: () => void }) {
   const target = drift?.points.find((p) => Math.abs(p.minutes - secs / 60) < 0.6) ?? drift?.points[0];
 
   return (
-    <div className="absolute inset-0 z-[55] overflow-y-auto bg-card px-4 pt-[max(0.75rem,env(safe-area-inset-top))] pb-[max(1rem,env(safe-area-inset-bottom))]">
+    <div className="absolute inset-0 z-[55] overflow-y-auto bg-card px-4 pt-[max(0.75rem,var(--safe-area-inset-top,env(safe-area-inset-top)))] pb-[max(1rem,var(--safe-area-inset-bottom,env(safe-area-inset-bottom)))]">
       <div className="mx-auto max-w-md">
         <div className="flex items-center justify-between">
           <p className="font-display text-3xl font-semibold text-destructive">Man overboard</p>

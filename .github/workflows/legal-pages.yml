@@ -1,0 +1,29 @@
+# Publishes the privacy policy and terms (site/) to GitHub Pages, for the Google Play listing.
+# One-time setup: Settings → Pages → Source: "GitHub Actions". Then run this workflow (or push a
+# change to site/). The address is shown in the run, e.g. https://<user>.github.io/<repo>/privacy.html
+name: Publish privacy and terms pages
+
+on:
+  workflow_dispatch:
+  push:
+    paths: ["site/**"]
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+      - id: deployment
+        uses: actions/deploy-pages@v4

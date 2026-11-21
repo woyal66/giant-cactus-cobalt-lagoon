@@ -36,7 +36,7 @@ export function AlarmOverlay() {
     const fenced = Boolean(anchor.fence && anchor.fence.length >= 3);
     const over = d - anchor.radiusM;
     return (
-      <div className="pointer-events-none absolute inset-x-0 top-[max(0.5rem,env(safe-area-inset-top))] z-50 flex justify-center px-3">
+      <div className="pointer-events-none absolute inset-x-0 top-[max(0.5rem,var(--safe-area-inset-top,env(safe-area-inset-top)))] z-50 flex justify-center px-3">
         <div className="rp-alarm pointer-events-auto w-full max-w-md rounded-xl border border-destructive bg-destructive px-4 py-3 text-white shadow-[var(--shadow-border)]">
           <div className="flex items-start gap-3">
             <Bell className="mt-0.5 size-5 shrink-0" />
@@ -78,7 +78,7 @@ export function AlarmOverlay() {
 
   if (gpsLost) {
     return (
-      <div className="pointer-events-none absolute inset-x-0 top-[max(0.5rem,env(safe-area-inset-top))] z-50 flex justify-center px-3">
+      <div className="pointer-events-none absolute inset-x-0 top-[max(0.5rem,var(--safe-area-inset-top,env(safe-area-inset-top)))] z-50 flex justify-center px-3">
         <div className="rp-alarm pointer-events-auto w-full max-w-md rounded-xl border border-destructive bg-destructive px-4 py-3 text-white shadow-[var(--shadow-border)]">
           <div className="flex items-start gap-3">
             <Bell className="mt-0.5 size-5 shrink-0" />
@@ -152,7 +152,7 @@ export function AlarmOverlay() {
   if (!cue) return null;
   const side = cue.xteM >= 0 ? "starboard" : "port";
   return (
-    <div className="pointer-events-none absolute inset-x-0 top-[max(0.5rem,env(safe-area-inset-top))] z-50 flex justify-center px-3">
+    <div className="pointer-events-none absolute inset-x-0 top-[max(0.5rem,var(--safe-area-inset-top,env(safe-area-inset-top)))] z-50 flex justify-center px-3">
       <div className="rp-alarm pointer-events-auto w-full max-w-md rounded-xl border border-destructive bg-destructive px-4 py-3 text-white shadow-[var(--shadow-border)]">
         <div className="flex items-start gap-3">
           <Bell className="mt-0.5 size-5 shrink-0" />
@@ -257,7 +257,7 @@ export function SteerOverlay() {
   return (
     <div
       ref={publishSteerBottom}
-      className="pointer-events-none absolute inset-x-0 top-0 z-30 px-2 pt-[max(0.2rem,env(safe-area-inset-top))] md:top-[6.15rem] md:px-3 md:pt-0"
+      className="pointer-events-none absolute inset-x-0 top-0 z-30 px-2 pt-[max(0.2rem,var(--safe-area-inset-top,env(safe-area-inset-top)))] md:top-[6.15rem] md:px-3 md:pt-0"
     >
       <div
         className={`rp-steer rp-steer-${tone} mx-auto flex w-full max-w-lg flex-col items-center md:max-w-2xl`}

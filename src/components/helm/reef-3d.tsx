@@ -92,7 +92,7 @@ export function Reef3D({ onClose }: { onClose: () => void }) {
       <div className="absolute inset-0">
         <div ref={box} className="h-full w-full" />
       </div>
-      <div className="absolute inset-x-2 top-[max(0.5rem,env(safe-area-inset-top))] flex items-start justify-between gap-2">
+      <div className="absolute inset-x-2 top-[max(0.5rem,var(--safe-area-inset-top,env(safe-area-inset-top)))] flex items-start justify-between gap-2">
         <div className="rounded-lg bg-card/95 px-2.5 py-1.5 text-t13 leading-snug shadow-[var(--shadow-border)]">
           <p className="text-t15 font-semibold">3D reef view</p>
           <p className="text-muted-foreground">Drag to move · two fingers to tilt and turn</p>
@@ -101,7 +101,7 @@ export function Reef3D({ onClose }: { onClose: () => void }) {
           Close
         </Button>
       </div>
-      <div className="absolute inset-x-2 bottom-[max(0.75rem,env(safe-area-inset-bottom))] rounded-lg bg-card/95 p-2 shadow-[var(--shadow-border)]">
+      <div className="absolute inset-x-2 bottom-[max(0.75rem,var(--safe-area-inset-bottom,env(safe-area-inset-bottom)))] rounded-lg bg-card/95 p-2 shadow-[var(--shadow-border)]">
         <p className="mb-1 text-t13 text-muted-foreground">Depth relief (exaggerated)</p>
         <div className="grid grid-cols-4 gap-1.5" role="radiogroup" aria-label="Depth relief">
           {EXAGGERATION.map((v) => (

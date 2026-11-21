@@ -76,7 +76,7 @@ export function RoutePlanner() {
   if (tapMode === "route-start" || tapMode === "route-finish") {
     const picking = tapMode === "route-start" ? "start" : "finish";
     return (
-      <div className="pointer-events-none absolute inset-x-0 bottom-0 z-40 p-2 pb-[max(0.5rem,env(safe-area-inset-bottom))]">
+      <div className="pointer-events-none absolute inset-x-0 bottom-0 z-40 p-2 pb-[max(0.5rem,var(--safe-area-inset-bottom,env(safe-area-inset-bottom)))]">
         <div className="pointer-events-auto mx-auto max-w-lg rounded-xl border border-border bg-card p-3 shadow-[var(--shadow-border)]">
           <p className="text-t12 text-muted-foreground">Plan a passage</p>
           <p className="font-display mt-1 text-xl leading-tight font-semibold">

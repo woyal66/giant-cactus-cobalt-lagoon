@@ -277,7 +277,7 @@ export function PassageHud() {
     pace && Math.abs(pace - 1) >= 0.05 ? ` · ${Math.round(Math.abs(pace - 1) * 100)}% ${pace < 1 ? "slower" : "faster"} than planned` : "";
 
   return (
-    <div className="pointer-events-none absolute inset-x-14 top-[calc(max(0.4rem,env(safe-area-inset-top))+4.1rem)] z-30">
+    <div className="pointer-events-none absolute inset-x-14 top-[calc(max(0.4rem,var(--safe-area-inset-top,env(safe-area-inset-top)))+4.1rem)] z-30">
       <div className="pointer-events-auto mx-auto max-w-md rounded-lg border border-border bg-card/95 shadow-[var(--shadow-border)]">
         <button
           type="button"

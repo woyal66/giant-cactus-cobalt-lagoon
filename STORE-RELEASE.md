@@ -125,6 +125,10 @@ to regenerate every icon and splash size.
 
 ## 6. Android release
 
+> **Shortest path:** follow `store/google-play/GOOGLE-PLAY.md`. It builds the signed upload
+> file in GitHub Actions (no Android Studio needed) and has the listing text, images, form
+> answers and the closed-test requirement. The steps below are the manual (Android Studio) way.
+
 1. **Create an upload key** (once; keep the file and passwords safe. Losing
    them means you can't update the app without asking Google to reset the key):
 

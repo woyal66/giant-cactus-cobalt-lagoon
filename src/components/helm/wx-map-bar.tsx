@@ -69,7 +69,7 @@ export function WxMapBar() {
           : (LEGEND[layer] ?? []);
 
   return (
-    <div className="pointer-events-auto absolute inset-x-2 bottom-[calc(max(0.5rem,env(safe-area-inset-bottom))+5.2rem)] z-30 mx-auto max-w-lg rounded-xl border border-border bg-card/97 p-2 shadow-[var(--shadow-border)] rp-glass">
+    <div className="pointer-events-auto absolute inset-x-2 bottom-[calc(max(0.5rem,var(--safe-area-inset-bottom,env(safe-area-inset-bottom)))+5.2rem)] z-30 mx-auto max-w-lg rounded-xl border border-border bg-card/97 p-2 shadow-[var(--shadow-border)] rp-glass">
       <div className="flex items-center justify-between gap-2">
         <p className="text-t15 font-semibold tabular-nums">{when(first + step * H)}</p>
         <Button variant="outline" className="h-9 px-3" onClick={() => set({ wxMapLayer: "off", wxMapPlaying: false })}>
