@@ -80,7 +80,7 @@ Google needs a public web link to the privacy policy.
    support email (a new Gmail just for the app is fine).
 2. Repository → **Settings → Pages → Source: GitHub Actions**.
 3. **Actions → Publish privacy and terms pages → Run workflow.**
-4. Your link is `https://woyal66.github.io/giant-cactus-cobalt-lagoon/privacy.html`.
+4. Your link is `https://woyal66.github.io/AnchorMate/privacy.html`.
 
 (GitHub Pages needs the repository to be **public**, or a paid GitHub plan. If you'd rather
 keep the code private, paste the text of `site/privacy.html` into a free Google Site and use
