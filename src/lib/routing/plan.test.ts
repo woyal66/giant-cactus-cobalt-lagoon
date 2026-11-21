@@ -5,7 +5,7 @@ import { departureTimes, findWindows, planPassage } from "./plan.ts";
 import { DEFAULT_LIMITS } from "./router.ts";
 import type { BoatPerf } from "./polar.ts";
 
-const boat: BoatPerf = { type: "cruiser", loaM: 12, motorBelowKn: 3, motorKn: 6 };
+const boat: BoatPerf = { type: "mono", loaM: 12, motorBelowKn: 3, motorKn: 6 };
 const box = { south: -24.5, west: 151.5, north: -22.5, east: 153.5 };
 const t0 = Date.parse("2026-11-21T00:00:00Z");
 const H = 3_600_000;

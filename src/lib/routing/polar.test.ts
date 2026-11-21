@@ -1,8 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { boatSpeed, sailSpeed, waveFactor, type BoatPerf } from "./polar.ts";
+import { boatSpeed, readBoatType, sailSpeed, waveFactor, type BoatPerf } from "./polar.ts";
 
-const cruiser: BoatPerf = { type: "cruiser", loaM: 12, motorBelowKn: 0, motorKn: 6 };
+const cruiser: BoatPerf = { type: "mono", loaM: 12, motorBelowKn: 0, motorKn: 6 };
 
 test("cruiser speeds look like a real 12 m boat", () => {
   const beam = sailSpeed(cruiser, 15, 90);
@@ -31,4 +31,28 @@ test("head seas cost more than following seas", () => {
   assert.ok(waveFactor(2.5, 0, 12) < waveFactor(2.5, 90, 12));
   assert.ok(waveFactor(2.5, 90, 12) < waveFactor(2.5, 180, 12));
   assert.equal(waveFactor(0.2, 0, 12), 1);
+});
+
+test("old saved boat types read as monohull", () => {
+  assert.equal(readBoatType("cruiser"), "mono");
+  assert.equal(readBoatType("performance"), "mono");
+  assert.equal(readBoatType("catamaran"), "catamaran");
+  assert.equal(readBoatType("motor"), "motor");
+  assert.equal(readBoatType(undefined), "mono");
+});
+
+test("motor boats run at cruising speed whatever the wind", () => {
+  const motor: BoatPerf = { type: "motor", loaM: 8, motorBelowKn: 0, motorKn: 22 };
+  assert.deepEqual(boatSpeed(motor, 0, 0), { stwKn: 22, motoring: true });
+  assert.deepEqual(boatSpeed(motor, 25, 180), { stwKn: 22, motoring: true });
+  assert.equal(sailSpeed(motor, 15, 90), 0);
+});
+
+test("a fast motor boat slows more than a yacht in a head sea, little in a following sea", () => {
+  const yacht = waveFactor(2, 0, 8);
+  const fast = waveFactor(2, 0, 8, 22);
+  assert.ok(fast < yacht);
+  assert.ok(fast >= 0.3);
+  assert.ok(waveFactor(2, 180, 8, 22) > fast);
+  assert.equal(waveFactor(0.2, 0, 8, 22), 1);
 });

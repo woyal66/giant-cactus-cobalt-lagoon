@@ -15,7 +15,7 @@ import { isTopic } from "@/lib/remote-watch";
 import type { DriftPoint } from "@/lib/mob";
 import type { CellTrend } from "@/lib/radar";
 import { WX_MAP_LAYERS, type WxMapLayer } from "@/lib/wx-map";
-import { BOAT_TYPES, type BoatPerf, type BoatType } from "@/lib/routing/polar";
+import { readBoatType, type BoatPerf, type BoatType } from "@/lib/routing/polar";
 import { EMPTY_LEARNED, readLearned, type LearnedPolar, type PerfLive } from "@/lib/routing/learned";
 import { DEFAULT_LIMITS, DEFAULT_RULES, type Limits, type RouteRules } from "@/lib/routing/router";
 import { isTreat } from "@/lib/routing/storm";
@@ -679,10 +679,11 @@ export function boatPerfOf(prefs: RoutePrefs, loaM: number): BoatPerf {
 export type RoutePreset = "family" | "delivery" | "racing" | "custom";
 
 /** Starting points; any change afterwards makes the preset "custom". */
-export const ROUTE_PRESETS: Record<Exclude<RoutePreset, "custom">, { label: string; detail: string; prefs: Partial<RoutePrefs> }> = {
+export const ROUTE_PRESETS: Record<Exclude<RoutePreset, "custom">, { label: string; detail: string; motorDetail: string; prefs: Partial<RoutePrefs> }> = {
   family: {
     label: "Family cruising",
     detail: "Cautious limits, keeps clear of storms, squalls and wind over tide, daylight arrivals.",
+    motorDetail: "Cautious limits, keeps clear of storms, squalls and wind over tide, daylight arrivals.",
     prefs: {
       limits: { maxWindKn: 20, maxGustKn: 28, maxWaveM: 2 },
       motorBelowKn: 4,
@@ -693,6 +694,7 @@ export const ROUTE_PRESETS: Record<Exclude<RoutePreset, "custom">, { label: stri
   delivery: {
     label: "Delivery",
     detail: "Efficient and tolerant, prefers to avoid hazards, motors through calms.",
+    motorDetail: "Efficient and tolerant, prefers to avoid hazards.",
     prefs: {
       limits: { maxWindKn: 28, maxGustKn: 38, maxWaveM: 3 },
       motorBelowKn: 4,
@@ -703,6 +705,7 @@ export const ROUTE_PRESETS: Record<Exclude<RoutePreset, "custom">, { label: stri
   racing: {
     label: "Racing",
     detail: "Fastest route, wide limits, hazards shown as warnings only, no engine.",
+    motorDetail: "Fastest route, wide limits, hazards shown as warnings only.",
     prefs: {
       limits: { maxWindKn: 35, maxGustKn: 45, maxWaveM: 4 },
       motorBelowKn: 0,
@@ -713,7 +716,7 @@ export const ROUTE_PRESETS: Record<Exclude<RoutePreset, "custom">, { label: stri
 };
 
 export const DEFAULT_ROUTE_PREFS: RoutePrefs = {
-  boatType: "cruiser",
+  boatType: "mono",
   motorBelowKn: 3,
   motorWindBelowKn: 0,
   motorOnNose: false,
@@ -735,11 +738,11 @@ function readRoutePrefs(v: unknown): RoutePrefs {
     typeof x === "number" && Number.isFinite(x) ? Math.min(hi, Math.max(lo, x)) : d;
   const l = (p.limits ?? {}) as Partial<Limits>;
   return {
-    boatType: BOAT_TYPES.some((b) => b.id === p.boatType) ? (p.boatType as BoatType) : "cruiser",
+    boatType: readBoatType(p.boatType),
     motorBelowKn: num(p.motorBelowKn, 3, 0, 10),
     motorWindBelowKn: num(p.motorWindBelowKn, 0, 0, 20),
     motorOnNose: typeof p.motorOnNose === "boolean" ? p.motorOnNose : false,
-    motorKn: num(p.motorKn, 6, 2, 30),
+    motorKn: num(p.motorKn, 6, 2, 45),
     limits: {
       maxWindKn: num(l.maxWindKn, DEFAULT_LIMITS.maxWindKn, 8, 50),
       maxGustKn: num(l.maxGustKn, DEFAULT_LIMITS.maxGustKn, 10, 60),

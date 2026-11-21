@@ -6,7 +6,7 @@ import { learnedFactor, type LearnedPolar } from "./learned.ts";
  * ~12 m boat, scaled by √(waterline) — Froude scaling. They can be 10–20% off a
  * real boat; an imported polar (later) replaces them.
  */
-export type BoatType = "cruiser" | "performance" | "catamaran" | "motor";
+export type BoatType = "mono" | "catamaran" | "motor";
 
 export type BoatPerf = {
   type: BoatType;
@@ -27,11 +27,19 @@ export type BoatPerf = {
 };
 
 export const BOAT_TYPES: { id: BoatType; label: string }[] = [
-  { id: "cruiser", label: "Cruising monohull" },
-  { id: "performance", label: "Performance monohull" },
+  { id: "mono", label: "Monohull" },
   { id: "catamaran", label: "Catamaran" },
   { id: "motor", label: "Motor boat" },
 ];
+
+/** Saved settings from older versions ("cruiser", "performance") read as a monohull. */
+export function readBoatType(v: unknown): BoatType {
+  return v === "catamaran" || v === "motor" ? v : "mono";
+}
+
+export function isSail(type: BoatType): boolean {
+  return type !== "motor";
+}
 
 const TWA = [40, 52, 60, 75, 90, 110, 120, 135, 150, 165, 180];
 const TWS = [4, 6, 8, 10, 12, 14, 16, 20, 25, 30];
@@ -52,7 +60,7 @@ const REF_LWL = 10.5;
 
 /** Closest a type can sail to the true wind, degrees. */
 export function noGoDeg(type: BoatType): number {
-  return type === "catamaran" ? 45 : type === "performance" ? 38 : 40;
+  return type === "catamaran" ? 45 : 40;
 }
 
 function lwl(p: BoatPerf): number {
@@ -91,7 +99,6 @@ export function sailSpeed(p: BoatPerf, twsKn: number, twaDeg: number): number {
   if (twa < noGoDeg(p.type)) return 0;
   const scale = Math.sqrt(lwl(p) / REF_LWL);
   let v = table(twsKn, Math.max(40, twa)) * scale;
-  if (p.type === "performance") v *= 1.12;
   if (p.type === "catamaran") v *= twa < 70 ? 0.92 : 1.15;
   // Reefed hard in a gale.
   if (twsKn > 30) v *= Math.max(0.6, 1 - (twsKn - 30) * 0.03);
@@ -127,9 +134,16 @@ export function boatSpeed(p: BoatPerf, twsKn: number, twaDeg: number): Speed {
  * little. `relDeg` is the angle between the boat's heading and where waves come from
  * (0 = waves on the bow).
  */
-export function waveFactor(waveM: number, relDeg: number, loaM: number): number {
+export function waveFactor(waveM: number, relDeg: number, loaM: number, motorKn = 0): number {
   if (!(waveM > 0.3)) return 1;
   const rel = Math.abs(((relDeg + 540) % 360) - 180);
+  if (motorKn > 0) {
+    // Motor boats: a fast boat has to throttle back much more in a head sea (it slams),
+    // a displacement boat at 6–8 kn loses about as much as a yacht.
+    const aspect = rel < 60 ? 1 : rel < 120 ? 0.45 : 0.25;
+    const fast = Math.min(2.5, Math.max(1, motorKn / 8));
+    return Math.max(0.3, 1 - 1.2 * fast * (waveM / Math.max(4, loaM)) * aspect);
+  }
   const aspect = rel < 60 ? 1 : rel < 120 ? 0.5 : 0.2;
   return Math.max(0.4, 1 - 1.2 * (waveM / Math.max(4, loaM)) * aspect);
 }

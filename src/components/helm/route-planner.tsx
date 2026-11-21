@@ -236,7 +236,7 @@ function PlannerSheet() {
           </div>
           <p className="mb-2 text-t13 leading-snug text-muted-foreground">
             Tide and ocean currents are included (Météo-France SMOC model, about 8 km
-            detail): they speed you up or slow you down, change the wind you sail in, and
+            detail): they speed you up or slow you down, change the wind you meet, and
             make seas stand up where they run against the waves.
           </p>
           {distM < 926 ? (
@@ -304,6 +304,8 @@ function Results({
   onChoose: (mode: RouteMode, row: DepartureRow) => void;
   onAgain: () => void;
 }) {
+  const motorBoat = useHelm((s) => s.routePrefs.boatType === "motor");
+  const fuelLph = useHelm((s) => s.routePrefs.fuelLph);
   const modes: RouteMode[] = ["safest", "fastest", "comfort"];
   if (!modes.some((m) => out.best[m])) {
     const reason = out.rows.map((r) => r.results.fastest).find((r) => !r.ok);
@@ -340,8 +342,17 @@ function Results({
               </p>
               <p className="text-t13 text-muted-foreground tabular-nums">
                 Wind to {Math.round(x.maxWindKn)} kn, gusts {Math.round(x.maxGustKn)} · seas to {formatDepth(x.maxWaveM)} ·{" "}
-                {x.hours - x.motorHours >= 0.5 ? `${x.upwindPct}% upwind` : "all under engine"}
-                {x.motorHours >= 0.5 && x.hours - x.motorHours >= 0.5 ? ` · ${dur(x.motorHours)} motoring` : ""} ·{" "}
+                {motorBoat
+                  ? fuelLph > 0
+                    ? `fuel ≈ ${Math.round(x.motorHours * fuelLph)} L`
+                    : `avg ${(x.distanceNm / Math.max(0.1, x.hours)).toFixed(1)} kn`
+                  : x.hours - x.motorHours >= 0.5
+                    ? `${x.upwindPct}% upwind`
+                    : "all under engine"}
+                {!motorBoat && x.motorHours >= 0.5 && x.hours - x.motorHours >= 0.5
+                  ? ` · ${dur(x.motorHours)} motoring${fuelLph > 0 ? ` (≈ ${Math.round(x.motorHours * fuelLph)} L)` : ""}`
+                  : ""}{" "}
+                ·{" "}
                 {agreement(c.row)}
               </p>
               <p className="text-t13 text-muted-foreground tabular-nums">{tideLine(x)}</p>
@@ -493,7 +504,7 @@ function PickedActions({ picked, ctx, shelter }: { picked: Choice; ctx: PlanCont
   };
   return (
     <div className="mt-2 rounded-lg border border-border bg-background px-3 py-2">
-      <RouteTimeline points={r.points} sails={prefs.sails} maxWindKn={prefs.limits.maxWindKn} />
+      <RouteTimeline points={r.points} sails={prefs.sails} maxWindKn={prefs.limits.maxWindKn} motorBoat={prefs.boatType === "motor"} />
       {finish ? <ArrivalCard finish={finish} eta={r.arriveAt} shelter={shelter} /> : null}
       {ctx ? (
         <p className="mt-1 text-t13 text-muted-foreground">
@@ -578,6 +589,8 @@ function PickedActions({ picked, ctx, shelter }: { picked: Choice; ctx: PlanCont
               metrics: r.metrics,
               warnings: r.warnings,
               sails: prefs.sails,
+              motorBoat: prefs.boatType === "motor",
+              fuelLph: prefs.fuelLph,
               models: ctx?.models ?? prefs.models,
               forecastAt: ctx?.forecastAt ?? Date.now(),
               shelter,

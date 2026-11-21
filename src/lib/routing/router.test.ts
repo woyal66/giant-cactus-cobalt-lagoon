@@ -6,7 +6,7 @@ import { DEFAULT_LIMITS, route, waterWind, windAgainstCurrent } from "./router.t
 import { boatSpeed } from "./polar.ts";
 import type { BoatPerf } from "./polar.ts";
 
-const boat: BoatPerf = { type: "cruiser", loaM: 12, motorBelowKn: 0, motorKn: 6 };
+const boat: BoatPerf = { type: "mono", loaM: 12, motorBelowKn: 0, motorKn: 6 };
 const box = { south: -24.5, west: 151.5, north: -22.5, east: 153.5 };
 const t0 = Date.parse("2026-11-21T00:00:00Z");
 const A = { lat: -23.5, lng: 152.0 };
@@ -119,7 +119,7 @@ test("the boat sails in the wind over the water", () => {
 });
 
 test("motoring rules: wind threshold, speed threshold, and wind on the nose", () => {
-  const base = { type: "cruiser" as const, loaM: 12, motorBelowKn: 0, motorKn: 6 };
+  const base = { type: "mono" as const, loaM: 12, motorBelowKn: 0, motorKn: 6 };
   assert.equal(boatSpeed({ ...base, motorWindBelowKn: 6 }, 5, 120).motoring, true);
   assert.equal(boatSpeed({ ...base, motorWindBelowKn: 6 }, 8, 120).motoring, false);
   assert.equal(boatSpeed({ ...base, motorBelowKn: 4 }, 5, 170).motoring, true); // slow dead run

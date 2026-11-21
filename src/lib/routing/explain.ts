@@ -27,6 +27,13 @@ export function pointOfSail(twa: number, motoring: boolean): { name: string; fee
   return { name: "Running", feel: "wind from behind; watch for rolling and gybes" };
 }
 
+/** For a motor boat: where the wind (and usually the sea) is on the boat. */
+export function motorHeading(twa: number): { name: string; feel: string } {
+  if (twa < 50) return { name: "Into the wind", feel: "head sea: ease back if the boat slams" };
+  if (twa < 130) return { name: "Wind on the beam", feel: "beam sea: expect some roll" };
+  return { name: "Wind behind", feel: "following sea: easy, but take care in big seas" };
+}
+
 export const GLOSSARY: Array<[string, string]> = [
   ["True wind", "The wind as it blows over the water: what a forecast gives."],
   ["Apparent wind", "The wind you feel on the moving boat, and what you trim the sails to. Going upwind it is stronger and further forward; downwind it is lighter."],

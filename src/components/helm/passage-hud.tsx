@@ -67,6 +67,7 @@ export function PassageHud() {
   const active = useHelm((s) => s.activePassage);
   const boat = useHelm((s) => s.boat);
   const sails = useHelm((s) => s.routePrefs.sails);
+  const motorBoat = useHelm((s) => s.routePrefs.boatType === "motor");
   const prefs = useHelm((s) => s.routePrefs);
   const [saved, setSaved] = useState<SavedPassage | null>(null);
   const [open, setOpen] = useState(false);
@@ -115,7 +116,7 @@ export function PassageHud() {
     }
   }
   const pace = progress ? paceFrom(paceLog.current) : null;
-  const plan = useMemo(() => (saved ? sailPlan(saved.points, sails) : null), [saved, sails]);
+  const plan = useMemo(() => (saved && !motorBoat ? sailPlan(saved.points, sails) : null), [saved, sails, motorBoat]);
   const shiftMs = progress ? progress.behindMin * MIN : 0;
 
   // Sail-change reminders: a notification on the phone, a toast if the app is open.
@@ -335,7 +336,8 @@ export function PassageHud() {
                     <li key={p.at} className="flex justify-between gap-2">
                       <span className="w-14 shrink-0">{clock(p.at)}</span>
                       <span className="flex-1">
-                        {Math.round(p.windKn)} kn {windCardinal(p.windDir)} · TWA {Math.round(p.twa)}° / AWA {Math.round(a.awa)}°
+                        {Math.round(p.windKn)} kn {windCardinal(p.windDir)} ·{" "}
+                        {motorBoat ? `${Math.round(p.twa)}° off the bow` : `TWA ${Math.round(p.twa)}° / AWA ${Math.round(a.awa)}°`}
                       </span>
                       <span className="text-muted-foreground">
                         {formatDepth(p.waveM)}

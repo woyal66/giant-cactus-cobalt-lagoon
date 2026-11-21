@@ -1,6 +1,7 @@
 import { Button } from "@/components/ui/button";
 import { formatDepth } from "@/lib/units";
 import { BOAT_TYPES } from "@/lib/routing/polar";
+import { BoatTypePicker } from "@/components/helm/boat-type";
 import { ROUTE_MODELS } from "@/lib/routing/fetch-field";
 import { TREAT_LABEL, type Treat } from "@/lib/routing/storm";
 import type { RouteRules } from "@/lib/routing/router";
@@ -47,7 +48,7 @@ export function SettingsSummary() {
   const boat = BOAT_TYPES.find((b) => b.id === p.boatType)?.label ?? "";
   const motor =
     p.boatType === "motor"
-      ? `${p.motorKn} kn`
+      ? `cruise ${p.motorKn} kn${p.fuelLph ? `, ${p.fuelLph} L/h` : ""}`
       : p.motorBelowKn || p.motorWindBelowKn
         ? `motor ${p.motorBelowKn ? `<${p.motorBelowKn} kn boat` : ""}${p.motorBelowKn && p.motorWindBelowKn ? " / " : ""}${p.motorWindBelowKn ? `<${p.motorWindBelowKn} kn wind` : ""}`
         : "no engine";
@@ -88,13 +89,16 @@ export function RouteSettings({ onDone }: { onDone: () => void }) {
   };
   const toggleSail = (s: SailDef) => set({ sails: p.sails.map((x) => (x.id === s.id ? { ...x, owned: !x.owned } : x)) });
   const main = p.sails.find((s) => s.kind === "main");
+  const motorBoat = p.boatType === "motor";
+  // Racing (no engine) means nothing for a motor boat.
+  const presets = (Object.keys(ROUTE_PRESETS) as Exclude<RoutePreset, "custom">[]).filter((id) => !(motorBoat && id === "racing"));
 
   return (
     <div className="grid gap-3">
       <div>
         <p className={label}>Starting point</p>
         <div className="grid gap-1.5">
-          {(Object.keys(ROUTE_PRESETS) as Exclude<RoutePreset, "custom">[]).map((id) => (
+          {presets.map((id) => (
             <button
               key={id}
               type="button"
@@ -102,7 +106,7 @@ export function RouteSettings({ onDone }: { onDone: () => void }) {
               className={`rounded-md border px-3 py-2 text-left ${p.preset === id ? "border-primary bg-primary/10" : "border-border bg-background"}`}
             >
               <p className="text-sm font-semibold">{ROUTE_PRESETS[id].label}</p>
-              <p className="text-t13 leading-snug text-muted-foreground">{ROUTE_PRESETS[id].detail}</p>
+              <p className="text-t13 leading-snug text-muted-foreground">{motorBoat ? ROUTE_PRESETS[id].motorDetail : ROUTE_PRESETS[id].detail}</p>
             </button>
           ))}
           {p.preset === "custom" ? <p className="text-t13 text-muted-foreground">Custom: your own mix of the settings below.</p> : null}
@@ -111,13 +115,8 @@ export function RouteSettings({ onDone }: { onDone: () => void }) {
 
       <div>
         <p className={label}>Boat ({hull.loaM.toFixed(1)} m, set in the Boat panel)</p>
-        <div className="grid grid-cols-2 gap-1.5">
-          {BOAT_TYPES.map((b) => (
-            <Button key={b.id} size="sm" variant={p.boatType === b.id ? "default" : "outline"} onClick={() => set({ boatType: b.id })}>
-              {b.label}
-            </Button>
-          ))}
-        </div>
+        <BoatTypePicker />
+        {motorBoat ? <p className="mt-1 text-t13 text-muted-foreground">Routes at your cruising speed, slowed by head seas and helped or held back by the current.</p> : null}
       </div>
 
       <div>
@@ -158,9 +157,12 @@ export function RouteSettings({ onDone }: { onDone: () => void }) {
             </Button>
           ))}
         </div>
-        <p className="mt-1 text-t13 text-muted-foreground">Shapes the Most comfortable plan: upwind work, steep seas, gusts and rolling.</p>
+        <p className="mt-1 text-t13 text-muted-foreground">
+          {motorBoat ? "Shapes the Most comfortable plan: head seas, steep seas, gusts and rolling." : "Shapes the Most comfortable plan: upwind work, steep seas, gusts and rolling."}
+        </p>
       </div>
 
+      {motorBoat ? null : (
       <div>
         <p className={label}>Sails you carry (sail plan uses apparent wind)</p>
         <div className="grid gap-1">
@@ -205,8 +207,9 @@ export function RouteSettings({ onDone }: { onDone: () => void }) {
         ) : null}
         <p className="mt-1 text-t13 text-muted-foreground">Ranges are typical sailmaker figures. Your sailmaker&apos;s chart is the better guide.</p>
       </div>
+      )}
 
-      <LearnedPolarSettings />
+      {motorBoat ? null : <LearnedPolarSettings />}
 
       <div>
         <p className={label}>Weather models (first is the main one)</p>
@@ -252,9 +255,10 @@ export function MotorSettings() {
   if (prefs.boatType === "motor") {
     return (
       <div className="grid gap-1.5">
+        <p className={label}>Engine</p>
         <div className="grid grid-cols-[1fr_8rem] items-center gap-2">
-          <span className="text-sm">Cruising speed</span>
-          <Stepper label="Motor kn" value={prefs.motorKn} step={0.5} onChange={(v) => setPrefs({ motorKn: v })} />
+          <span className="text-sm">Cruising speed (calm water)</span>
+          <Stepper label="kn" value={prefs.motorKn} step={prefs.motorKn >= 12 ? 1 : 0.5} onChange={(v) => setPrefs({ motorKn: Math.min(45, Math.max(2, v)) })} />
         </div>
         {fuel}
       </div>

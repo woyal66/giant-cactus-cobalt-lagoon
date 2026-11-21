@@ -1,5 +1,5 @@
 import { useMemo, useState, type ReactNode } from "react";
-import { GLOSSARY, compassPoint, pointOfSail, seaState } from "@/lib/routing/explain";
+import { GLOSSARY, compassPoint, motorHeading, pointOfSail, seaState } from "@/lib/routing/explain";
 import { Moon, Sun } from "lucide-react";
 import { isDaylight } from "@/lib/sun";
 import { formatDepth } from "@/lib/units";
@@ -27,7 +27,18 @@ function clock(at: number, withDay = false): string {
  * current, storm risk and the sail plan along the way. Drag across it to read any
  * moment; the boat marker follows on the chart.
  */
-export function RouteTimeline({ points, sails, maxWindKn }: { points: RoutePoint[]; sails: SailDef[]; maxWindKn: number }) {
+export function RouteTimeline({
+  points,
+  sails,
+  maxWindKn,
+  motorBoat = false,
+}: {
+  points: RoutePoint[];
+  sails: SailDef[];
+  maxWindKn: number;
+  /** Motor boat: no apparent wind or sail plan; the graph ends at the storm band. */
+  motorBoat?: boolean;
+}) {
   const setCursor = useHelm((s) => s.setRouteCursor);
   const [idx, setIdx] = useState(0);
 
@@ -39,13 +50,15 @@ export function RouteTimeline({ points, sails, maxWindKn }: { points: RoutePoint
       }),
     [points],
   );
-  const plan = useMemo(() => sailPlan(points, sails), [points, sails]);
+  const plan = useMemo(() => (motorBoat ? { segments: [], changes: [] } : sailPlan(points, sails)), [points, sails, motorBoat]);
+  const height = motorBoat ? BANDS.storm[1] + 14 : HEIGHT;
+  const bottom = motorBoat ? BANDS.storm[1] : BANDS.sails[1];
   if (samples.length < 2) return null;
 
   const t0 = points[0]!.at;
   const t1 = points[points.length - 1]!.at;
   const x = (t: number) => L + ((t - t0) / Math.max(1, t1 - t0)) * (W - L - R);
-  const top = Math.max(maxWindKn + 5, ...samples.map((s) => Math.max(s.gustKn, s.aws)));
+  const top = Math.max(maxWindKn + 5, ...samples.map((s) => Math.max(s.gustKn, motorBoat ? 0 : s.aws)));
   const ySpeed = (kn: number) => BANDS.speed[1] - (kn / top) * (BANDS.speed[1] - BANDS.speed[0]);
   const yAngle = (deg: number) => BANDS.angle[0] + (deg / 180) * (BANDS.angle[1] - BANDS.angle[0]);
   const waveTop = Math.max(1, ...samples.map((s) => s.waveM));
@@ -78,14 +91,14 @@ export function RouteTimeline({ points, sails, maxWindKn }: { points: RoutePoint
 
   return (
     <div className="mt-2">
-      <Readout cur={cur} sails={segAt ? describe(segAt) : null} />
+      <Readout cur={cur} sails={segAt ? describe(segAt) : null} motorBoat={motorBoat} />
       <p className="mb-1 text-t13 text-muted-foreground">Drag along the graph to read any moment of the trip.</p>
 
       <svg
-        viewBox={`0 0 ${W} ${HEIGHT}`}
+        viewBox={`0 0 ${W} ${height}`}
         className="w-full touch-none select-none"
         role="img"
-        aria-label="Wind, angle, sea, storm and sail plan along the route. Drag to read a moment."
+        aria-label={motorBoat ? "Wind, wind angle, sea and storm along the route. Drag to read a moment." : "Wind, angle, sea, storm and sail plan along the route. Drag to read a moment."}
         onPointerDown={(e) => {
           (e.target as Element).setPointerCapture?.(e.pointerId);
           scrub(e.clientX, e.currentTarget);
@@ -98,7 +111,7 @@ export function RouteTimeline({ points, sails, maxWindKn }: { points: RoutePoint
         {samples.map((s, i) => {
           if (s.day) return null;
           const next = samples[i + 1]?.at ?? t1;
-          return <rect key={`n${i}`} x={x(s.at)} y={0} width={Math.max(0.5, x(next) - x(s.at))} height={HEIGHT} className="fill-foreground/[0.06]" />;
+          return <rect key={`n${i}`} x={x(s.at)} y={0} width={Math.max(0.5, x(next) - x(s.at))} height={height} className="fill-foreground/[0.06]" />;
         })}
 
         {/* speed band */}
@@ -112,7 +125,7 @@ export function RouteTimeline({ points, sails, maxWindKn }: { points: RoutePoint
         <line x1={L} x2={W - R} y1={ySpeed(maxWindKn)} y2={ySpeed(maxWindKn)} className="stroke-destructive" strokeDasharray="3 3" strokeWidth={0.8} />
         <path d={gustArea} className="fill-primary/20" />
         <path d={line((s) => ySpeed(s.twsKn))} className="stroke-primary" fill="none" strokeWidth={1.8} />
-        <path d={line((s) => ySpeed(s.aws))} className="stroke-foreground" fill="none" strokeWidth={1.2} strokeDasharray="4 2" />
+        {motorBoat ? null : <path d={line((s) => ySpeed(s.aws))} className="stroke-foreground" fill="none" strokeWidth={1.2} strokeDasharray="4 2" />}
 
         {/* angle band with points of sail */}
         <rect x={L} y={yAngle(0)} width={W - L - R} height={yAngle(55) - yAngle(0)} className="fill-amber-400/10" />
@@ -121,11 +134,11 @@ export function RouteTimeline({ points, sails, maxWindKn }: { points: RoutePoint
         {[0, 90, 180].map((v) => (
           <text key={v} x={L - 3} y={yAngle(v) + 3} textAnchor="end" className="fill-muted-foreground text-t11">{v}°</text>
         ))}
-        <text x={L + 2} y={yAngle(28)} className="fill-muted-foreground text-t11">upwind</text>
-        <text x={L + 2} y={yAngle(95)} className="fill-muted-foreground text-t11">reach</text>
-        <text x={L + 2} y={yAngle(160)} className="fill-muted-foreground text-t11">downwind</text>
+        <text x={L + 2} y={yAngle(28)} className="fill-muted-foreground text-t11">{motorBoat ? "head wind" : "upwind"}</text>
+        <text x={L + 2} y={yAngle(95)} className="fill-muted-foreground text-t11">{motorBoat ? "beam" : "reach"}</text>
+        <text x={L + 2} y={yAngle(160)} className="fill-muted-foreground text-t11">{motorBoat ? "behind" : "downwind"}</text>
         <path d={line((s) => yAngle(s.twa))} className="stroke-primary" fill="none" strokeWidth={1.8} />
-        <path d={line((s) => yAngle(s.awa))} className="stroke-foreground" fill="none" strokeWidth={1.2} strokeDasharray="4 2" />
+        {motorBoat ? null : <path d={line((s) => yAngle(s.awa))} className="stroke-foreground" fill="none" strokeWidth={1.2} strokeDasharray="4 2" />}
 
         {/* sea + current */}
         <text x={L - 3} y={BANDS.sea[0] + 6} textAnchor="end" className="fill-muted-foreground text-t11">sea</text>
@@ -156,7 +169,7 @@ export function RouteTimeline({ points, sails, maxWindKn }: { points: RoutePoint
         })}
 
         {/* sails */}
-        <text x={L - 3} y={BANDS.sails[1] - 4} textAnchor="end" className="fill-muted-foreground text-t11">sails</text>
+        {motorBoat ? null : <text x={L - 3} y={BANDS.sails[1] - 4} textAnchor="end" className="fill-muted-foreground text-t11">sails</text>}
         {plan.segments.map((g, i) => {
           const w = x(g.to) - x(g.from);
           return (
@@ -173,12 +186,12 @@ export function RouteTimeline({ points, sails, maxWindKn }: { points: RoutePoint
 
         {/* time axis + cursor */}
         {ticks.map((t) => (
-          <text key={t} x={x(t)} y={HEIGHT - 0.5} textAnchor="middle" className="fill-muted-foreground text-t11">{clock(t)}</text>
+          <text key={t} x={x(t)} y={height - 0.5} textAnchor="middle" className="fill-muted-foreground text-t11">{clock(t)}</text>
         ))}
-        <line x1={x(cur.at)} x2={x(cur.at)} y1={0} y2={BANDS.sails[1]} className="stroke-amber-300" strokeWidth={1} />
+        <line x1={x(cur.at)} x2={x(cur.at)} y1={0} y2={bottom} className="stroke-amber-300" strokeWidth={1} />
       </svg>
       <p className="mt-1 text-t12 text-muted-foreground">
-        Solid: true wind · dashed: apparent wind · red bars: seas raised by wind over tide · green line: tide (+ fair) · shaded: night
+        {motorBoat ? "Line: wind" : "Solid: true wind · dashed: apparent wind"} · red bars: seas raised by wind over tide · green line: tide (+ fair) · shaded: night
       </p>
 
       {plan.changes.length ? (
@@ -215,13 +228,15 @@ function Row({ label, value, note }: { label: string; value: ReactNode; note?: s
 }
 
 /** The moment under the slider, in plain words. */
-function Readout({ cur, sails }: { cur: Sample; sails: string | null }) {
+function Readout({ cur, sails, motorBoat }: { cur: Sample; sails: string | null; motorBoat: boolean }) {
   const [help, setHelp] = useState(false);
   const side = cur.tack > 0 ? "starboard (right)" : cur.tack < 0 ? "port (left)" : "";
-  const pos = pointOfSail(cur.twa, cur.motoring);
+  const pos = motorBoat ? motorHeading(cur.twa) : pointOfSail(cur.twa, cur.motoring);
   const sea = seaState(cur.waveM);
   const sog = cur.sogKn ?? cur.stwKn;
   const tide = cur.curAlongKn;
+  const cruiseKn = useHelm((s) => s.routePrefs.motorKn);
+  const slowed = motorBoat && cur.stwKn < cruiseKn * 0.92 ? ` Slowed from your ${cruiseKn} kn cruise by the sea.` : "";
   return (
     <div className="mb-2 tabular-nums">
       <div className="flex items-baseline justify-between gap-2">
@@ -241,27 +256,33 @@ function Readout({ cur, sails }: { cur: Sample; sails: string | null }) {
           </>
         }
       />
-      <Row
-        label="On the boat"
-        value={
-          <>
-            <b>{Math.round(cur.aws)} kn</b> at {Math.round(cur.awa)}° {side ? `on the ${side}` : "off the bow"}
-          </>
-        }
-        note="Apparent wind: what you feel and set the sails to."
-      />
-      <Row label="Point of sail" value={pos.name} note={pos.feel} />
+      {motorBoat ? (
+        <Row label="Wind angle" value={`${pos.name}, ${Math.round(cur.twa)}° off the bow`} note={pos.feel} />
+      ) : (
+        <>
+          <Row
+            label="On the boat"
+            value={
+              <>
+                <b>{Math.round(cur.aws)} kn</b> at {Math.round(cur.awa)}° {side ? `on the ${side}` : "off the bow"}
+              </>
+            }
+            note="Apparent wind: what you feel and set the sails to."
+          />
+          <Row label="Point of sail" value={pos.name} note={pos.feel} />
+        </>
+      )}
       <Row
         label="Boat speed"
         value={
           <>
-            <b>{sog.toFixed(1)} kn</b> over the ground{cur.motoring ? " (engine)" : ""}
+            <b>{sog.toFixed(1)} kn</b> over the ground{cur.motoring && !motorBoat ? " (engine)" : ""}
           </>
         }
         note={
           Math.abs(tide) >= 0.1
-            ? `Current ${tide > 0 ? "helping" : "against you"} by ${Math.abs(tide).toFixed(1)} kn (${cur.stwKn.toFixed(1)} kn through the water).`
-            : `${cur.stwKn.toFixed(1)} kn through the water, no real current.`
+            ? `Current ${tide > 0 ? "helping" : "against you"} by ${Math.abs(tide).toFixed(1)} kn (${cur.stwKn.toFixed(1)} kn through the water).${slowed}`
+            : `${cur.stwKn.toFixed(1)} kn through the water, no real current.${slowed}`
         }
       />
       <Row
@@ -276,12 +297,12 @@ function Readout({ cur, sails }: { cur: Sample; sails: string | null }) {
       <Row
         label="Storms"
         value={`${RISK_LABEL[cur.thunder]}${cur.squall ? ", squalls likely" : ""}`}
-        note={cur.thunder >= 2 || cur.squall ? "Reef early and watch the sky." : undefined}
+        note={cur.thunder >= 2 || cur.squall ? (motorBoat ? "Watch the sky; head for shelter early." : "Reef early and watch the sky.") : undefined}
       />
-      {sails ? <Row label="Sails" value={sails} /> : null}
+      {sails && !motorBoat ? <Row label="Sails" value={sails} /> : null}
       {help ? (
         <dl className="mt-2 grid gap-1 border-t border-border pt-2">
-          {GLOSSARY.map(([k, v]) => (
+          {GLOSSARY.filter(([k]) => !motorBoat || k !== "Apparent wind").map(([k, v]) => (
             <div key={k}>
               <dt className="text-t14 font-semibold">{k}</dt>
               <dd className="text-t13 leading-snug text-muted-foreground">{v}</dd>

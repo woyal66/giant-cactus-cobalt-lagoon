@@ -23,6 +23,10 @@ export type BriefInput = {
   metrics: RouteMetrics;
   warnings: string[];
   sails: SailDef[];
+  /** Motor boat: no sail plan, wind angle described as head / beam / following. */
+  motorBoat?: boolean;
+  /** Litres per hour under engine (0 or missing = no fuel line). */
+  fuelLph?: number;
   models: string[];
   forecastAt: number;
   /** 16 compass points at the finish: true = land close by (sheltered from there). */
@@ -46,7 +50,7 @@ export type Stretch = {
 const STRETCH_MS = 3 * 3_600_000;
 
 /** Conditions in roughly 3-hour stretches along the route. */
-export function stretches(points: RoutePoint[], wave: (m: number) => string = (m) => `${m.toFixed(1)} m`): Stretch[] {
+export function stretches(points: RoutePoint[], wave: (m: number) => string = (m) => `${m.toFixed(1)} m`, motorBoat = false): Stretch[] {
   if (points.length < 2) return [];
   const out: Stretch[] = [];
   let i = 0;
@@ -81,7 +85,7 @@ export function stretches(points: RoutePoint[], wave: (m: number) => string = (m
       wind: `${cardinal(avgDir((p) => p.windDir))} ${lo === hi ? hi : `${lo}–${hi}`} kn, gusts ${Math.round(max((p) => p.gustKn))}`,
       sea: wave(max((p) => p.waveM)),
       current: Math.abs(cur) < 0.1 ? "slack" : `${cur > 0 ? "+" : "−"}${Math.abs(cur).toFixed(1)} kn ${cur > 0 ? "fair" : "foul"}`,
-      sailing: motor ? "motoring" : twa < 60 ? "upwind" : twa < 110 ? "reaching" : twa < 150 ? "broad reach" : "running",
+      sailing: motorBoat ? (twa < 60 ? "head wind" : twa < 120 ? "beam wind" : "following wind") : motor ? "motoring" : twa < 60 ? "upwind" : twa < 110 ? "reaching" : twa < 150 ? "broad reach" : "running",
       flags,
     });
     i = j;
@@ -102,8 +106,9 @@ export function passageBrief(b: BriefInput): { text: string; html: string } {
   const t = b.time ?? ((ms: number) => new Date(ms).toLocaleString([], { weekday: "short", hour: "numeric", minute: "2-digit" }));
   const m = b.metrics;
   const hours = `${Math.floor(m.hours)} h ${Math.round((m.hours % 1) * 60)} min`;
-  const st = stretches(b.points, b.wave);
-  const plan = sailPlan(b.points, b.sails);
+  const st = stretches(b.points, b.wave, b.motorBoat);
+  const plan = b.motorBoat ? { changes: [] as { at: number; text: string }[] } : sailPlan(b.points, b.sails);
+  const fuelL = (b.fuelLph ?? 0) > 0 ? Math.round(m.motorHours * b.fuelLph!) : 0;
   const exposure = exposureLine(b.shelter);
   const head = [
     `PASSAGE BRIEF: ${b.title}`,
@@ -112,7 +117,8 @@ export function passageBrief(b: BriefInput): { text: string; html: string } {
     `To   ${formatDmm(b.finish.lat, b.finish.lng)}`,
     `Depart ${t(b.departAt)} · ETA ${t(b.arriveAt)} · ${m.distanceNm.toFixed(0)} nm · ${hours}`,
     `Max wind ${Math.round(m.maxWindKn)} kn, gusts ${Math.round(m.maxGustKn)} kn, seas ${(b.wave ?? ((x: number) => `${x.toFixed(1)} m`))(m.maxWaveM)}`,
-    m.motorHours >= 0.5 ? `Motoring about ${Math.round(m.motorHours)} h` : null,
+    !b.motorBoat && m.motorHours >= 0.5 ? `Motoring about ${Math.round(m.motorHours)} h` : null,
+    fuelL > 0 ? `Fuel about ${fuelL} L (add a reserve)` : null,
   ].filter(Boolean) as string[];
   const hazards = [
     ...b.warnings,
@@ -130,9 +136,7 @@ export function passageBrief(b: BriefInput): { text: string; html: string } {
         `${t(s.from)}: ${s.wind}, sea ${s.sea}, ${s.sailing}, current ${s.current}${s.flags.length ? ` [${s.flags.join(", ")}]` : ""}`,
     ),
     "",
-    "SAILS",
-    ...(plan.changes.length ? plan.changes.map((c) => `${t(c.at)}: ${c.text}`) : ["No changes."]),
-    "",
+    ...(b.motorBoat ? [] : ["SAILS", ...(plan.changes.length ? plan.changes.map((c) => `${t(c.at)}: ${c.text}`) : ["No changes."]), ""]),
     "HAZARDS",
     ...(hazards.length ? hazards.map((h) => `- ${h}`) : ["None flagged."]),
     "",
@@ -157,8 +161,8 @@ table{border-collapse:collapse;width:100%;font-size:13px}td,th{border-bottom:1px
 @media print{body{margin:0}}</style></head><body>
 <h1>${esc(b.title)}</h1>
 <p>${head.slice(1).map(esc).join("<br>")}</p>
-<h2>Conditions</h2><table><tr><th>From</th><th>Wind</th><th>Sea</th><th>Sailing</th><th>Current</th><th>Flags</th><th>Position</th></tr>${rows}</table>
-<h2>Sails</h2><ul>${plan.changes.length ? plan.changes.map((c) => `<li>${esc(t(c.at))}: ${esc(c.text)}</li>`).join("") : "<li>No changes.</li>"}</ul>
+<h2>Conditions</h2><table><tr><th>From</th><th>Wind</th><th>Sea</th><th>${b.motorBoat ? "Heading" : "Sailing"}</th><th>Current</th><th>Flags</th><th>Position</th></tr>${rows}</table>
+${b.motorBoat ? "" : `<h2>Sails</h2><ul>${plan.changes.length ? plan.changes.map((c) => `<li>${esc(t(c.at))}: ${esc(c.text)}</li>`).join("") : "<li>No changes.</li>"}</ul>`}
 <h2>Hazards</h2><ul>${hazards.length ? hazards.map((h) => `<li>${esc(h)}</li>`).join("") : "<li>None flagged.</li>"}</ul>
 <p class="muted">${esc(footer)}</p></body></html>`;
   return { text, html };

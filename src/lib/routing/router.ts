@@ -234,7 +234,7 @@ export function stepOn(
   const { ww, wave, thunder, squall, wot } = here;
   const twa = norm180(ww.dir - headingDeg);
   const sp = boatSpeed(boat, ww.kn, twa);
-  const stw = sp.stwKn * waveFactor(wave.heightM, c.waveDir - headingDeg, boat.loaM);
+  const stw = sp.stwKn * waveFactor(wave.heightM, c.waveDir - headingDeg, boat.loaM, boat.type === "motor" ? boat.motorKn : 0);
   // Ground velocity = water velocity + current.
   const hr = (headingDeg * Math.PI) / 180;
   const cr = (c.curDir * Math.PI) / 180;
@@ -264,6 +264,8 @@ export function stepOn(
   if (penalty !== Infinity && mode === "comfort") {
     const w = 0.5 + Math.min(1, Math.max(0, rules.comfortWeight));
     if (!sp.motoring && twa < 60) penalty += 0.45 * w;
+    // A motor boat's discomfort is pounding into a head sea.
+    if (boat.type === "motor" && norm180(c.waveDir - headingDeg) < 60 && wave.heightM > 0.8) penalty += 0.35 * (wave.heightM - 0.5) * w;
     if (wave.heightM > 1.2) penalty += 0.25 * (wave.heightM - 1.2) * w;
     // Short, steep wind-over-tide chop is the most uncomfortable sea there is.
     if (wave.steep > 1.3 && wave.heightM > 0.6) penalty += 0.4 * (wave.steep - 1.3) * w;
@@ -414,7 +416,7 @@ function warningsFor(m: RouteMetrics, limits: Limits, rules: RouteRules = DEFAUL
   if (m.avgCurrentKn <= -0.4) w.push(`Foul tide and current: about ${Math.abs(m.avgCurrentKn).toFixed(1)} kn against you on average.`);
   if (m.maxGustKn > limits.maxGustKn * 0.9) w.push(`Gusts up to ${Math.round(m.maxGustKn)} kn.`);
   if (m.upwindPct >= 50) w.push(`${m.upwindPct}% of the sailing is upwind.`);
-  if (m.motorHours >= 1) w.push(`About ${Math.round(m.motorHours)} h under engine.`);
+  if (m.motorHours >= 1 && m.hours - m.motorHours >= 0.5) w.push(`About ${Math.round(m.motorHours)} h under engine.`);
   return w;
 }
 
