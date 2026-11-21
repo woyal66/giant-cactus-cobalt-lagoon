@@ -20,3 +20,9 @@ export function formatDuration(hours: number): string {
   const h = Math.floor(m / 60);
   return m % 60 ? `${h} h ${m % 60} min` : `${h} h`;
 }
+
+/** Route card figures: distance, time at a speed, and fuel at litres per hour (0 = no fuel line). */
+export function routeSummary(pts: LatLng[], speedKn: number, fuelLph: number): { distM: number; hours: number | null; litres: number | null } {
+  const m = measure(pts, speedKn);
+  return { distM: m.totalM, hours: m.hours, litres: m.hours != null && fuelLph > 0 ? m.hours * fuelLph : null };
+}

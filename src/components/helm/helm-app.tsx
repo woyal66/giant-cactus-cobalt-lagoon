@@ -24,6 +24,7 @@ import { RadarChip } from "@/components/helm/radar-chip";
 import { MeasureBar } from "@/components/helm/measure-bar";
 import { DepthChip } from "@/components/helm/depth-chip";
 import { WxMapBar } from "@/components/helm/wx-map-bar";
+import { PinCard } from "@/components/helm/pin-card";
 import { PerfChip } from "@/components/helm/perf-chip";
 import { usePolarMonitor } from "@/hooks/polar-monitor";
 import { useTideNow } from "@/hooks/tide-now";
@@ -130,6 +131,7 @@ export function HelmApp() {
       ) : null}
       <DepthChip />
       <WxMapBar />
+      <PinCard />
       <PerfChip />
       <PassageHud />
       {plannerOn ? (

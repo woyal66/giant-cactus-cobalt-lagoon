@@ -180,6 +180,8 @@ export type HelmState = {
   panel: PanelId;
   /** Forecast pin. Null means the forecast is for the boat. */
   wxPin: LatLng | null;
+  /** The press-and-hold card for the pin is showing (not saved). */
+  pinCard: boolean;
   drawMode: DrawMode;
   draft: Waypoint[];
   activePassage: Passage | LocalDraft | null;
@@ -658,6 +660,8 @@ export type RoutePrefs = {
   useLearned: boolean;
   /** Engine running: pauses learning (GPS can't tell). */
   engineOn: boolean;
+  /** Fuel burn at cruising speed, litres per hour (0 = don't show fuel). */
+  fuelLph: number;
 };
 
 /** Boat profile for the router from the route settings. */
@@ -723,6 +727,7 @@ export const DEFAULT_ROUTE_PREFS: RoutePrefs = {
   learned: EMPTY_LEARNED,
   useLearned: false,
   engineOn: false,
+  fuelLph: 0,
 };
 
 function readRoutePrefs(v: unknown): RoutePrefs {
@@ -750,6 +755,7 @@ function readRoutePrefs(v: unknown): RoutePrefs {
     learned: readLearned(p.learned),
     useLearned: p.useLearned === true,
     engineOn: p.engineOn === true,
+    fuelLph: num(p.fuelLph, 0, 0, 500),
   };
 }
 
@@ -811,6 +817,7 @@ export const useHelm = create<HelmState & HelmActions>()(
       tapMode: "none",
       measurePts: [],
       wxPin: null,
+      pinCard: false,
       hookPreview: null,
       hookArmed: false,
       anchorStep: null,
@@ -1415,7 +1422,7 @@ export const useHelm = create<HelmState & HelmActions>()(
             limits: { ...cur.limits, ...(p.limits ?? {}) },
             rules: { ...cur.rules, ...(p.rules ?? {}) },
             // Hand-edits turn a preset into Custom; choosing a preset sets it explicitly.
-            preset: p.preset ?? (Object.keys(p).some((k) => !["sails", "boatType", "models", "learned", "useLearned", "engineOn"].includes(k)) ? "custom" : cur.preset),
+            preset: p.preset ?? (Object.keys(p).some((k) => !["sails", "boatType", "models", "learned", "useLearned", "engineOn", "fuelLph"].includes(k)) ? "custom" : cur.preset),
           },
         });
       },

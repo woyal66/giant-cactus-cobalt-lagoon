@@ -975,48 +975,21 @@ export function MapView() {
           interactive: false,
           zIndexOffset: 900,
         });
-        const wxOpen = document.createElement("button");
-        wxOpen.type = "button";
-        wxOpen.className = "rp-wx-open";
-        wxOpen.dataset.wx = "open";
-        wxOpen.textContent = "Forecast";
-        const openWx = (ev: Event) => {
-          ev.preventDefault();
-          ev.stopPropagation();
-          useHelm.getState().setPanel("weather");
-          wxMarker.closePopup();
-        };
-        wxOpen.addEventListener("pointerup", openWx);
-        wxOpen.addEventListener("click", openWx);
+        // The press-and-hold pin. Tapping it reopens the spot card (PinCard).
         const wxMarker: Marker = L.marker([0, 0], {
           icon: L.divIcon({
             className: "rp-divicon",
-            html: `<div class="rp-pin">WX</div>`,
-            iconSize: [36, 22],
-            iconAnchor: [18, 11],
+            html: `<div class="rp-pin">◎</div>`,
+            iconSize: [30, 22],
+            iconAnchor: [15, 11],
           }),
           interactive: true,
           zIndexOffset: 700,
         });
-        wxMarker.bindPopup(wxOpen, {
-          closeButton: false,
-          closeOnClick: false,
-          autoPan: true,
-          offset: [0, -6],
-          className: "rp-wx-pop",
-          minWidth: 108,
+        wxMarker.on("click", (ev) => {
+          L.DomEvent.stop(ev);
+          useHelm.setState({ pinCard: true });
         });
-        wxMarker.on("popupopen", () => {
-          const el = wxMarker.getPopup()?.getElement();
-          if (!el) return;
-          el.onpointerup = (ev) => {
-            ev.preventDefault();
-            ev.stopPropagation();
-            useHelm.getState().setPanel("weather");
-            wxMarker.closePopup();
-          };
-        });
-        let wxWantPopup = false;
         const packDraftRect: Rectangle = L.rectangle(
           [
             [0, 0],
@@ -1266,6 +1239,8 @@ export function MapView() {
           nextI: number | null,
         ) => {
           wpGroup.clearLayers();
+          // While drawing a route, points can be dragged to adjust them.
+          const editing = useHelm.getState().drawMode === "draw";
           pathIndex.forEach((src, n) => {
             const w = wps[src];
             if (!w) return;
@@ -1281,8 +1256,16 @@ export function MapView() {
               }),
               interactive: true,
               keyboard: false,
+              draggable: editing,
               zIndexOffset: next ? 400 : 200,
             });
+            if (editing) {
+              mk.on("dragend", () => {
+                const ll = mk.getLatLng();
+                const st = useHelm.getState();
+                st.setDraft(st.draft.map((p, i) => (i === src ? { ...p, lat: ll.lat, lng: ll.lng } : p)));
+              });
+            }
             mk.on("click", (ev) => {
               L.DomEvent.stop(ev);
               const st = useHelm.getState();
@@ -1611,7 +1594,7 @@ export function MapView() {
             s.courseMark,
             s.drawMode,
             s.draft.length,
-            s.draft[s.draft.length - 1]?.lat?.toFixed(5),
+            s.drawMode === "draw" ? s.draft.map((p) => `${p.lat.toFixed(6)},${p.lng.toFixed(6)}`).join(";") : s.draft[s.draft.length - 1]?.lat?.toFixed(5),
             s.pinnedMark,
             s.trackTurnDeg,
             s.trackChordM,
@@ -1796,10 +1779,6 @@ export function MapView() {
             if (!wxOn) {
               wxMarker.addTo(map);
               wxOn = true;
-            }
-            if (wxWantPopup) {
-              wxWantPopup = false;
-              wxMarker.openPopup();
             }
           } else if (wxOn) {
             map.removeLayer(wxMarker);
@@ -2089,8 +2068,7 @@ export function MapView() {
           oe?.preventDefault();
           const s = useHelm.getState();
           if (s.tapMode !== "none" || s.drawMode !== "idle" || s.anchorStep) return;
-          wxWantPopup = true;
-          s.setWxPin({ lat: e.latlng.lat, lng: e.latlng.lng });
+          useHelm.setState({ wxPin: { lat: e.latlng.lat, lng: e.latlng.lng }, pinCard: true });
           heldPin = true;
           window.setTimeout(() => {
             heldPin = false;
@@ -2125,8 +2103,8 @@ export function MapView() {
           window.setTimeout(() => {
             heldPin = false;
           }, 800);
-          wxWantPopup = true;
-          s.setWxPin({ lat, lng });
+          // Press and hold opens the spot card (see PinCard) instead of the old popup.
+          useHelm.setState({ wxPin: { lat, lng }, pinCard: true });
         };
         const box = map.getContainer();
         const eventToLatLng = (ev: PointerEvent) => {
@@ -2260,12 +2238,7 @@ export function MapView() {
           if (s.tapMode !== "drop-anchor") return;
           placeOnLayback(finger);
         };
-        const onPointerUp = (ev: PointerEvent) => {
-          const hit = ev.target;
-          if (hit instanceof Element && hit.closest(".rp-wx-pop, [data-wx=open]")) {
-            useHelm.getState().setPanel("weather");
-            wxMarker.closePopup();
-          }
+        const onPointerUp = () => {
           clearHold();
           if (packOrigin) {
             const draft = useHelm.getState().packDraft;

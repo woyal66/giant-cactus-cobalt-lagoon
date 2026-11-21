@@ -17,3 +17,13 @@ test("measures legs, total and time at speed", () => {
   assert.equal(measure([a]).totalM, 0);
   assert.equal(measure([a, b]).hours, null);
 });
+
+test("route card: time and fuel", async () => {
+  const { routeSummary } = await import("./measure.ts");
+  const a = { lat: -23.9, lng: 152.4 };
+  const b = destPoint(a, 0, 1852 * 12);
+  const r = routeSummary([a, b], 6, 10);
+  assert.ok(Math.abs(r.hours! - 2) < 0.01);
+  assert.ok(Math.abs(r.litres! - 20) < 0.1);
+  assert.equal(routeSummary([a, b], 6, 0).litres, null);
+});

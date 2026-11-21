@@ -133,7 +133,7 @@ export function BottomDock() {
       <div className="pointer-events-auto mx-auto grid max-w-lg grid-cols-6 gap-0.5 rounded-xl border border-border bg-card p-1 shadow-[var(--shadow-border)]">
         <DockBtn
           active={panel === "atlas"}
-          label="Atlas"
+          label="Places"
           onClick={() => toggle("atlas")}
         >
           <MapIcon />

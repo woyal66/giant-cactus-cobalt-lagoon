@@ -13,6 +13,8 @@ import {
   suggestedPayOutM,
 } from "@/lib/anchor";
 import { bowFromGps, gpsReachM, gpsStationLabel } from "@/lib/boat";
+import { formatDuration, routeSummary } from "@/lib/measure";
+import { searchPlaces } from "@/lib/place-search";
 import { formatMeters, haversineMeters, pathLengthMeters, trackInView, TRACK_CHORD_PRESETS, TRACK_TURN_PRESETS } from "@/lib/geo";
 import { BENTHIC_WMS, GARMIN_SDK_URL, PARK_ZONES, availableImagery, imageryShort, isImageryId } from "@/lib/imagery";
 import { centreTileSource, getChartBounds } from "@/components/helm/map-view";
@@ -416,11 +418,13 @@ export function AtlasPanel() {
   const setReef = useHelm((s) => s.setReef);
   const packs = useHelm((s) => s.offlinePacks);
   return (
-    <Sheet id="atlas" title="Reef atlas" kicker="Cuts and lagoons">
-      <p className="mb-3 text-sm text-muted-foreground">
-        Jump a known cut. Colour of water is the chart — dark is deep, brown is coral, pale is sand.
-        Green means this reef is on the phone.
-      </p>
+    <Sheet
+      id="atlas"
+      title="Places"
+      kicker="Search reefs, harbours and your tracks"
+      help="Search works offline. Reefs in green are saved on the phone. Dark water is deep, brown is coral, pale is sand."
+    >
+      <PlaceSearch />
       <Button className="mb-3 w-full" onClick={startMusgraveDemo}>
         Run Lady Musgrave entrance
       </Button>
@@ -979,6 +983,8 @@ export function SavePanel() {
   const [kind, setKind] = useState<"passage" | "anchorage">("passage");
   const [busy, setBusy] = useState(false);
   const len = pathLengthMeters(draft);
+  const prefs = useHelm((s) => s.routePrefs);
+  const card = routeSummary(draft, prefs.motorKn, prefs.fuelLph);
 
   const local = () => {
     const saved: LocalDraft = saveDraft({
@@ -1024,6 +1030,7 @@ export function SavePanel() {
 
   return (
     <Sheet id="save" title="Save track" kicker={`${draft.length} marks · ${formatMeters(len)}`}>
+      <RouteCard distM={card.distM} hours={card.hours} litres={card.litres} kn={prefs.motorKn} />
       <div className="grid gap-3">
         <label className="grid gap-1">
           <span className="text-t12 text-muted-foreground">Title</span>
@@ -1575,6 +1582,71 @@ function DepthRow() {
         <div className="mt-1.5">
           <ToggleRow label="Sand, coral and seagrass (Allen Coral Atlas)" on={benthicOn} onChange={setBenthic} />
         </div>
+      ) : null}
+    </div>
+  );
+}
+
+/** Distance, time and fuel for a route at cruising speed (speed and fuel are in Route settings). */
+function RouteCard({ distM, hours, litres, kn }: { distM: number; hours: number | null; litres: number | null; kn: number }) {
+  return (
+    <div className="mb-2 grid grid-cols-3 gap-1.5 rounded-lg border border-border bg-background px-2 py-1.5 text-center tabular-nums">
+      <div>
+        <p className="text-t12 text-muted-foreground">Distance</p>
+        <p className="text-t16 font-semibold">{formatMeters(distM)}</p>
+      </div>
+      <div>
+        <p className="text-t12 text-muted-foreground">At {kn} kn</p>
+        <p className="text-t16 font-semibold">{hours != null ? formatDuration(hours) : "—"}</p>
+      </div>
+      <div>
+        <p className="text-t12 text-muted-foreground">Fuel</p>
+        <p className="text-t16 font-semibold">{litres != null ? `${Math.ceil(litres)} L` : "—"}</p>
+      </div>
+    </div>
+  );
+}
+
+/** Search reefs, tide ports and saved tracks (offline); tap a result to go there. */
+function PlaceSearch() {
+  const [q, setQ] = useState("");
+  const drafts = useHelm((s) => s.drafts);
+  const extra = drafts
+    .filter((d) => d.waypoints.length)
+    .map((d) => ({ name: d.title, detail: "Your track", lat: d.waypoints[0]!.lat, lng: d.waypoints[0]!.lng, zoom: 16, kind: "track" as const }));
+  const hits = searchPlaces(q, extra);
+  return (
+    <div className="mb-3">
+      <Input
+        value={q}
+        onChange={(e) => setQ(e.target.value)}
+        placeholder="Search: reef, harbour or track"
+        aria-label="Search places"
+        className="h-11 text-base"
+        type="search"
+      />
+      {hits.length ? (
+        <ul className="mt-1.5 grid gap-1">
+          {hits.map((p) => (
+            <li key={`${p.kind}:${p.name}:${p.lat}`}>
+              <button
+                type="button"
+                onClick={() => {
+                  const st = useHelm.getState();
+                  st.setFollowBoat(false);
+                  st.fly(p.lat, p.lng, p.zoom);
+                  st.setPanel(null);
+                }}
+                className="flex min-h-11 w-full items-center justify-between gap-2 rounded-md border border-border bg-background px-3 py-1.5 text-left"
+              >
+                <span className="min-w-0 truncate text-t15 font-semibold">{p.name}</span>
+                <span className="shrink-0 text-t13 text-muted-foreground">{p.detail}</span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      ) : q.trim().length >= 2 ? (
+        <p className="mt-1.5 text-t13 text-muted-foreground">Nothing found on the phone for “{q.trim()}”.</p>
       ) : null}
     </div>
   );

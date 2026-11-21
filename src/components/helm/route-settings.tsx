@@ -243,11 +243,20 @@ export function RouteSettings({ onDone }: { onDone: () => void }) {
 export function MotorSettings() {
   const prefs = useHelm((s) => s.routePrefs);
   const setPrefs = useHelm((s) => s.setRoutePrefs);
+  const fuel = (
+    <div className="grid grid-cols-[1fr_8rem] items-center gap-2">
+      <span className="text-sm">Fuel at cruise (0 = hide)</span>
+      <Stepper label="L/h" value={prefs.fuelLph} step={1} onChange={(v) => setPrefs({ fuelLph: Math.max(0, v) })} />
+    </div>
+  );
   if (prefs.boatType === "motor") {
     return (
-      <div className="grid grid-cols-[1fr_8rem] items-center gap-2">
-        <span className="text-sm">Cruising speed</span>
-        <Stepper label="Motor kn" value={prefs.motorKn} step={0.5} onChange={(v) => setPrefs({ motorKn: v })} />
+      <div className="grid gap-1.5">
+        <div className="grid grid-cols-[1fr_8rem] items-center gap-2">
+          <span className="text-sm">Cruising speed</span>
+          <Stepper label="Motor kn" value={prefs.motorKn} step={0.5} onChange={(v) => setPrefs({ motorKn: v })} />
+        </div>
+        {fuel}
       </div>
     );
   }
@@ -296,6 +305,7 @@ export function MotorSettings() {
           </>
         ) : null}
       </div>
+      {fuel}
     </div>
   );
 }
