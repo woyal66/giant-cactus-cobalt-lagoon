@@ -41,6 +41,7 @@ export const BACKUP_SETTING_KEYS = [
   "radar",
   "sharpTiles",
   "depthLayer",
+  "baseMap",
   "benthic",
   "textSize",
   "reefClarity",

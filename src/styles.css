@@ -731,3 +731,9 @@ svg[aria-label] text {
 .rp-sunlight .text-emerald-300:not(svg *) {
   color: #0b6b45;
 }
+
+/* Chart base map is light: give the speed bar a solid card so the white figures stay readable. */
+.rp-chart .rp-helm-tape {
+  background: color-mix(in oklab, var(--color-card) 94%, transparent);
+  box-shadow: var(--shadow-border);
+}

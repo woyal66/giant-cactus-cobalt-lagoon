@@ -77,6 +77,7 @@ export function HelmApp() {
   const look = useHelm((s) => s.look);
   const sunPunch = useHelm((s) => s.sunPunch);
   const clarity = useHelm((s) => s.reefClarity);
+  const chartBase = useHelm((s) => s.baseMap === "chart");
   const reef3d = useHelm((s) => s.reef3d);
   const plannerOn = useHelm((s) => s.panel === "route" || s.tapMode === "route-start" || s.tapMode === "route-finish");
   const textSize = useHelm((s) => s.textSize);
@@ -92,7 +93,7 @@ export function HelmApp() {
     <div
       className={`relative h-dvh w-full overflow-hidden bg-background text-foreground${
         look === "sunlight" ? " rp-sunlight" : look === "night" ? " rp-night" : ""
-      }${clarity && look === "normal" ? " rp-clarity" : ""}`}
+      }${clarity && look === "normal" ? " rp-clarity" : ""}${chartBase ? " rp-chart" : ""}`}
       data-sun-punch={look === "sunlight" ? String(sunPunch) : undefined}
     >
       <MapView key="sat-v15" />

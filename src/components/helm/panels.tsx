@@ -473,6 +473,7 @@ export function LayersPanel() {
   const setParkZones = useHelm((s) => s.setParkZones);
   const setReefOutlines = useHelm((s) => s.setReefOutlines);
   const radar = useHelm((s) => s.radar);
+  const baseMap = useHelm((s) => s.baseMap);
   const sharpTiles = useHelm((s) => s.sharpTiles);
   const setSharpTiles = useHelm((s) => s.setSharpTiles);
   const reefClarity = useHelm((s) => s.reefClarity);
@@ -510,6 +511,26 @@ export function LayersPanel() {
             </SignedOut>
           </>
         )}
+      </div>
+      <div className="mb-1.5 grid grid-cols-3 gap-1.5" role="radiogroup" aria-label="Base map">
+        {(
+          [
+            ["photo", "Photo"],
+            ["chart", "Chart"],
+            ["lines", "Photo + lines"],
+          ] as const
+        ).map(([id, label]) => (
+          <Button
+            key={id}
+            role="radio"
+            aria-checked={baseMap === id}
+            variant={baseMap === id ? "default" : "outline"}
+            className="h-11 px-1"
+            onClick={() => useHelm.setState({ baseMap: id })}
+          >
+            {label}
+          </Button>
+        ))}
       </div>
       {/* Compact picker: tap to flip between photos and compare. */}
       <div className="mb-2 grid grid-cols-3 gap-1.5" role="radiogroup" aria-label="Satellite photo">

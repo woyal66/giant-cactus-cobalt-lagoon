@@ -258,6 +258,8 @@ export type HelmState = {
   wxMapAt: number;
   wxMapPlaying: boolean;
   wxMapInfo: { source: "live" | "saved" | "passage" | "none" | "loading"; fetchedAt: number | null; times: number[] } | null;
+  /** Base map: satellite photo, vector chart, or chart lines over the photo. */
+  baseMap: "photo" | "chart" | "lines";
   /** 3D reef view open (not saved). */
   reef3d: boolean;
   /** Tide height above mean sea level now (m), for the shallow-water overlay. Not saved. */
@@ -494,6 +496,7 @@ function persistSig(state: Record<string, unknown>): string {
     state.sharpTiles,
     state.depthLayer,
     state.wxMapLayer,
+    state.baseMap,
     state.wxMapStyle,
     state.benthic,
     state.textSize,
@@ -831,6 +834,7 @@ export const useHelm = create<HelmState & HelmActions>()(
       sunPunch: 2,
       textSize: "large",
       depthLayer: "off",
+      baseMap: "photo",
       wxMapLayer: "off",
       wxMapStyle: "particles",
       wxMapAt: Date.now(),
@@ -1629,6 +1633,7 @@ export const useHelm = create<HelmState & HelmActions>()(
         sunPunch: s.sunPunch,
         sharpTiles: s.sharpTiles,
         depthLayer: s.depthLayer,
+        baseMap: s.baseMap,
         wxMapLayer: s.wxMapLayer,
         wxMapStyle: s.wxMapStyle,
         benthic: s.benthic,
@@ -1700,6 +1705,7 @@ export const useHelm = create<HelmState & HelmActions>()(
           depthLayer: p.depthLayer === "depth" || p.depthLayer === "shallow" ? p.depthLayer : "off",
           wxMapLayer: WX_MAP_LAYERS.some((l) => l.id === p.wxMapLayer) ? (p.wxMapLayer as WxMapLayer) : "off",
           wxMapStyle: p.wxMapStyle === "arrows" ? "arrows" : "particles",
+          baseMap: p.baseMap === "chart" || p.baseMap === "lines" ? p.baseMap : "photo",
           wxMapAt: Date.now(),
           wxMapInfo: null,
           benthic: p.benthic === true,

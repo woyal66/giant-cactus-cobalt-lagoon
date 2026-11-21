@@ -273,6 +273,15 @@ dataset in the store listing. The sand/coral layer appears only when you set
 `VITE_BENTHIC_WMS` and `VITE_BENTHIC_LAYERS` to an Allen Coral Atlas map service you have
 confirmed you may use.
 
+## 9c. Chart base map (vector)
+
+The "Chart" and "Photo + lines" modes use OpenStreetMap vector tiles (OpenMapTiles schema),
+from OpenFreeMap by default (free, no key). Check OpenFreeMap's current terms for an app in
+the stores; for certainty, host your own extract (for example a Protomaps or OpenMapTiles
+file for Australia) and build with `VITE_CHART_TILES=<your TileJSON URL>` and
+`VITE_CHART_GLYPHS=<font URL with {fontstack}/{range}.pbf>`. Credit "© OpenStreetMap
+contributors" (shown on the map).
+
 ## 10. Test before you submit
 
 - **Satellite photos on a real phone:** at a reef you know, compare Sharp photos on and off

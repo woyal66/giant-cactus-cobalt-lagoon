@@ -54,6 +54,7 @@ import { createRadar } from "@/components/helm/radar-layer";
 import { radarAvailable } from "@/lib/radar";
 import { createDepthLayer, type DepthLook } from "@/components/helm/depth-layer";
 import { createWxLayer } from "@/components/helm/wx-layer";
+import { createChartLayer } from "@/components/helm/chart-layer";
 import { loadViewField } from "@/lib/wx-map-data";
 import type { WeatherField } from "@/lib/routing/field";
 import { ATTR_BENTHIC, BENTHIC_LAYERS, BENTHIC_WMS } from "@/lib/imagery";
@@ -675,6 +676,9 @@ export function MapView() {
         };
         const depthLayer = createDepthLayer(L, MAX_ZOOM, depthLook);
         let depthStamp = "";
+        let chartLayer: import("leaflet").Layer | null = null;
+        let chartStamp = "photo";
+        let chartToken = 0;
         // Weather on the chart: grid for the view, loaded when a layer is on and after panning away.
         const wxLayer = createWxLayer(L, map);
         let wxField: WeatherField | null = null;
@@ -1313,6 +1317,26 @@ export function MapView() {
           }
 
           applyImagery(s.imagery, s.sharpTiles);
+          // Base map: the photo is removed in Chart mode; the vector chart (or its lines) is added.
+          const photoWanted = s.baseMap !== "chart";
+          if (!photoWanted && map.hasLayer(photo)) map.removeLayer(photo);
+          else if (photoWanted && !map.hasLayer(photo)) photo.addTo(map);
+          const cStamp = s.baseMap === "photo" ? "photo" : `${s.baseMap}|${s.look === "night" ? "n" : "d"}`;
+          if (cStamp !== chartStamp) {
+            chartStamp = cStamp;
+            const token = ++chartToken;
+            if (chartLayer) {
+              map.removeLayer(chartLayer);
+              chartLayer = null;
+            }
+            if (s.baseMap !== "photo") {
+              void createChartLayer(L, s.baseMap === "chart" ? "chart" : "lines", s.look === "night").then((layer) => {
+                if (!map || token !== chartToken) return;
+                chartLayer = layer;
+                layer.addTo(map);
+              });
+            }
+          }
 
           const look = s.look;
           const sun = look === "sunlight";
@@ -1364,7 +1388,7 @@ export function MapView() {
             weight: sun ? 3 : 2,
           });
 
-          if (s.labels) {
+          if (s.labels && s.baseMap === "photo") {
             if (!labelsOn) {
               labels.addTo(map);
               labelsOn = true;
@@ -1417,7 +1441,7 @@ export function MapView() {
             if (s.benthic && !map.hasLayer(benthic)) benthic.addTo(map);
             else if (!s.benthic && map.hasLayer(benthic)) map.removeLayer(benthic);
           }
-          if (s.reefOutlines) {
+          if (s.reefOutlines || s.baseMap === "chart") {
             if (!reefsOn) {
               reefs.addTo(map);
               reefsOn = true;
