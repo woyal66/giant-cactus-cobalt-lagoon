@@ -85,6 +85,7 @@ export function useGpsWatch() {
     let stopped = false;
     let watchId: number | string | null = null;
     let pollTimer: number | null = null;
+    let pollDue = 0;
     let mode: "watch" | "poll" | "bg" | null = null;
     let bgWatch: BackgroundWatch | null = null;
     let pending = false;
@@ -167,6 +168,16 @@ export function useGpsWatch() {
       const done = (pos: GeolocationPosition) => {
         pending = false;
         applyFix(pos);
+        // A fix near or past the circle edge: check again at the fast rate now, not after the
+        // slow wait already scheduled (that delayed the drag alarm by up to 30 s).
+        if (mode === "poll" && pollTimer != null) {
+          const st = useHelm.getState();
+          if (anchorPollMs(st.boat, st.anchor) === ANCHOR_POLL_FAST_MS && pollDue - Date.now() > ANCHOR_POLL_FAST_MS) {
+            clearPoll();
+            pollTimer = window.setTimeout(schedulePoll, ANCHOR_POLL_FAST_MS);
+            pollDue = Date.now() + ANCHOR_POLL_FAST_MS;
+          }
+        }
       };
       const fail = (err: GeolocationPositionError) => {
         pending = false;
@@ -205,6 +216,7 @@ export function useGpsWatch() {
       const wait = anchorPollMs(s.boat, s.anchor);
       requestFix(wait === ANCHOR_POLL_FAST_MS ? 5_000 : 25_000);
       pollTimer = window.setTimeout(schedulePoll, wait);
+      pollDue = Date.now() + wait;
     };
 
     const startWatch = () => {
