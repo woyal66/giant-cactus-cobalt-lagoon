@@ -180,8 +180,6 @@
   font-family: var(--font-display);
 }
 
-.rp-sunlight .leaflet-tile-pane,
-.rp-sunlight .leaflet-satOverlay-pane,
 /* Reef clarity: stretch contrast and colour so sand, coral and deep water separate. */
 .rp-clarity .leaflet-tile-pane,
 .rp-clarity .leaflet-satOverlay-pane,
@@ -189,6 +187,8 @@
   filter: contrast(1.28) saturate(1.45) brightness(1.05);
 }
 
+.rp-sunlight .leaflet-tile-pane,
+.rp-sunlight .leaflet-satOverlay-pane,
 .rp-sunlight .leaflet-satHi-pane {
   filter: contrast(1.32) saturate(1.38) brightness(1.1);
 }
@@ -219,6 +219,25 @@
   font-weight: 600;
 }
 
+/*
+ * Sunlight: menus and buttons go light with near-black text, the easiest thing to read in
+ * bright sun (dark panels wash out). All colours come from these tokens.
+ */
+.rp-sunlight {
+  --color-background: #eef3f2;
+  --color-card: #ffffff;
+  --color-foreground: #06161c;
+  --color-muted: #e2eaec;
+  --color-muted-foreground: #33474f;
+  --color-border: #7d949c;
+  --color-primary: #00695c;
+  --color-primary-foreground: #ffffff;
+  --color-destructive: #b71c1c;
+  --color-accent: #e2eaec;
+  --color-accent-foreground: #06161c;
+  --color-ring: #00695c;
+}
+
 .rp-sunlight .rp-glass {
   background: var(--color-card);
   border-color: color-mix(in oklab, var(--color-foreground) 48%, transparent);
@@ -227,8 +246,7 @@
 
 .rp-sunlight .rp-instrument-value {
   font-size: calc(1.35rem * var(--ts, 1));
-  color: var(--color-sun-mark);
-  text-shadow: 0 1px 0 var(--color-sun-ink);
+  color: var(--color-foreground);
 }
 
 .rp-sunlight .rp-boat {
@@ -603,7 +621,7 @@
 }
 
 .rp-night .rp-helm-num {
-  font-size: calc(3.15rem * var(--ts, 1));
+  font-size: calc(2.2rem * var(--ts, 1));
   color: #ff8a40;
   text-shadow: 0 0 16px color-mix(in oklab, #ff6a2a 40%, transparent);
 }
@@ -677,4 +695,39 @@
    the two-line time labels still fit under each graph. */
 svg[aria-label] text {
   font-size: min(calc(10px * var(--ts, 1)), 11px);
+}
+
+/* Sunlight: pale accent text would vanish on white panels, so darken it (graphs keep their
+   dark plot area and original colours). */
+.rp-sunlight .text-amber-200:not(svg *),
+.rp-sunlight .text-amber-300:not(svg *),
+.rp-sunlight .text-amber-400:not(svg *) {
+  color: #7a4f00;
+}
+.rp-sunlight .text-sky-200:not(svg *),
+.rp-sunlight .text-sky-300:not(svg *) {
+  color: #0b5c8a;
+}
+.rp-sunlight .text-cyan-200:not(svg *),
+.rp-sunlight .text-cyan-300:not(svg *) {
+  color: #006473;
+}
+.rp-sunlight .text-violet-300:not(svg *) {
+  color: #5b3fa8;
+}
+.rp-sunlight .text-pink-300:not(svg *),
+.rp-sunlight .text-pink-200:not(svg *) {
+  color: #a3245e;
+}
+.rp-sunlight .text-lime-300:not(svg *),
+.rp-sunlight .text-lime-200:not(svg *) {
+  color: #456000;
+}
+.rp-sunlight .text-indigo-300:not(svg *),
+.rp-sunlight .text-indigo-200:not(svg *) {
+  color: #3a43a8;
+}
+.rp-sunlight .text-teal-200:not(svg *),
+.rp-sunlight .text-emerald-300:not(svg *) {
+  color: #0b6b45;
 }

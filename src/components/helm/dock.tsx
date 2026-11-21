@@ -159,7 +159,8 @@ export function BottomDock() {
         <DockBtn
           active={panel === "anchor"}
           label={breach ? "Alarm" : watching ? "Watch" : "Anchor"}
-          emphasize
+          // Filled only while the watch runs (red on alarm), so the dock shows the watch state.
+          emphasize={watching}
           danger={breach}
           onClick={() => {
             const s = useHelm.getState();

@@ -1,51 +1,12 @@
-import { useRef, type ReactNode } from "react";
-import { Button } from "@/components/ui/button";
+import { useRef } from "react";
 import {
   gpsStationLabel,
   stationFromTap,
 } from "@/lib/boat";
 import { UnitStepField } from "@/components/helm/unit-field";
-import { useHelm, useUnitsKey, type PanelId } from "@/store/helm";
+import { Sheet } from "@/components/helm/panels";
+import { useHelm } from "@/store/helm";
 
-function Sheet({
-  id,
-  title,
-  kicker,
-  children,
-}: {
-  id: NonNullable<PanelId>;
-  title: string;
-  kicker?: string;
-  children: ReactNode;
-}) {
-  const panel = useHelm((s) => s.panel);
-  const setPanel = useHelm((s) => s.setPanel);
-  useUnitsKey();
-  if (panel !== id) return null;
-  return (
-    <div className="pointer-events-none absolute inset-x-0 bottom-0 z-40 md:inset-y-20 md:right-3 md:bottom-24 md:left-auto md:w-[22rem]">
-      <div className="pointer-events-auto max-h-[min(58vh,32rem)] overflow-y-auto rounded-t-xl border border-border bg-card px-3 pt-2 pb-[max(0.6rem,env(safe-area-inset-bottom))] shadow-[var(--shadow-border)] md:max-h-[min(72vh,36rem)] md:rounded-xl md:p-4">
-        <div className="mx-auto mb-1.5 h-1 w-10 rounded-full bg-border md:hidden" />
-        <div className="mb-2 flex items-center justify-between gap-2">
-          <div className="min-w-0">
-            {kicker ? (
-              <p className="text-t12 text-muted-foreground">
-                {kicker}
-              </p>
-            ) : null}
-            <h2 className="font-display text-xl leading-none font-semibold tracking-tight">
-              {title}
-            </h2>
-          </div>
-          <Button variant="outline" size="sm" className="h-10 min-w-16 px-3" onClick={() => setPanel(null)}>
-            Close
-          </Button>
-        </div>
-        {children}
-      </div>
-    </div>
-  );
-}
 
 
 
@@ -159,11 +120,12 @@ export function BoatPanel() {
   const setHull = useHelm((s) => s.setHull);
 
   return (
-    <Sheet id="boat" title="Boat" kicker="Hull and GPS">
-      <p className="mb-2 text-xs text-pretty text-muted-foreground">
-        Chain is from the bow roller. If the phone sits in the aft cabin, mark it
-        or the hook and alarm sit 10–15 m off.
-      </p>
+    <Sheet
+      id="boat"
+      title="Boat"
+      kicker="Hull and GPS"
+      help="Chain is measured from the bow roller. If the phone sits in the aft cabin, mark where it lives below, or the anchor and alarm circle sit 10–15 m off."
+    >
       <div className="mb-2 grid grid-cols-2 gap-2">
         <UnitStepField
           label="Length"

@@ -63,6 +63,27 @@ function AuthSlot({ compact }: { compact?: boolean }) {
   );
 }
 
+/** Push the chart button columns below the steering bar when it is showing. */
+let steerBottom = 0;
+let steerRow: HTMLDivElement | null = null;
+function placeRow() {
+  const row = steerRow;
+  if (!row) return;
+  row.style.paddingTop = "0px";
+  const top = row.getBoundingClientRect().top;
+  row.style.paddingTop = steerBottom > top ? `${Math.ceil(steerBottom - top + 6)}px` : "0px";
+}
+if (typeof window !== "undefined") {
+  window.addEventListener("rp:steer-bottom", (e) => {
+    steerBottom = (e as CustomEvent<number>).detail;
+    placeRow();
+  });
+}
+function clearSteerBar(row: HTMLDivElement | null) {
+  steerRow = row;
+  placeRow();
+}
+
 export function TopHud() {
   useUnitsKey();
   const boat = useHelm((s) => s.boat);
@@ -145,12 +166,13 @@ export function TopHud() {
         </div>
       </div>
 
-      <div className="mx-auto mt-1.5 flex max-w-6xl justify-between gap-2">
-        <div className="pointer-events-auto flex flex-col gap-1.5">
+      <div ref={clearSteerBar} className="mx-auto mt-1.5 flex max-w-6xl justify-between gap-2">
+        <div className="pointer-events-auto flex w-[4.75rem] flex-col gap-1.5">
+          {/* Chart */}
           <Button
             variant={following || follow ? "default" : "helm"}
             size="icon"
-            className="size-10"
+            className="h-10 w-full"
             aria-label={tracking ? (following ? "Release the chart" : "Follow the track") : !follow ? "Centre on boat" : chartUp === "heading" ? "North up" : "Heading up"}
             onClick={() => {
               if (tracking) {
@@ -177,7 +199,7 @@ export function TopHud() {
             type="button"
             onClick={closeInOnBoat}
             aria-label="Helm scale"
-            className="rounded-md border border-border bg-card/95 px-1 py-1 text-center shadow-[var(--shadow-border)] rp-glass"
+            className="w-full rounded-md border border-border bg-card/95 px-1 py-1 text-center shadow-[var(--shadow-border)] rp-glass"
           >
             <p className="font-display text-t13 leading-none font-semibold tabular-nums">
               {scale}
@@ -186,6 +208,21 @@ export function TopHud() {
               {imageryShort(imagery)}
             </p>
           </button>
+          {availableImagery().length > 2 ? (
+            <button
+              type="button"
+              aria-label="Compare: flip to the other satellite photo"
+              onClick={() => {
+                const next = useHelm.getState().flipImagery(centreTileSource());
+                toast(`Showing ${imageryShort(next)}. Tap ⇄ to flip back.`, { duration: 2500 });
+              }}
+              className="h-10 w-full rounded-md border border-border bg-card/95 py-1 text-center text-t15 leading-none font-semibold shadow-[var(--shadow-border)] rp-glass"
+            >
+              ⇄
+            </button>
+          ) : null}
+          <div className="h-1.5" aria-hidden />
+          {/* Tools */}
           <button
             type="button"
             aria-label={tapMode === "measure" ? "Stop measuring" : "Measure distance on the chart"}
@@ -197,36 +234,10 @@ export function TopHud() {
                 st.setTapMode("measure");
               }
             }}
-            className={`flex items-center justify-center rounded-md border py-1.5 shadow-[var(--shadow-border)] ${tapMode === "measure" ? "border-primary bg-primary text-primary-foreground" : "border-border bg-card/95 rp-glass"}`}
+            className={`flex h-10 w-full items-center justify-center rounded-md border py-1.5 shadow-[var(--shadow-border)] ${tapMode === "measure" ? "border-primary bg-primary text-primary-foreground" : "border-border bg-card/95 rp-glass"}`}
           >
             <Ruler className="size-4" aria-hidden />
           </button>
-          {availableImagery().length > 2 ? (
-            <button
-              type="button"
-              aria-label="Compare: flip to the other satellite photo"
-              onClick={() => {
-                const next = useHelm.getState().flipImagery(centreTileSource());
-                toast(`Showing ${imageryShort(next)}. Tap ⇄ to flip back.`, { duration: 2500 });
-              }}
-              className="rounded-md border border-border bg-card/95 py-1 text-center text-t15 leading-none font-semibold shadow-[var(--shadow-border)] rp-glass"
-            >
-              ⇄
-            </button>
-          ) : null}
-          <Button
-            variant={mob ? "danger" : "helm"}
-            size="icon"
-            className="size-10"
-            aria-label={mob ? "Man overboard is marked" : "Man overboard"}
-            onClick={() => {
-              if (mob) return;
-              unlockAlarmAudio();
-              if (!dropMob()) toast("Need a GPS fix before MOB.");
-            }}
-          >
-            <span className="font-display text-t13 font-semibold leading-none">MOB</span>
-          </Button>
           {/* Always here (the top bar's wind reading is hidden under the steering bar on phones). */}
           <button
             type="button"
@@ -236,7 +247,7 @@ export function TopHud() {
                 ? `Forecast. Wind ${Math.round(wx.data.now.windKn)} knots ${windCardinal(wx.data.now.dirDeg)}${gust >= 25 ? `, gusts ${Math.round(gust)}` : ""}`
                 : "Forecast"
             }
-            className={`w-10 rounded-md border px-0.5 py-1 text-center shadow-[var(--shadow-border)] ${
+            className={`w-full rounded-md border px-0.5 py-1 text-center shadow-[var(--shadow-border)] ${
               gust >= 25 ? "border-destructive bg-destructive text-white" : "border-border bg-card/95 rp-glass"
             }`}
           >
@@ -260,6 +271,21 @@ export function TopHud() {
               <span className="text-t11 font-semibold">Wx</span>
             )}
           </button>
+          <div className="h-1.5" aria-hidden />
+          {/* Emergency, on its own */}
+          <Button
+            variant={mob ? "danger" : "helm"}
+            size="icon"
+            className="h-12 w-full border-2 border-destructive/80"
+            aria-label={mob ? "Man overboard is marked" : "Man overboard"}
+            onClick={() => {
+              if (mob) return;
+              unlockAlarmAudio();
+              if (!dropMob()) toast("Need a GPS fix before MOB.");
+            }}
+          >
+            <span className="font-display text-t13 font-semibold leading-none">MOB</span>
+          </Button>
         </div>
         <div className="pointer-events-auto flex flex-col gap-1.5">
           <Button

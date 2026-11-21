@@ -281,11 +281,11 @@ const WIND_LOOK: Record<
   },
   gfs: {
     label: "GFS",
-    chip: "border-amber-300 bg-amber-300/15 text-amber-300",
-    off: "border-amber-300/70 text-amber-300",
-    wind: "text-amber-300",
-    gust: "text-amber-200",
-    arrow: "fill-amber-300",
+    chip: "border-pink-300 bg-pink-300/15 text-pink-300",
+    off: "border-pink-300/70 text-pink-300",
+    wind: "text-pink-300",
+    gust: "text-pink-200",
+    arrow: "fill-pink-300",
   },
   ukmo: {
     label: "UKMO",
@@ -646,9 +646,9 @@ function SeaStack({
               </p>
             ) : null}
             {layers.current && cur ? (
-              <p className="min-w-0 flex-1 text-t13 leading-tight text-amber-300">
+              <p className="min-w-0 flex-1 text-t13 leading-tight text-violet-300">
                 <span className="flex items-center gap-0.5 text-t12">
-                  <MiniArrow deg={cur.dirDeg} className="text-amber-300" />
+                  <MiniArrow deg={cur.dirDeg} className="text-violet-300" />
                   Current
                 </span>
                 <span className="mt-0.5 block font-display text-base leading-none font-semibold text-foreground tabular-nums">
@@ -1394,7 +1394,7 @@ function ForecastGraph({
             d={currentLine}
             fill="none"
             stroke="currentColor"
-            className="text-amber-300"
+            className="text-violet-300"
             strokeWidth="1.4"
             strokeLinejoin="round"
           />
@@ -1448,7 +1448,7 @@ function ForecastGraph({
                   x={x}
                   y={y}
                   deg={h.dirDeg}
-                  fill="fill-amber-300"
+                  fill="fill-violet-300"
                 />
               );
             })
@@ -1625,7 +1625,12 @@ export function AnchorWxCard() {
   const data = wx.data;
   if (!data) {
     if (wx.isLoading) {
-      return <p className="mb-2 text-xs text-muted-foreground">Loading 24 h wind and tide…</p>;
+      // Same height as the loaded card, so the panel doesn't jump when it arrives.
+      return (
+        <div className="mb-2 grid h-28 animate-pulse place-items-center rounded-lg border border-border bg-background text-t13 text-muted-foreground" aria-busy="true">
+          Loading 24 h wind and tide…
+        </div>
+      );
     }
     if (wx.isError) {
       return (

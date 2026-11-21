@@ -161,7 +161,7 @@ export function WeatherTable({
                 ""
               );
             },
-            cls: () => "text-amber-300",
+            cls: () => "text-violet-300",
           },
         ]
       : []),

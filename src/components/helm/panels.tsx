@@ -65,44 +65,66 @@ export function Sheet({
   id,
   title,
   kicker,
+  help,
+  compact,
   children,
 }: {
   id: NonNullable<PanelId>;
   title: string;
+  /** Short context, read out to screen readers; not shown, to keep the heading to one row. */
   kicker?: string;
+  /** "How this works" text, behind an ⓘ button instead of always taking space. */
+  help?: ReactNode;
+  /** Open low (about a third of the screen) so the chart stays visible; the handle makes it taller. */
+  compact?: boolean;
   children: ReactNode;
 }) {
   const panel = useHelm((s) => s.panel);
   const setPanel = useHelm((s) => s.setPanel);
+  const [tall, setTall] = useState(false);
+  const [showHelp, setShowHelp] = useState(false);
   useUnitsKey();
   if (panel !== id) return null;
+  const height = tall ? "max-h-[78vh]" : compact ? "max-h-[min(34vh,20rem)]" : "max-h-[min(46vh,24rem)]";
   return (
     <div className="pointer-events-none absolute inset-x-0 bottom-0 z-40 md:inset-y-20 md:right-3 md:bottom-24 md:left-auto md:w-[22rem]">
-      <div className="pointer-events-auto max-h-[min(46vh,24rem)] overflow-y-auto rounded-t-xl border border-border bg-card px-3 pt-2 pb-[max(0.6rem,env(safe-area-inset-bottom))] shadow-[var(--shadow-border)] md:max-h-[min(72vh,36rem)] md:rounded-xl md:p-4">
-        <div className="mx-auto mb-1.5 h-1 w-10 rounded-full bg-border md:hidden" />
+      <div
+        className={`pointer-events-auto ${height} overflow-y-auto rounded-t-xl border border-border bg-card px-3 pt-1 pb-[max(0.6rem,env(safe-area-inset-bottom))] shadow-[var(--shadow-border)] md:max-h-[min(72vh,36rem)] md:rounded-xl md:p-4`}
+        aria-label={kicker ? `${title}: ${kicker}` : title}
+      >
+        <button
+          type="button"
+          onClick={() => setTall((t) => !t)}
+          aria-label={tall ? "Make this panel shorter" : "Make this panel taller"}
+          className="mx-auto mb-1 flex h-5 w-16 items-center justify-center md:hidden"
+        >
+          <span className="h-1 w-10 rounded-full bg-muted-foreground/60" />
+        </button>
         <div className="mb-2 flex items-center justify-between gap-2">
-          <div className="min-w-0">
-            {kicker ? (
-              <p className="text-t12 text-muted-foreground">
-                {kicker}
-              </p>
+          <div className="flex min-w-0 items-center gap-1.5">
+            <h2 className="font-display truncate text-xl leading-none font-semibold tracking-tight">{title}</h2>
+            {help ? (
+              <button
+                type="button"
+                onClick={() => setShowHelp((v) => !v)}
+                aria-expanded={showHelp}
+                aria-label={`How ${title.toLowerCase()} works`}
+                className={`grid size-8 shrink-0 place-items-center rounded-full border text-t14 font-semibold ${showHelp ? "border-primary bg-primary text-primary-foreground" : "border-border text-muted-foreground"}`}
+              >
+                i
+              </button>
             ) : null}
-            <h2 className="font-display text-xl leading-none font-semibold tracking-tight">
-              {title}
-            </h2>
           </div>
           <Button variant="outline" size="sm" className="h-10 min-w-16 px-3" onClick={() => setPanel(null)}>
             Close
           </Button>
         </div>
+        {help && showHelp ? <div className="mb-2 rounded-md bg-muted px-2.5 py-2 text-t14 leading-snug">{help}</div> : null}
         {children}
       </div>
     </div>
   );
 }
-
-
-
 
 function ToggleRow({
   label,
@@ -195,7 +217,13 @@ export function AnchorPanel() {
   }, [tide.data, rode.tideManual, rode.tideRiseM, rode.tideHighAt, setRode]);
 
   return (
-    <Sheet id="anchor" title="Anchor" kicker="Mark the hook">
+    <Sheet
+      id="anchor"
+      title="Anchor"
+      kicker="Mark the hook"
+      compact
+      help="The boat icon is where the boat has fallen back to. Chain is measured from the bow. Set the depth and chain out, then drag on the chart to where the anchor is."
+    >
       {anchor?.radiusLocked ? (
         stopAsk ? (
           <div className="mb-2 rounded-lg border border-destructive/50 bg-destructive/10 p-2">
@@ -225,9 +253,6 @@ export function AnchorPanel() {
           </Button>
         )
       ) : null}
-      <p className="mb-2 text-xs text-pretty text-muted-foreground">
-        Boat is the fallen-back position. Chain from the bow. Set depth and chain, then drag to the hook.
-      </p>
       <div className="mb-2 grid grid-cols-2 gap-2">
         <UnitStepField label="Depth" kind="depth" valueM={rode.depthM} steps={{ m: 0.2, ft: 1, fm: 0.5 }} onChange={(n) => setRode({ depthM: n })} />
         <UnitStepField label="Chain out" kind="length" valueM={rode.chainM} steps={{ m: 5, ft: 10 }} onChange={(n) => setRode({ chainM: n })} />

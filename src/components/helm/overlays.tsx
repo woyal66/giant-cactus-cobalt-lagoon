@@ -186,6 +186,28 @@ export function AlarmOverlay() {
   );
 }
 
+/**
+ * The steering bar's bottom edge, so the chart buttons can start below it. Its height changes
+ * with the look (night and sunlight are larger) and the text size.
+ */
+let steerObserver: ResizeObserver | null = null;
+function publishSteerBottom(el: HTMLDivElement | null) {
+  steerObserver?.disconnect();
+  steerObserver = null;
+  const emit = (px: number) => window.dispatchEvent(new CustomEvent("rp:steer-bottom", { detail: px }));
+  if (!el) {
+    emit(0);
+    return;
+  }
+  const measure = () => {
+    const bar = el.firstElementChild as HTMLElement | null;
+    emit(bar ? Math.round(bar.getBoundingClientRect().bottom) : 0);
+  };
+  steerObserver = new ResizeObserver(measure);
+  steerObserver.observe(el);
+  measure();
+}
+
 export function SteerOverlay() {
   const boat = useHelm((s) => s.boat);
   const passage = useHelm((s) => s.activePassage);
@@ -233,7 +255,10 @@ export function SteerOverlay() {
           : "no track";
 
   return (
-    <div className="pointer-events-none absolute inset-x-0 top-0 z-30 px-2 pt-[max(0.2rem,env(safe-area-inset-top))] md:top-[6.15rem] md:px-3 md:pt-0">
+    <div
+      ref={publishSteerBottom}
+      className="pointer-events-none absolute inset-x-0 top-0 z-30 px-2 pt-[max(0.2rem,env(safe-area-inset-top))] md:top-[6.15rem] md:px-3 md:pt-0"
+    >
       <div
         className={`rp-steer rp-steer-${tone} mx-auto flex w-full max-w-lg flex-col items-center md:max-w-2xl`}
         aria-label={`Speed ${sogLabel} knots. Cross-track ${xteAria}. Course to steer ${ctsLabel}${

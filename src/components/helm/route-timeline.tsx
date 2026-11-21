@@ -144,7 +144,7 @@ export function RouteTimeline({ points, sails, maxWindKn }: { points: RoutePoint
           );
         })}
         <line x1={L} x2={W - R} y1={seaMid} y2={seaMid} className="stroke-border" strokeWidth={0.5} />
-        <path d={line((s) => yCur(s.curAlongKn))} className="stroke-emerald-300" fill="none" strokeWidth={1.2} />
+        <path d={line((s) => yCur(s.curAlongKn))} className="stroke-violet-300" fill="none" strokeWidth={1.2} />
 
         {/* storm */}
         <text x={L - 3} y={BANDS.storm[1]} textAnchor="end" className="fill-muted-foreground text-t11">storm</text>
