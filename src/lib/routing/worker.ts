@@ -31,7 +31,9 @@ self.onmessage = async (e: MessageEvent<PlanRequest>) => {
     const mask = rasterize(polys, req.box, Math.max(0.003, span / 700));
     const shelter = polys.length ? shelterAround(mask, req.finish) : undefined;
     // Reefs as obstacles when this build bundles reef outlines.
-    const reefs = await loadReefPolygons(self.location.origin);
+    // The bundle may live under a sub-path (the website at /<repo>/app/); the worker sits in assets/.
+    const base = self.location.pathname.includes("/assets/") ? new URL("../", self.location.href).href.replace(/\/$/, "") : self.location.origin;
+    const reefs = await loadReefPolygons(base);
     if (reefs) markReefs(mask, reefs, rasterize);
     clearAround(mask, [req.start, req.finish], 2500);
     if (req.kind === "windows") {

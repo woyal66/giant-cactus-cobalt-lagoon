@@ -572,6 +572,13 @@ export function MapView() {
           _draggable?: { options: { clickTolerance: number } };
         };
         if (mapDrag._draggable) mapDrag._draggable.options.clickTolerance = 1;
+        // Credits: one line on wide screens; tap or hover to read them all.
+        const credits = map.attributionControl?.getContainer();
+        if (credits) {
+          credits.tabIndex = 0;
+          credits.title = "Map credits";
+          L.DomEvent.on(credits, "click", () => credits.classList.toggle("rp-open"));
+        }
 
         const rotatePane = map.getPane("rotatePane") ?? map.getPane("mapPane");
         map.createPane("satOverlay", rotatePane);

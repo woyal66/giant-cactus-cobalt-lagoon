@@ -13,7 +13,8 @@ let statusNote: Notification | null = null;
 export async function registerWatchWorker(): Promise<void> {
   if (typeof navigator === "undefined" || !("serviceWorker" in navigator)) return;
   try {
-    await navigator.serviceWorker.register("/reefpilot-watch.js", { scope: "/" });
+    // Relative, so it also works when the app is served from a sub-path (the website).
+    await navigator.serviceWorker.register("reefpilot-watch.js", { scope: "./" });
   } catch {
     /* blocked */
   }
