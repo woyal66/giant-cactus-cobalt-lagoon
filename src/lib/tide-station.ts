@@ -66,6 +66,46 @@ export async function fetchBomStationTide(
   return row;
 }
 
+/** A BOM table this close is better than any global model (bays, estuaries, reef lagoons). */
+export const STATION_FIRST_KM = 25;
+
+export type TideSet = { hours: TideHour[]; turns: TideTurn[]; origin: TideOrigin; latDatumM: number };
+
+/** EOT20 global model tide at a point (offline once its chunk is saved), or null. */
+export async function fetchModelTide(lat: number, lng: number, now = Date.now()): Promise<TideSet | null> {
+  const { tideConstants, tideSeries, lowestTide, TIDE_MODEL_NAME } = await import("./tide-model.ts");
+  const c = await tideConstants(lat, lng);
+  if (!c) return null;
+  const hours = tideSeries(c.k, now - 60 * 60_000, 7 * 24, 20);
+  const { tideTurns } = await import("./tides.ts");
+  return {
+    hours,
+    turns: tideTurns(hours),
+    origin: { kind: "model", name: TIDE_MODEL_NAME, datum: "LAT estimate" },
+    latDatumM: lowestTide(c.k, now),
+  };
+}
+
+/**
+ * Best tide for a point: a BOM table within 25 km, else the EOT20 global model (works offline
+ * and anywhere in the world), else the nearest BOM table up to 120 km. Null when none is
+ * available (the caller falls back to the online marine model).
+ */
+export async function fetchBestTide(lat: number, lng: number, now = Date.now()): Promise<TideSet | null> {
+  const near = nearestBomPort({ lat, lng });
+  const station = async () => {
+    const s = await fetchBomStationTide(lat, lng, now).catch(() => null);
+    return s ? { ...s, latDatumM: 0 } : null;
+  };
+  if (near && near.km <= STATION_FIRST_KM) {
+    const s = await station();
+    if (s) return s;
+  }
+  const model = await fetchModelTide(lat, lng, now).catch(() => null);
+  if (model) return model;
+  return near ? station() : null;
+}
+
 export function modelTideOrigin(): TideOrigin {
   return { kind: "model", name: "Open-Meteo marine", datum: "LAT estimate" };
 }
@@ -78,6 +118,7 @@ export function tideOriginLabel(o: TideOrigin | null | undefined): string {
     const grade = o.primary ? "standard port" : "secondary port";
     return `BOM tide table · ${o.name} (${grade}) · ${dist} · LAT`;
   }
+  if (o.name.startsWith("EOT20")) return "EOT20 global tide model (DGFI-TUM) · LAT estimate — not a tide station";
   return "Marine model · LAT estimate — not a tide station";
 }
 

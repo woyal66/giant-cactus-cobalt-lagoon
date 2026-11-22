@@ -8,6 +8,7 @@ import { saveChartArea } from "./chart-cache.ts";
 import { DEPTH_MAX_Z, loadDemTile } from "./depth.ts";
 import { tileRange, type BBox } from "./offline-tiles.ts";
 import { saveAreaWeather } from "./wx-map-data.ts";
+import { saveTideChunks } from "./tide-model.ts";
 
 export type ExtrasResult = { depthTiles: number; chartTiles: number; weather: boolean };
 
@@ -25,6 +26,8 @@ export async function saveRegionExtras(b: BBox, onStep?: (label: string) => void
   }
   onStep?.("Chart map");
   const chartTiles = await saveChartArea(b, `${CHART_TILES}`, CHART_GLYPHS, undefined, signal).catch(() => 0);
+  onStep?.("Tides");
+  await saveTideChunks(b.west, b.south, b.east, b.north).catch(() => 0);
   onStep?.("Weather (3 days)");
   // The weather grid covers a wider area so the layers still fill the screen when zoomed out.
   const pad = 0.5;

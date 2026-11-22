@@ -6,7 +6,7 @@ import {
   type TideOrigin,
   type TideTurn,
 } from "./tides.ts";
-import { fetchBomStationTide, modelTideOrigin } from "./tide-station.ts";
+import { fetchBestTide, modelTideOrigin } from "./tide-station.ts";
 import { openMeteoUrl } from "./open-meteo.ts";
 import { thunderRisk, type Risk } from "./routing/storm.ts";
 
@@ -885,7 +885,7 @@ async function fetchWeatherLive(
   }
   forecast.sea = await seaP;
   try {
-    const station = await fetchBomStationTide(lat, lng);
+    const station = await fetchBestTide(lat, lng);
     if (station) {
       const sea = forecast.sea ?? {
         waveM: null,
@@ -905,7 +905,7 @@ async function fetchWeatherLive(
         ...sea,
         tideHours: station.hours,
         tideTurns: station.turns,
-        latDatumM: 0,
+        latDatumM: station.latDatumM,
         tideOrigin: station.origin,
       };
     }

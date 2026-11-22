@@ -287,7 +287,13 @@ Reefs, drying reef, rocks, cays and islands come from GBRMPA "Great Barrier Reef
 on the chart offline, show on the press-and-hold card, are checked along planned and drawn
 routes, and are obstacles for the passage planner (`public/reefs/gbr.json`).
 
-Credit both datasets in the store listing. Before release, confirm the GBR Features licence
+Tides offline and worldwide come from EOT20 (DGFI-TUM global ocean tide model, Hart-Davis et al.
+2021, CC BY 4.0, https://doi.org/10.17882/79489). `scripts/build-tide-chunks.py` cuts it into
+2,053 files of 5° (46 MB in all), published by the same Pages workflow; the release build points
+`VITE_TIDE_MODEL` at `https://<owner>.github.io/<repo>/tides/eot20/`. A BOM tide table within 25 km
+is still used first.
+
+Credit all three datasets in the store listing. Before release, confirm the GBR Features licence
 version with GBRMPA (catalogues say CC BY 4.0 or 3.0 AU) and the exact attribution wording
 for the 30 m model with Geoscience Australia. The sand/coral layer appears only when you set
 `VITE_BENTHIC_WMS` and `VITE_BENTHIC_LAYERS` to an Allen Coral Atlas map service you have
