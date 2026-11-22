@@ -16,7 +16,7 @@ about 450 m), zoom 3–8:
   curl -L -o gebco.zip "https://dap.ceda.ac.uk/bodc/gebco/global/gebco_2026/ice_surface_elevation/geotiff/gebco_2026_geotiff.zip"
   unzip gebco.zip -d gebco
   python3 scripts/build-depth-tiles.py gebco out/depth-world --zmin 3 --zmax 8 --land-cap 5 \
-      --source "GEBCO_2026 Grid (GEBCO Compilation Group 2026), public domain"
+      --steps 20:0.25,100:1,inf:2 --source "GEBCO_2026 Grid (GEBCO Compilation Group 2026), public domain"
 
 Writes out/depth/{z}/{x}/{y}.png for zoom 7–12 (z12 ≈ 35 m a pixel, close to the 30 m grid)
 plus out/depth/meta.json. Only tiles with water shallower than DEEP_M are written: deep
@@ -24,8 +24,8 @@ ocean and inland tiles are left out and the app falls back to its global depth s
 there. Pixels with no data are written as 0,0,0 (terrarium −32768 m), which the app
 treats as "no data" and fills from the fallback.
 
-Terrarium: height = R*256 + G + B/256 - 32768. Heights are rounded to 0.1 m to keep the
-PNGs small.
+Terrarium: height = R*256 + G + B/256 - 32768. Heights are rounded by depth to keep the PNGs
+small (--steps; default 0.1 m to 20 m deep, 0.5 m to 100 m, 1 m beyond).
 """
 import argparse
 import json
@@ -67,10 +67,12 @@ def lnglat_to_tile(lng, lat, z):
     return x, y
 
 
-def init(src_dir, zmax=Z_MAX, land_cap=None):
-    global SRC_DIR, SOURCES, ZMAX_RUN, LAND_CAP
+def init(src_dir, zmax=Z_MAX, land_cap=None, steps=None):
+    global SRC_DIR, SOURCES, ZMAX_RUN, LAND_CAP, STEPS
     ZMAX_RUN = zmax
     LAND_CAP = land_cap
+    if steps:
+        STEPS = steps
     SRC_DIR = src_dir
     SOURCES = []
     for name in sorted(os.listdir(src_dir)):
@@ -107,9 +109,34 @@ def render(z, x, y):
     return out
 
 
+STEPS = [(20.0, 0.1), (100.0, 0.5), (math.inf, 1.0)]
+
+
+def parse_steps(text):
+    """ "20:0.1,100:0.5,inf:1" → [(20, 0.1), (100, 0.5), (inf, 1.0)] """
+    out = []
+    for part in text.split(","):
+        lim, step = part.split(":")
+        out.append((math.inf if lim.strip() == "inf" else float(lim), float(step)))
+    return out
+
+
+def quantise(h, steps=None):
+    """Round heights more coarsely the deeper (or higher) they are: fine where a keel is, small PNGs."""
+    steps = steps or STEPS
+    out = h.copy()
+    a = np.abs(h)
+    lo = 0.0
+    for lim, step in steps:
+        m = (a >= lo) & (a < lim)
+        out[m] = np.round(h[m] / step) * step
+        lo = lim
+    return out
+
+
 def encode(h):
     nod = np.isnan(h)
-    v = np.where(nod, -32768.0, np.round(h * 10) / 10) + 32768.0
+    v = np.where(nod, -32768.0, quantise(np.where(nod, 0, h))) + 32768.0
     v = np.clip(v, 0, 65535.996)
     r = np.floor(v / 256)
     g = np.floor(v - r * 256)
@@ -150,18 +177,20 @@ def main():
     ap.add_argument("out_dir")
     ap.add_argument("--zmin", type=int, default=Z_MIN)
     ap.add_argument("--zmax", type=int, default=Z_MAX)
+    ap.add_argument("--steps", default="20:0.1,100:0.5,inf:1", help="rounding by depth, e.g. 20:0.1,100:0.5,inf:1")
     ap.add_argument("--land-cap", type=float, default=None, help="cap land heights (m) to keep tiles small")
     ap.add_argument("--source", default="Great Barrier Reef bathymetry 2020 30 m (Beaman, Geoscience Australia), CC BY 4.0")
     args = ap.parse_args()
     src_dir, out_dir = args.src_dir, args.out_dir
-    init(src_dir, args.zmax, args.land_cap)
+    steps = parse_steps(args.steps)
+    init(src_dir, args.zmax, args.land_cap, steps)
     west = max(-180.0, min(d.bounds.left for d in SOURCES))
     east = min(180.0, max(d.bounds.right for d in SOURCES))
     south = max(-85.0, min(d.bounds.bottom for d in SOURCES))
     north = min(85.0, max(d.bounds.top for d in SOURCES))
     total = 0
     count = 0
-    with ProcessPoolExecutor(initializer=init, initargs=(src_dir, args.zmax, args.land_cap)) as pool:
+    with ProcessPoolExecutor(initializer=init, initargs=(src_dir, args.zmax, args.land_cap, steps)) as pool:
         for z in range(args.zmin, args.zmax + 1):
             x0, y0 = lnglat_to_tile(west, north, z)
             x1, y1 = lnglat_to_tile(east - 1e-9, south + 1e-9, z)
