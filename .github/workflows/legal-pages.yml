@@ -1,6 +1,7 @@
 # Publishes the website to GitHub Pages: the privacy policy and terms (site/, for the Google Play
 # listing), the GBR 30 m depth tiles the app reads (depth/{z}/{x}/{y}.png) and the EOT20 global
-# tide files (tides/eot20/{i}_{j}.png, 46 MB, from DGFI-TUM's EOT20, CC BY 4.0).
+# tide files (tides/eot20/{i}_{j}.png, 46 MB, from DGFI-TUM's EOT20, CC BY 4.0) and worldwide
+# shelf depth from GEBCO_2026 (depth-world/{z}/{x}/{y}.png, public domain, zoom 3–8).
 # One-time setup: Settings → Pages → Source: "GitHub Actions". Then run this workflow (or push a
 # change to site/ or the tile script). The address is shown in the run, e.g.
 # https://<user>.github.io/<repo>/privacy.html
@@ -51,6 +52,22 @@ jobs:
           python3 scripts/build-depth-tiles.py gbr30 out/depth
           rm -rf gbr30
 
+      - name: Worldwide depth tiles from cache
+        id: world
+        uses: actions/cache@v4
+        with:
+          path: out/depth-world
+          key: depth-world-${{ hashFiles('scripts/build-depth-tiles.py') }}
+
+      - name: Build worldwide depth tiles (GEBCO_2026, public domain)
+        if: steps.world.outputs.cache-hit != 'true'
+        run: |
+          pip install rasterio numpy pillow
+          curl -sSL --retry 8 --retry-delay 15 --retry-all-errors -C - -o gebco.zip "https://dap.ceda.ac.uk/bodc/gebco/global/gebco_2026/ice_surface_elevation/geotiff/gebco_2026_geotiff.zip"
+          unzip -q gebco.zip -d gebco && rm gebco.zip
+          python3 scripts/build-depth-tiles.py gebco out/depth-world --zmin 3 --zmax 8 --land-cap 5 --source "GEBCO_2026 Grid (GEBCO Compilation Group 2026), public domain"
+          rm -rf gebco
+
       - name: Tide files from cache
         id: tides
         uses: actions/cache@v4
@@ -73,6 +90,7 @@ jobs:
           mkdir -p public_site
           cp -r site/. public_site/
           cp -r out/depth public_site/depth
+          cp -r out/depth-world public_site/depth-world
           cp -r out/tides public_site/tides
           du -sh public_site
 

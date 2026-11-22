@@ -477,6 +477,8 @@ export function LayersPanel() {
   const parkZones = useHelm((s) => s.parkZones);
   const setParkZones = useHelm((s) => s.setParkZones);
   const setReefOutlines = useHelm((s) => s.setReefOutlines);
+  const officialCharts = useHelm((s) => s.officialCharts);
+  const setOfficialCharts = useHelm((s) => s.setOfficialCharts);
   const radar = useHelm((s) => s.radar);
   const baseMap = useHelm((s) => s.baseMap);
   const sharpTiles = useHelm((s) => s.sharpTiles);
@@ -596,6 +598,7 @@ export function LayersPanel() {
         <ToggleRow label="Seamarks" on={seamarks} onChange={setSeamarks} />
         <ToggleRow label="Depth contours" on={depths} onChange={setDepths} />
         <ToggleRow label="Reefs, rocks and cays (GBR, offline)" on={reefOutlines} onChange={setReefOutlines} />
+        <ToggleRow label="Official charts where free (USA: NOAA)" on={officialCharts} onChange={setOfficialCharts} />
         <ToggleRow label="Marine park zones (GBR)" on={parkZones} onChange={setParkZones} />
         {parkZones ? <ZoneLegend /> : null}
         {radarAvailable() ? <ToggleRow label="Rain radar (needs signal)" on={radar} onChange={setRadar} /> : null}

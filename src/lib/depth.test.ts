@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { depthColor, inFineArea, mergeHeights, NO_DATA_M, sampleTile, shallowColor, terrariumHeight, waterDepthM } from "./depth.ts";
+import { cropParent, depthColor, inFineArea, mergeHeights, NO_DATA_M, sampleTile, shallowColor, terrariumHeight, waterDepthM } from "./depth.ts";
 
 test("terrarium decoding", () => {
   assert.equal(terrariumHeight(128, 0, 0), 0);
@@ -48,4 +48,17 @@ test("no-data pixels in the fine tile are filled from the base tile", () => {
   assert.equal(mergeHeights(fine, base), 2);
   assert.deepEqual([...fine], [-5, -60, -12, -80]);
   assert.ok(terrariumHeight(0, 0, 0) <= NO_DATA_M);
+});
+
+test("enlarging a parent tile: the right quarter, bilinear, and no blending into no-data", () => {
+  // 4×4 parent, depth increasing to the east: -10, -20, -30, -40 by column.
+  const h = new Float32Array(16).map((_, i) => -10 * ((i % 4) + 1));
+  const east = cropParent(h, 4, 2, 1, 1); // bottom-right quarter covers columns 2–3
+  assert.ok(east.every((v) => v <= -25 && v >= -40), String([...east]));
+  const west = cropParent(h, 4, 2, 0, 0);
+  assert.ok(west.every((v) => v <= -10 && v >= -25));
+  assert.equal(east[3], -40); // far edge clamps to the last column
+  h[3] = -32768; // a no-data cell in the top-right
+  const ne = cropParent(h, 4, 2, 1, 0);
+  assert.ok(ne.every((v) => v === -32768 || (v <= -25 && v >= -40)), String([...ne]));
 });

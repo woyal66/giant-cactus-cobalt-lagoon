@@ -52,6 +52,7 @@ jobs:
           VITE_ESRI_KEY: ${{ secrets.VITE_ESRI_KEY || vars.VITE_ESRI_KEY }}
           # GBR 30 m depth tiles, published to GitHub Pages by legal-pages.yml (override with a variable).
           VITE_DEPTH_TILES: ${{ vars.VITE_DEPTH_TILES || format('https://{0}.github.io/{1}/depth/{{z}}/{{x}}/{{y}}.png', github.repository_owner, github.event.repository.name) }}
+          VITE_DEPTH_GLOBAL_TILES: ${{ vars.VITE_DEPTH_GLOBAL_TILES || format('https://{0}.github.io/{1}/depth-world/{{z}}/{{x}}/{{y}}.png', github.repository_owner, github.event.repository.name) }}
           # EOT20 global tide files, published by the same workflow.
           VITE_TIDE_MODEL: ${{ vars.VITE_TIDE_MODEL || format('https://{0}.github.io/{1}/tides/eot20/', github.repository_owner, github.event.repository.name) }}
         run: |

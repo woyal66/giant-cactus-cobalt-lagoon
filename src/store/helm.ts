@@ -169,6 +169,8 @@ export type HelmState = {
   depths: boolean;
   /** GBRMPA reef / cay / rock outlines overlay. */
   reefOutlines: boolean;
+  /** Free official charts (NOAA in the USA) as an overlay where they exist. */
+  officialCharts: boolean;
   /** GBR Marine Park zoning overlay. */
   parkZones: boolean;
   /** Live speed against the polar while underway (not saved). */
@@ -310,6 +312,7 @@ type HelmActions = {
   setSeamarks: (v: boolean) => void;
   setDepths: (v: boolean) => void;
   setReefOutlines: (v: boolean) => void;
+  setOfficialCharts: (v: boolean) => void;
   setParkZones: (v: boolean) => void;
   setRadar: (v: boolean) => void;
   setPerfLive: (v: PerfLive | null) => void;
@@ -491,6 +494,7 @@ function persistSig(state: Record<string, unknown>): string {
     state.seamarks,
     state.depths,
     state.reefOutlines,
+    state.officialCharts,
     state.parkZones,
     state.radar,
     state.sunlight,
@@ -792,6 +796,7 @@ export const useHelm = create<HelmState & HelmActions>()(
       seamarks: false,
       depths: false,
       reefOutlines: false,
+      officialCharts: false,
       parkZones: false,
       radar: false,
       radarInfo: null,
@@ -966,6 +971,7 @@ export const useHelm = create<HelmState & HelmActions>()(
       setSeamarks: (v) => set({ seamarks: v }),
       setDepths: (v) => set({ depths: v }),
       setReefOutlines: (v) => set({ reefOutlines: v }),
+      setOfficialCharts: (v) => set({ officialCharts: v }),
       setParkZones: (v) => set({ parkZones: v }),
       setRadar: (v) => set(v ? { radar: true } : { radar: false, radarInfo: null }),
       setRadarInfo: (v) => set({ radarInfo: v }),
@@ -1634,6 +1640,7 @@ export const useHelm = create<HelmState & HelmActions>()(
         seamarks: s.seamarks,
         depths: s.depths,
         reefOutlines: s.reefOutlines,
+        officialCharts: s.officialCharts,
         parkZones: s.parkZones,
         radar: s.radar,
         sunlight: s.sunlight,
@@ -1695,6 +1702,8 @@ export const useHelm = create<HelmState & HelmActions>()(
           depths: typeof p.depths === "boolean" ? p.depths : current.depths,
           reefOutlines:
             typeof p.reefOutlines === "boolean" ? p.reefOutlines : current.reefOutlines,
+          officialCharts:
+            typeof p.officialCharts === "boolean" ? p.officialCharts : current.officialCharts,
           parkZones: typeof p.parkZones === "boolean" ? p.parkZones : current.parkZones,
           radar: typeof p.radar === "boolean" ? p.radar : current.radar,
           radarInfo: null,

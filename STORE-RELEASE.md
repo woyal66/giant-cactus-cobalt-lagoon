@@ -293,7 +293,16 @@ Tides offline and worldwide come from EOT20 (DGFI-TUM global ocean tide model, H
 `VITE_TIDE_MODEL` at `https://<owner>.github.io/<repo>/tides/eot20/`. A BOM tide table within 25 km
 is still used first.
 
-Credit all three datasets in the store listing. Before release, confirm the GBR Features licence
+Worldwide shelf depth comes from GEBCO_2026 (public domain, 15 arc-second, about 450 m): the same
+Pages workflow downloads it (4.2 GB) and builds `depth-world/` (zoom 3–8, only tiles with water
+shallower than 200 m, land capped at 5 m); the release build points `VITE_DEPTH_GLOBAL_TILES` at it.
+Credit: "GEBCO Compilation Group (2026) GEBCO_2026 Grid".
+
+Official US charts (View → "Official charts where free") come straight from NOAA's ENC display
+service (public domain); the app requests them only inside US waters. Add other countries in
+`src/lib/official-charts.ts` as their offices allow it.
+
+Credit all of these datasets in the store listing. Before release, confirm the GBR Features licence
 version with GBRMPA (catalogues say CC BY 4.0 or 3.0 AU) and the exact attribution wording
 for the 30 m model with Geoscience Australia. The sand/coral layer appears only when you set
 `VITE_BENTHIC_WMS` and `VITE_BENTHIC_LAYERS` to an Allen Coral Atlas map service you have
