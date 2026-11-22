@@ -148,6 +148,20 @@
   color: var(--color-muted-foreground);
   font-size: calc(11px * var(--ts, 1));
   max-width: min(42vw, 14rem);
+  /* One line until hovered or tapped (wide screens show credits; phones show them in View). */
+  max-height: 1.7em;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+
+.leaflet-control-attribution:hover,
+.leaflet-control-attribution:focus,
+.leaflet-control-attribution.rp-open {
+  max-height: 60vh;
+  white-space: normal;
+  overflow: auto;
 }
 
 .leaflet-bottom {

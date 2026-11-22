@@ -11,6 +11,8 @@ can be switched back on with `VITE_PAID_APP=1`. Originally generated with Grok; 
 | **Phone app** (the product) | `vite.mobile.config.ts` | `mobile.html` → `src/mobile.tsx` | Static bundle, no server. Output `dist-mobile/`, copied into `ios/` and `android/` by `cap sync`. |
 | Website (optional) | `vite.config.ts` | TanStack Start, `src/routes/` | Mainly hosts `/privacy` and `/terms` for store listings. Its Better Auth sign-in (`src/lib/auth/`) was wired to Grok's auth broker and is dormant; deploy with `VITE_AUTH_ENABLED=false`. |
 
+**Web app:** the same phone bundle is published at `https://<owner>.github.io/<repo>/app/` by `legal-pages.yml` for planning on a laptop or tablet (data URLs relative, `../depth/…`). Phone-only features degrade: the anchor alarm needs the tab open (`web-notice.tsx` says so), BOM tables fall back to EOT20 (CORS). Keep paths relative (`base: "./"`, no leading `/` in fetches, service worker registered relative).
+
 The phone build swaps server-only modules via aliases in `vite.mobile.config.ts`:
 `passages.mobile.ts` (tracks stored on device), `bom-tides.mobile.ts` (BOM fetched
 natively with `CapacitorHttp`, no CORS), and stubs in `src/mobile-shims/`. When you add

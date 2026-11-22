@@ -25,6 +25,7 @@ import { DepthChip } from "@/components/helm/depth-chip";
 import { WxMapBar } from "@/components/helm/wx-map-bar";
 import { PinCard } from "@/components/helm/pin-card";
 import { PerfChip } from "@/components/helm/perf-chip";
+import { WebNotice } from "@/components/helm/web-notice";
 import { usePolarMonitor } from "@/hooks/polar-monitor";
 import { useTideNow } from "@/hooks/tide-now";
 import { useMobDrift } from "@/hooks/mob-drift";
@@ -131,6 +132,7 @@ export function HelmApp() {
       <WxMapBar />
       <PinCard />
       <PerfChip />
+      <WebNotice />
       <PassageHud />
       {plannerOn ? (
         <Suspense fallback={null}>

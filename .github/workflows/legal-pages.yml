@@ -1,7 +1,8 @@
 # Publishes the website to GitHub Pages: the privacy policy and terms (site/, for the Google Play
 # listing), the GBR 30 m depth tiles the app reads (depth/{z}/{x}/{y}.png) and the EOT20 global
 # tide files (tides/eot20/{i}_{j}.png, 46 MB, from DGFI-TUM's EOT20, CC BY 4.0) and worldwide
-# shelf depth from GEBCO_2026 (depth-world/{z}/{x}/{y}.png, public domain, zoom 3–8).
+# shelf depth from GEBCO_2026 (depth-world/{z}/{x}/{y}.png, public domain, zoom 3–8), and the web
+# version of the app (app/, the same code as the phone app, for planning on a laptop or tablet).
 # One-time setup: Settings → Pages → Source: "GitHub Actions". Then run this workflow (or push a
 # change to site/ or the tile script). The address is shown in the run, e.g.
 # https://<user>.github.io/<repo>/privacy.html
@@ -15,7 +16,7 @@ on:
   workflow_dispatch:
   push:
     branches: [main]
-    paths: ["site/**", "scripts/build-depth-tiles.py", "scripts/build-tide-chunks.py", ".github/workflows/legal-pages.yml"]
+    paths: ["site/**", "src/**", "public/**", "mobile.html", "vite.mobile.config.ts", "package-lock.json", "scripts/build-depth-tiles.py", "scripts/build-tide-chunks.py", ".github/workflows/legal-pages.yml"]
 
 permissions:
   contents: read
@@ -85,6 +86,25 @@ jobs:
           python3 scripts/build-tide-chunks.py eot20/ocean_tides out/tides/eot20
           rm -rf eot20
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Build the web app (same code as the phone app)
+        env:
+          VITE_LICENSED_IMAGERY_ONLY: "1"
+          VITE_MAPTILER_KEY: ${{ secrets.VITE_MAPTILER_KEY || vars.VITE_MAPTILER_KEY }}
+          VITE_ESRI_KEY: ${{ secrets.VITE_ESRI_KEY || vars.VITE_ESRI_KEY }}
+          # Data on this same site, relative to /app/.
+          VITE_DEPTH_TILES: ../depth/{z}/{x}/{y}.png
+          VITE_DEPTH_GLOBAL_TILES: ../depth-world/{z}/{x}/{y}.png
+          VITE_TIDE_MODEL: ../tides/eot20/
+        run: |
+          npm ci
+          npx vite build --config vite.mobile.config.ts --outDir out/app
+          cp out/app/mobile.html out/app/index.html
+
       - name: Assemble site
         run: |
           mkdir -p public_site
@@ -92,6 +112,7 @@ jobs:
           cp -r out/depth public_site/depth
           cp -r out/depth-world public_site/depth-world
           cp -r out/tides public_site/tides
+          cp -r out/app public_site/app
           du -sh public_site
 
       - uses: actions/configure-pages@v5
