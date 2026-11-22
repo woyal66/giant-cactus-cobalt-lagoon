@@ -1,0 +1,89 @@
+# Builds the Google Play upload file (signed .aab) in the cloud, so no Android Studio is needed.
+# Run it from GitHub: Actions → "Android release build" → Run workflow. Download the .aab from
+# the finished run (Artifacts) and upload it in Play Console. See STORE-RELEASE.md, "Android in
+# the cloud".
+#
+# Repository secrets it needs (Settings → Secrets and variables → Actions):
+#   ANDROID_KEYSTORE_BASE64   the upload keystore file, base64-encoded
+#   ANDROID_KEYSTORE_PASSWORD keystore password
+#   ANDROID_KEY_ALIAS         key alias (e.g. "upload")
+#   ANDROID_KEY_PASSWORD      key password
+# Optional build settings (secrets or variables): VITE_MAPTILER_KEY, VITE_ESRI_KEY,
+# VITE_DEPTH_TILES (default: the depth tiles on this repository's GitHub Pages site; run
+# "Publish website and depth tiles" first).
+name: Android release build
+
+on:
+  workflow_dispatch:
+    inputs:
+      version_name:
+        description: "Version shown to users (e.g. 1.0.1)"
+        required: true
+        default: "1.0.0"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Install
+        run: npm ci
+
+      - name: Test
+        run: npm test
+
+      - name: Build the phone app and copy it into Android
+        env:
+          # Store build: hide map sources that can't be licensed (see STORE-RELEASE section 9).
+          VITE_LICENSED_IMAGERY_ONLY: "1"
+          VITE_MAPTILER_KEY: ${{ secrets.VITE_MAPTILER_KEY || vars.VITE_MAPTILER_KEY }}
+          VITE_ESRI_KEY: ${{ secrets.VITE_ESRI_KEY || vars.VITE_ESRI_KEY }}
+          # GBR 30 m depth tiles, published to GitHub Pages by legal-pages.yml (override with a variable).
+          VITE_DEPTH_TILES: ${{ vars.VITE_DEPTH_TILES || format('https://{0}.github.io/{1}/depth/{{z}}/{{x}}/{{y}}.png', github.repository_owner, github.event.repository.name) }}
+        run: |
+          npx vite build --config vite.mobile.config.ts
+          npx cap sync android
+
+      - name: Signing key
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          if [ -z "$KEYSTORE_BASE64" ]; then echo "::error::Add the ANDROID_KEYSTORE_BASE64 secret first (see STORE-RELEASE.md)."; exit 1; fi
+          echo "$KEYSTORE_BASE64" | base64 --decode > android/upload.keystore
+          {
+            echo "storeFile=upload.keystore"
+            echo "storePassword=$KEYSTORE_PASSWORD"
+            echo "keyAlias=$KEY_ALIAS"
+            echo "keyPassword=$KEY_PASSWORD"
+          } > android/keystore.properties
+
+      - name: Build the signed bundle
+        working-directory: android
+        run: |
+          chmod +x gradlew
+          ./gradlew bundleRelease -PversionCode=${{ github.run_number }} -PversionName="${{ inputs.version_name }}"
+
+      - name: Remove the key from the runner
+        if: always()
+        run: rm -f android/upload.keystore android/keystore.properties
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: anchor-mate-${{ inputs.version_name }}-${{ github.run_number }}
+          path: android/app/build/outputs/bundle/release/app-release.aab
+          if-no-files-found: error

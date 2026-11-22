@@ -1,22 +1,13 @@
-import { useRef, useState, type ComponentType, type PointerEvent } from "react";
-import {
-  Cloud,
-  CloudFog,
-  CloudLightning,
-  CloudRain,
-  CloudSnow,
-  CloudSun,
-  Sun,
-} from "lucide-react";
+import { useRef, useState, type PointerEvent, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
+import { WeatherTable } from "@/components/helm/weather-table";
+import { ForecastNow } from "@/components/helm/forecast-now";
 import { toast } from "sonner";
 import { useSpotWx, useWx } from "@/hooks/weather";
 import {
   beaufort,
   clockLabel,
-  currentVsHeading,
   dayClock,
-  dayStamp,
   formatKn,
   graphAreaTimed,
   graphLineTimed,
@@ -26,26 +17,21 @@ import {
   hourLabel,
   axisMarks,
   nearestSample,
-  skyLabel,
   sliceByHorizon,
   windowStats,
   windCardinal,
   clampWxHorizon,
   WX_MODEL_LABEL,
   type CurrentHour,
-  type SeaState,
   type WaveHour,
   type WxForecast,
   type WxHour,
-  type WxSky,
 } from "@/lib/weather";
 import { bearingDegrees, formatHeading, formatLat, formatLng, formatMeters, haversineMeters } from "@/lib/geo";
-import { hoursUntil } from "@/lib/anchor";
 import { cn } from "@/lib/utils";
 import { isDaylight, nightSpans } from "@/lib/sun";
 import {
   latDatumM,
-  nextTurn,
   tideAt,
   tideRange,
   tideRiseAt,
@@ -58,18 +44,10 @@ import {
 } from "@/lib/tides";
 import { tideOriginChip, tideOriginLabel } from "@/lib/tide-station";
 import { chartedDepthNeededM } from "@/lib/boat";
-import { useHelm } from "@/store/helm";
+import { useHelm, useUnitsKey } from "@/store/helm";
+import { formatDepth, getUnits } from "@/lib/units";
+import { MoonCard } from "@/components/helm/moon-card";
 
-const SKY_ICON: Record<WxSky, ComponentType<{ className?: string }>> = {
-  clear: Sun,
-  partly: CloudSun,
-  cloud: Cloud,
-  fog: CloudFog,
-  rain: CloudRain,
-  heavy: CloudRain,
-  storm: CloudLightning,
-  snow: CloudSnow,
-};
 
 function WindArrow({ deg, className }: { deg: number; className?: string }) {
   return (
@@ -149,7 +127,7 @@ function NowChip({ hour }: { hour: WxHour }) {
           {formatKn(hour.windKn)}
           <span className="ml-1 text-xs font-medium text-muted-foreground">kn</span>
         </p>
-        <p className="text-[10px] tracking-wide text-muted-foreground uppercase">
+        <p className="text-t12 text-muted-foreground">
           {windCardinal(hour.dirDeg)} · {b.label}
         </p>
       </div>
@@ -175,7 +153,7 @@ function HourCol({
         max ? "bg-primary/15" : now ? "bg-muted/60" : ""
       }`}
     >
-      <span className="text-[9px] tracking-wide text-muted-foreground uppercase">
+      <span className="text-t12 text-muted-foreground">
         {now ? "Now" : hourLabel(hour.at)}
       </span>
       <span
@@ -192,6 +170,7 @@ function HourCol({
 }
 
 export function WeatherPanel() {
+  useUnitsKey();
   const panel = useHelm((s) => s.panel);
   const setPanel = useHelm((s) => s.setPanel);
   const pin = useHelm((s) => s.wxPin);
@@ -204,24 +183,30 @@ export function WeatherPanel() {
   const wx = pin ? spot : boatWx;
   if (panel !== "weather") return null;
   const data = wx.data;
+  const measureHead = (el: HTMLDivElement | null) => {
+    if (!el) return;
+    const set = () => el.parentElement?.style.setProperty("--wx-head", `${el.offsetHeight}px`);
+    set();
+    new ResizeObserver(set).observe(el);
+  };
   const fromBoat =
     pin && boat ? haversineMeters(boat, pin) : null;
   const brg = pin && boat ? formatHeading(bearingDegrees(boat, pin)) : null;
 
   return (
-    <div className="pointer-events-auto absolute inset-0 z-50 flex flex-col overflow-x-hidden overflow-y-auto bg-card pt-[max(0.4rem,env(safe-area-inset-top))] pb-[max(1.5rem,env(safe-area-inset-bottom))]">
-      <div className="sticky top-0 z-10 border-b border-border/60 bg-card/95 px-3 py-1.5 backdrop-blur-md">
+    <div className="pointer-events-auto absolute inset-0 z-50 flex flex-col overflow-x-hidden overflow-y-auto bg-card pt-[max(0.4rem,var(--safe-area-inset-top,env(safe-area-inset-top)))] pb-[max(1.5rem,var(--safe-area-inset-bottom,env(safe-area-inset-bottom)))]">
+      <div ref={measureHead} className="sticky top-0 z-10 border-b border-border/60 bg-card/95 px-3 py-1.5 backdrop-blur-md">
         <div className="flex items-center justify-between gap-2">
           <div className="min-w-0">
             <h2 className="font-display text-lg font-semibold tracking-tight">
               {pin ? "Forecast at pin" : "Forecast"}
             </h2>
-            <p className="truncate text-[11px] text-muted-foreground">
+            <p className="truncate text-t13 text-muted-foreground">
               {pin
                 ? fromBoat != null
                   ? `${formatMeters(fromBoat)} · ${brg} from the boat`
                   : `${formatLat(pin.lat)} ${formatLng(pin.lng)}`
-                : "Hold the chart, then tap Forecast on the pin."}
+                : "At the boat"}
               {` · ${horizonLabel(horizonH)}`}
             </p>
           </div>
@@ -246,7 +231,7 @@ export function WeatherPanel() {
                 Boat
               </Button>
             ) : null}
-            <Button variant="ghost" size="sm" className="h-8 px-2" onClick={() => setPanel(null)}>
+            <Button variant="outline" size="sm" className="h-10 min-w-16 px-3" onClick={() => setPanel(null)}>
               Close
             </Button>
           </div>
@@ -265,6 +250,9 @@ export function WeatherPanel() {
           </div>
         ) : null}
         {data ? <WxBody data={data} horizonH={horizonH} onHorizon={setHorizon} /> : null}
+        <div className="mt-3">
+          <MoonCard />
+        </div>
       </div>
     </div>
   );
@@ -293,11 +281,11 @@ const WIND_LOOK: Record<
   },
   gfs: {
     label: "GFS",
-    chip: "border-amber-300 bg-amber-300/15 text-amber-300",
-    off: "border-amber-300/70 text-amber-300",
-    wind: "text-amber-300",
-    gust: "text-amber-200",
-    arrow: "fill-amber-300",
+    chip: "border-pink-300 bg-pink-300/15 text-pink-300",
+    off: "border-pink-300/70 text-pink-300",
+    wind: "text-pink-300",
+    gust: "text-pink-200",
+    arrow: "fill-pink-300",
   },
   ukmo: {
     label: "UKMO",
@@ -332,7 +320,6 @@ function WxBody({
   horizonH: number;
   onHorizon: (h: number) => void;
 }) {
-  const upcoming = sliceByHorizon(data.hours, horizonH);
   const hours = data.hours;
   const available: Array<{ id: WindModelId; hours: WxHour[] }> = [];
   if (isWindModel(data.source)) available.push({ id: data.source, hours: data.hours });
@@ -349,9 +336,6 @@ function WxBody({
     setWxModels(next);
   };
   const shown = available.filter((m) => onModels[m.id]);
-  const stats = windowStats(upcoming.length ? upcoming : data.hours.slice(0, 1));
-  const maxB = beaufort(stats.maxWind.windKn);
-  const strong = stats.maxWind.windKn >= 22;
   const setHours = data.sea?.currentHours ?? [];
   const waveHours = data.sea?.waveHours ?? [];
   const hasTide = Boolean(data.sea && data.sea.tideHours.length >= 2);
@@ -378,13 +362,22 @@ function WxBody({
   ];
 
   return (
-    <div className="grid w-full max-w-full gap-3">
-      {strong ? (
-        <p className="rounded-md bg-destructive/10 px-2.5 py-1.5 text-sm text-destructive">
-          {maxB.label} later — {formatKn(stats.maxWind.windKn)} kn {windCardinal(stats.maxWind.dirDeg)}{" "}
-          at {dayStamp(stats.maxWind.at)} {hourLabel(stats.maxWind.at)}
-        </p>
-      ) : null}
+    <div className="grid w-full max-w-full grid-cols-[minmax(0,1fr)] gap-3">
+      <ForecastNow data={data} />
+      <div className="grid grid-cols-4 gap-1.5" role="radiogroup" aria-label="Time span">
+        {SPANS.map((sp) => (
+          <Button
+            key={sp.h}
+            role="radio"
+            aria-checked={horizonH === sp.h}
+            variant={horizonH === sp.h ? "default" : "outline"}
+            className="h-11"
+            onClick={() => onHorizon(sp.h)}
+          >
+            {sp.label}
+          </Button>
+        ))}
+      </div>
 
       <div className="grid gap-1">
         <div className="flex flex-wrap gap-1">
@@ -402,8 +395,11 @@ function WxBody({
               </Button>
             ))}
         </div>
-        {layers.wind ? (
-          <div className="flex gap-1">
+      </div>
+
+      <SeaStack
+        modelChips={
+          <div className="flex shrink-0 gap-1">
             {WIND_ORDER.map((id) => {
               const row = available.find((m) => m.id === id);
               const live = Boolean(row && row.hours.length >= 2);
@@ -419,7 +415,7 @@ function WxBody({
                     }
                     toggleModel(id);
                   }}
-                  className={`h-8 min-w-0 flex-1 rounded-md border px-1 text-xs ${
+                  className={`h-9 rounded-md border px-1.5 text-t12 ${
                     on ? WIND_LOOK[id].chip : live ? WIND_LOOK[id].off : `${WIND_LOOK[id].off} opacity-45`
                   }`}
                 >
@@ -428,10 +424,7 @@ function WxBody({
               );
             })}
           </div>
-        ) : null}
-      </div>
-
-      <SeaStack
+        }
         hours={hours}
         windSeries={shown}
         horizonH={horizonH}
@@ -450,18 +443,33 @@ function WxBody({
   );
 }
 
+const SPANS = [
+  { h: 24, label: "1 day" },
+  { h: 48, label: "2 days" },
+  { h: 72, label: "3 days" },
+  { h: 168, label: "7 days" },
+];
+
 const GRAPH_W = 320;
 const GRAPH_H = 228;
-const CUR_H = 128;
 const PAD_L = 34;
 const PAD_R = 36;
 const PAD_T = 14;
 const PAD_B = 22;
 const DAY_FILL = "#16324a";
-const NIGHT_FILL = "#000000";
+/** Night: a deeper navy, not black, so it reads as "dark hours" without swamping the lines. */
+const NIGHT_FILL = "#0b1828";
+const LANE_H = 120;
+const LANES: Array<{ key: keyof GraphLayers; title: string }> = [
+  { key: "wind", title: "Wind (kn)" },
+  { key: "waves", title: "Sea" },
+  { key: "tide", title: "Tide" },
+  { key: "current", title: "Current (kn)" },
+];
 const TWILIGHT_MS = 50 * 60_000;
 
 function SeaStack({
+  modelChips,
   hours,
   windSeries,
   horizonH,
@@ -476,6 +484,8 @@ function SeaStack({
   lng,
   onHorizon,
 }: {
+  /** Weather-model on/off buttons, shown in the wind graph's heading (they only affect wind). */
+  modelChips?: ReactNode;
   hours: WxHour[];
   windSeries: Array<{ id: WindModelId; hours: WxHour[] }>;
   horizonH: number;
@@ -533,33 +543,33 @@ function SeaStack({
   const cur = nearestSample(currentHours, cursor);
   const wave = nearestSample(waveHours, cursor);
 
+  // One lane per layer, each with its own scale, all on one time axis with one cursor.
+  // A single shared graph with two scales and every layer on was unreadable.
+  const lanes = LANES.filter((l) => layers[l.key]).filter(
+    (l) =>
+      l.key === "wind" ||
+      (l.key === "tide" && (tideHours?.length ?? 0) >= 2) ||
+      (l.key === "current" && currentHours.length >= 2) ||
+      (l.key === "waves" && waveHours.length >= 2),
+  );
+  const tideAtCell =
+    tideHours && tideHours.length >= 2
+      ? (at: number) => {
+          const all = windowTide(tideHours, at - 3_600_000, 2);
+          const v = all.length ? tideAt(all, at) : null;
+          return v == null ? null : toLatM(v, datum);
+        }
+      : null;
+
   return (
-    <div className="grid w-full max-w-full gap-3">
-      <ForecastGraph
-        hours={hours}
-        windSeries={windSeries}
-        horizonH={horizonH}
-        tideHours={tideHours}
-        tideTurns={tideTurns}
-        latDatum={datum}
-        layers={layers}
-        currentHours={currentHours}
-        waveHours={waveHours}
-        cursorAt={cursor}
-        onCursor={setCursorAt}
-        windowStart={windowStart}
-        onPan={canPan ? shiftWindow : undefined}
-        onZoom={zoomWindow}
-        height={GRAPH_H}
-        lat={lat}
-        lng={lng}
-      />
-      <div className="rounded-xl border border-border bg-background px-2.5 py-2">
+    <div className="grid w-full max-w-full grid-cols-[minmax(0,1fr)] gap-2">
+      {/* Pinned under the header, so it stays in view while dragging any graph. */}
+      <div className="sticky top-[var(--wx-head,3.5rem)] z-[5] rounded-xl border border-border bg-background/97 px-2.5 py-2 shadow-[var(--shadow-border)] backdrop-blur-sm">
         <div className="flex items-baseline justify-between gap-2">
           <p className="font-display text-lg leading-none font-semibold tabular-nums">
             {clockLabel(cursor)}
           </p>
-          <p className="truncate text-[11px] text-muted-foreground">
+          <p className="truncate text-t13 text-muted-foreground">
             {[when.label, when.hint, isDaylight(lat, lng, cursor) ? "Day" : "Night"]
               .filter(Boolean)
               .join(" · ")}
@@ -585,7 +595,7 @@ function SeaStack({
               const look = WIND_LOOK[s.id];
               return (
                 <div key={s.id} className="min-w-0">
-                  <p className={`flex items-center gap-0.5 text-[9px] tracking-wide uppercase ${look.wind}`}>
+                  <p className={`flex items-center gap-0.5 text-t12 ${look.wind}`}>
                     <MiniArrow deg={sample.dirDeg + 180} className={warn ? "text-destructive" : look.wind} />
                     {look.label}
                   </p>
@@ -596,7 +606,7 @@ function SeaStack({
                   >
                     {formatKn(gust ?? sample.windKn)}
                   </p>
-                  <p className="truncate text-[10px] text-muted-foreground">
+                  <p className="truncate text-t12 text-muted-foreground">
                     {gust != null ? `${formatKn(sample.windKn)} · ` : ""}
                     {windCardinal(sample.dirDeg)}
                   </p>
@@ -608,48 +618,85 @@ function SeaStack({
         {layers.tide || layers.waves || layers.current ? (
           <div className="mt-2 flex gap-2 border-t border-border/70 pt-1.5">
             {layers.tide && tideM != null ? (
-              <p className="min-w-0 flex-1 text-[11px] leading-tight">
-                <span className="text-[9px] tracking-wide text-muted-foreground uppercase">
+              <p className="min-w-0 flex-1 text-t13 leading-tight">
+                <span className="text-t12 text-muted-foreground">
                   {tideOrigin?.kind === "station" ? "Tide" : "Tide est"}
                 </span>
                 <span className="mt-0.5 block font-display text-base leading-none font-semibold tabular-nums">
-                  {tideM.toFixed(2)} m
+                  {formatDepth(tideM)}
                 </span>
-                <span className="text-[10px] text-muted-foreground">
+                <span className="text-t12 text-muted-foreground">
                   {rising == null ? "Slack" : rising ? "Rising" : "Falling"}
                 </span>
               </p>
             ) : null}
             {layers.waves && wave ? (
-              <p className="min-w-0 flex-1 text-[11px] leading-tight text-cyan-300">
-                <span className="flex items-center gap-0.5 text-[9px] tracking-wide uppercase">
+              <p className="min-w-0 flex-1 text-t13 leading-tight text-cyan-300">
+                <span className="flex items-center gap-0.5 text-t12">
                   <MiniArrow deg={wave.dirDeg + 180} className="text-cyan-300" />
                   Waves
                 </span>
                 <span className="mt-0.5 block font-display text-base leading-none font-semibold text-foreground tabular-nums">
-                  {wave.heightM.toFixed(1)} m
+                  {formatDepth(wave.heightM, { unit: getUnits().depth === "fm" ? "ft" : undefined })}
                 </span>
-                <span className="text-[10px] text-muted-foreground">
+                <span className="text-t12 text-muted-foreground">
                   {wave.periodS ? `${wave.periodS} s · ` : ""}
                   {windCardinal((wave.dirDeg + 180) % 360)}
                 </span>
               </p>
             ) : null}
             {layers.current && cur ? (
-              <p className="min-w-0 flex-1 text-[11px] leading-tight text-amber-300">
-                <span className="flex items-center gap-0.5 text-[9px] tracking-wide uppercase">
-                  <MiniArrow deg={cur.dirDeg} className="text-amber-300" />
+              <p className="min-w-0 flex-1 text-t13 leading-tight text-violet-300">
+                <span className="flex items-center gap-0.5 text-t12">
+                  <MiniArrow deg={cur.dirDeg} className="text-violet-300" />
                   Current
                 </span>
                 <span className="mt-0.5 block font-display text-base leading-none font-semibold text-foreground tabular-nums">
                   {formatKn(cur.kn)} kn
                 </span>
-                <span className="text-[10px] text-muted-foreground">{windCardinal(cur.dirDeg)}</span>
+                <span className="text-t12 text-muted-foreground">{windCardinal(cur.dirDeg)}</span>
               </p>
             ) : null}
           </div>
         ) : null}
       </div>
+      {lanes.map((lane) => (
+        <div key={lane.key}>
+          <div className="mb-1 flex items-center justify-between gap-2">
+            <p className="min-w-0 text-t12 font-medium text-muted-foreground">{lane.title}</p>
+            {lane.key === "wind" ? modelChips : null}
+          </div>
+          <ForecastGraph
+            hours={hours}
+            windSeries={windSeries}
+            horizonH={horizonH}
+            tideHours={tideHours}
+            tideTurns={tideTurns}
+            latDatum={datum}
+            layers={{ wind: false, tide: false, current: false, waves: false, [lane.key]: true }}
+            currentHours={currentHours}
+            waveHours={waveHours}
+            cursorAt={cursor}
+            onCursor={setCursorAt}
+            windowStart={windowStart}
+            onPan={canPan ? shiftWindow : undefined}
+            onZoom={zoomWindow}
+            height={lane.key === "wind" ? GRAPH_H - 28 : LANE_H}
+            lat={lat}
+            lng={lng}
+          />
+        </div>
+      ))}
+      <WeatherTable
+        hours={hours}
+        waveHours={waveHours}
+        currentHours={currentHours}
+        tideAt={tideAtCell}
+        windowStart={windowStart}
+        horizonH={horizonH}
+        cursorAt={cursor}
+        onCursor={setCursorAt}
+      />
     </div>
   );
 }
@@ -842,224 +889,13 @@ function ReadoutCell({
         </svg>
       ) : null}
       <div className="min-w-0">
-        <p className="text-[9px] tracking-[0.12em] text-muted-foreground uppercase">{label}</p>
+        <p className="text-t12 text-muted-foreground">{label}</p>
         <p className={cn("font-display text-xl leading-none font-semibold tabular-nums", valueClass)}>
           {value}
         </p>
-        {hint ? <p className="mt-0.5 text-[11px] text-muted-foreground">{hint}</p> : null}
+        {hint ? <p className="mt-0.5 text-t13 text-muted-foreground">{hint}</p> : null}
       </div>
     </div>
-  );
-}
-
-function CurrentNow({ sea }: { sea: SeaState }) {
-  const heading = useHelm((s) => s.boat?.heading ?? s.lastFix?.heading ?? null);
-  if (sea.currentKn == null || sea.currentDir == null) return null;
-  const vs =
-    heading != null
-      ? currentVsHeading(sea.currentKn, sea.currentDir, heading)
-      : null;
-  const along =
-    vs == null
-      ? null
-      : Math.abs(vs.alongKn) < 0.15
-        ? "abeam"
-        : vs.alongKn > 0
-          ? `${formatKn(vs.alongKn)} kn with you`
-          : `${formatKn(-vs.alongKn)} kn against`;
-  const across =
-    vs == null || Math.abs(vs.acrossKn) < 0.15
-      ? null
-      : `${formatKn(Math.abs(vs.acrossKn))} kn set ${vs.acrossKn > 0 ? "stb" : "port"}`;
-  return (
-    <div className="mt-3 rounded-md border border-border bg-card/60 px-2.5 py-2">
-      <p className="text-[9px] tracking-[0.12em] text-muted-foreground uppercase">Current</p>
-      <p className="font-display text-2xl leading-none font-semibold tabular-nums">
-        {formatKn(sea.currentKn)}
-        <span className="ml-1 text-xs font-medium text-muted-foreground">kn</span>
-        <span className="ml-2 text-base font-medium text-muted-foreground">
-          to {windCardinal(sea.currentDir)}
-        </span>
-      </p>
-      {along ? (
-        <p className="mt-1 text-[12px] text-muted-foreground">
-          {along}
-          {across ? ` · ${across}` : ""}
-        </p>
-      ) : (
-        <p className="mt-1 text-[12px] text-muted-foreground">Place heading to see with / against.</p>
-      )}
-    </div>
-  );
-}
-
-function SeaLayerGraph({
-  points,
-  horizonH,
-  t0,
-  cursorAt,
-  onCursor,
-  maxY,
-  unit,
-  fill,
-  lat,
-  lng,
-}: {
-  points: Array<{ at: number; v: number; dirDeg: number }>;
-  horizonH: number;
-  t0: number;
-  cursorAt: number;
-  onCursor: (at: number) => void;
-  maxY: number;
-  unit: string;
-  fill?: boolean;
-  lat?: number;
-  lng?: number;
-}) {
-  const svgRef = useRef<SVGSVGElement>(null);
-  const dragging = useRef(false);
-  if (points.length < 2) return null;
-  const now = Date.now();
-  const tEnd = t0 + horizonH * 3_600_000;
-  const innerH = CUR_H - 10 - 22;
-  const d = graphLineTimed(
-    points.map((h) => ({ at: h.at, v: h.v })),
-    t0,
-    horizonH,
-    GRAPH_W,
-    CUR_H,
-    maxY,
-    PAD_L,
-    PAD_R,
-    10,
-    22,
-  );
-  const cursor = Math.min(tEnd, Math.max(t0, cursorAt));
-  const cursorX = graphXAt(cursor, t0, horizonH, GRAPH_W, PAD_L, PAD_R);
-  const nowX = graphXAt(now, t0, horizonH, GRAPH_W, PAD_L, PAD_R);
-  const arrowEvery = horizonH <= 24 ? 3 : horizonH <= 48 ? 4 : 12;
-  const yAt = (v: number) => 10 + innerH - (v / Math.max(0.4, maxY)) * innerH;
-  const cursorHour = nearestSample(points, cursor);
-
-  const onDown = (ev: PointerEvent<SVGSVGElement>) => {
-    const svg = svgRef.current;
-    if (!svg) return;
-    dragging.current = true;
-    try {
-      svg.setPointerCapture(ev.pointerId);
-    } catch {
-      /* ignore */
-    }
-    onCursor(pointerToAt(ev, svg, t0, horizonH));
-  };
-
-  return (
-    <svg
-      ref={svgRef}
-      viewBox={`0 0 ${GRAPH_W} ${CUR_H}`}
-      className={fill ? "size-full touch-none" : "h-auto w-full touch-none"}
-      preserveAspectRatio={fill ? "none" : "xMidYMid meet"}
-      aria-label={`Sea ${unit} graph`}
-      onPointerDown={onDown}
-      onPointerMove={(ev) => {
-        if (!dragging.current || !svgRef.current) return;
-        onCursor(pointerToAt(ev, svgRef.current, t0, horizonH));
-      }}
-      onPointerUp={() => {
-        dragging.current = false;
-      }}
-      onPointerCancel={() => {
-        dragging.current = false;
-      }}
-    >
-      {lat != null && lng != null ? (
-        <NightShade
-          lat={lat}
-          lng={lng}
-          t0={t0}
-          horizonH={horizonH}
-          height={CUR_H}
-          padT={10}
-          padB={22}
-        />
-      ) : null}
-      {[maxY, maxY / 2].map((g) => {
-        const y = yAt(g);
-        return (
-          <g key={g}>
-            <line
-              x1={PAD_L}
-              x2={GRAPH_W - PAD_R}
-              y1={y}
-              y2={y}
-              stroke="currentColor"
-              className="text-border"
-              strokeWidth="1"
-            />
-            <text x="2" y={y + 3} className="fill-muted-foreground" fontSize="9">
-              {g}
-              {g === maxY ? ` ${unit}` : ""}
-            </text>
-          </g>
-        );
-      })}
-      <path
-        d={d}
-        fill="none"
-        stroke="currentColor"
-        className="text-sky-300"
-        strokeWidth="2.2"
-        strokeLinejoin="round"
-      />
-      {points.map((h, i) => {
-        if (i % arrowEvery !== 0) return null;
-        const x = graphXAt(h.at, t0, horizonH, GRAPH_W, PAD_L, PAD_R);
-        const y = yAt(h.v);
-        return <PlotArrow key={h.at} x={x} y={y} deg={h.dirDeg} fill="fill-sky-300" />;
-      })}
-      {cursorHour ? (
-        <PlotArrow
-          x={cursorX}
-          y={yAt(cursorHour.v)}
-          deg={cursorHour.dirDeg}
-          fill="fill-sky-200"
-          size={1.12}
-        />
-      ) : null}
-      {now >= t0 && now <= tEnd ? (
-        <line
-          x1={nowX}
-          x2={nowX}
-          y1={10}
-          y2={CUR_H - 22}
-          stroke="currentColor"
-          className="text-foreground"
-          strokeWidth="1.2"
-          strokeDasharray="3 3"
-        />
-      ) : null}
-      <line
-        x1={cursorX}
-        x2={cursorX}
-        y1={10}
-        y2={CUR_H - 22}
-        stroke="currentColor"
-        className="text-primary"
-        strokeWidth="1.6"
-      />
-      {axisMarks(t0, horizonH).map((tick) => (
-        <text
-          key={tick.at}
-          x={graphXAt(tick.at, t0, horizonH, GRAPH_W, PAD_L, PAD_R)}
-          y={CUR_H - 5}
-          textAnchor="middle"
-          className="fill-muted-foreground"
-          fontSize="9"
-        >
-          {tick.day ? `${tick.day} ${tick.time}` : tick.time}
-        </text>
-      ))}
-    </svg>
   );
 }
 
@@ -1558,7 +1394,7 @@ function ForecastGraph({
             d={currentLine}
             fill="none"
             stroke="currentColor"
-            className="text-amber-300"
+            className="text-violet-300"
             strokeWidth="1.4"
             strokeLinejoin="round"
           />
@@ -1566,6 +1402,8 @@ function ForecastGraph({
         {showWind && arrowSeries && horizonH <= 72
           ? arrowSeries.hours.map((h, i) => {
               if (i % arrowEvery !== 0) return null;
+        // Hours outside the window were being clamped onto the graph edges.
+        if (h.at < t0 || h.at > t0 + horizonH * 3_600_000) return null;
               const x = graphXAt(h.at, t0, horizonH, GRAPH_W, PAD_L, PAD_R);
               const y = yWind(h.windKn);
               return (
@@ -1582,6 +1420,8 @@ function ForecastGraph({
         {showWaves && waveHours && horizonH <= 72
           ? waveHours.map((h, i) => {
               if (i % arrowEvery !== 0) return null;
+        // Hours outside the window were being clamped onto the graph edges.
+        if (h.at < t0 || h.at > t0 + horizonH * 3_600_000) return null;
               const x = graphXAt(h.at, t0, horizonH, GRAPH_W, PAD_L, PAD_R);
               const y = yWave(h.heightM);
               return (
@@ -1598,6 +1438,8 @@ function ForecastGraph({
         {showCurrent && currentHours && horizonH <= 72
           ? currentHours.map((h, i) => {
               if (i % arrowEvery !== 0) return null;
+        // Hours outside the window were being clamped onto the graph edges.
+        if (h.at < t0 || h.at > t0 + horizonH * 3_600_000) return null;
               const x = graphXAt(h.at, t0, horizonH, GRAPH_W, PAD_L, PAD_R);
               const y = yCurrent(h.kn);
               return (
@@ -1606,7 +1448,7 @@ function ForecastGraph({
                   x={x}
                   y={y}
                   deg={h.dirDeg}
-                  fill="fill-amber-300"
+                  fill="fill-violet-300"
                 />
               );
             })
@@ -1764,7 +1606,7 @@ function ForecastGraph({
           {showTide ? (
             <ReadoutCell
               label="Tide LAT"
-              value={tideM != null ? `${tideM.toFixed(2)} m` : "—"}
+              value={tideM != null ? formatDepth(tideM) : "—"}
               hint={rising == null ? "Slack" : rising ? "Rising" : "Falling"}
             />
           ) : null}
@@ -1774,56 +1616,34 @@ function ForecastGraph({
   );
 }
 
-function TideNow({
-  hours,
-  turns,
-  t0,
-  horizonH,
-}: {
-  hours: TideHour[];
-  turns: TideTurn[];
-  t0: number;
-  horizonH: number;
-}) {
-  const now = hours[0];
-  if (!now) return null;
-  const hw = nextTurn(turns, "high", now.at);
-  const lw = nextTurn(turns, "low", now.at);
-  const datum = latDatumM(hours);
-  const nowLat = toLatM(now.m, datum);
-  const hwLat = hw ? toLatM(hw.m, datum) : null;
-  const lwLat = lw ? toLatM(lw.m, datum) : null;
-  const rise =
-    hw ? Math.max(0, Math.round((hw.m - now.m) * 10) / 10) : 0;
-  return (
-    <div className="mt-3 rounded-md border border-border bg-card/60 px-2.5 py-2">
-      <p className="text-[9px] tracking-[0.12em] text-muted-foreground uppercase">
-        Tide LAT
-      </p>
-      <p className="font-display text-2xl leading-none font-semibold tabular-nums">
-        {nowLat.toFixed(2)}
-        <span className="ml-1 text-xs font-medium text-muted-foreground">m LAT</span>
-      </p>
-      <p className="mt-1 text-[12px] text-muted-foreground">
-        {hw
-          ? `HW ${hwLat?.toFixed(1)} m ${hourLabel(hw.at)} ${hoursUntil(hw.at)} · +${rise.toFixed(1)} m`
-          : "No high in this window"}
-        {lw ? ` · LW ${lwLat?.toFixed(1)} m ${hourLabel(lw.at)}` : ""}
-      </p>
-    </div>
-  );
-}
-
 export function AnchorWxCard() {
+  useUnitsKey();
   const wx = useWx();
   const draftM = useHelm((s) => s.hull.draftM);
   const [showDelta, setShowDelta] = useState(false);
   const [showSource, setShowSource] = useState(false);
   const data = wx.data;
   if (!data) {
-    return wx.isLoading ? (
-      <p className="mb-2 text-xs text-muted-foreground">Loading 24 h wind and tide…</p>
-    ) : null;
+    if (wx.isLoading) {
+      // Same height as the loaded card, so the panel doesn't jump when it arrives.
+      return (
+        <div className="mb-2 grid h-28 animate-pulse place-items-center rounded-lg border border-border bg-background text-t13 text-muted-foreground" aria-busy="true">
+          Loading 24 h wind and tide…
+        </div>
+      );
+    }
+    if (wx.isError) {
+      return (
+        <div className="mb-2 rounded-md border border-border bg-background px-3 py-2 text-t14 leading-snug text-muted-foreground">
+          No forecast here yet: no signal. Set depth and tide by hand; wind and tide load
+          when you're back in range.{" "}
+          <button type="button" className="underline" onClick={() => void wx.refetch()}>
+            Try again
+          </button>
+        </div>
+      );
+    }
+    return null;
   }
   const hours = sliceByHorizon(data.hours, 24);
   const maxWind = windowStats(hours).maxWind;
@@ -1853,55 +1673,60 @@ export function AnchorWxCard() {
   const windModel = WX_MODEL_LABEL[data.source] ?? "Open-Meteo";
   const tideValue = (abs: number | null) => {
     if (abs == null || tideNow == null) return "—";
-    if (!showDelta) return `${abs.toFixed(1)} m`;
+    if (!showDelta) return formatDepth(abs);
     const d = Math.round((abs - tideNow) * 10) / 10;
     const sign = d > 0 ? "+" : d < 0 ? "−" : "";
-    return `${sign}${Math.abs(d).toFixed(1)} m`;
+    return `${sign}${formatDepth(Math.abs(d))}`;
   };
 
   return (
     <div className="mb-2 overflow-hidden rounded-lg border border-border bg-background">
       <div className="flex items-center justify-between px-3 pt-2 pb-1">
-        <p className="text-[10px] tracking-[0.14em] text-muted-foreground uppercase">
+        <p className="text-t12 text-muted-foreground">
           Next 24 h
+          {data.savedAt ? (
+            <span className="ml-2 rounded-sm bg-amber-500/20 px-1.5 py-0.5 tracking-normal text-amber-300 normal-case">
+              No signal · saved {savedAgo(data.savedAt)}
+            </span>
+          ) : null}
         </p>
         <button
           type="button"
           aria-label="Where this data comes from"
           aria-expanded={showSource}
           onClick={() => setShowSource((v) => !v)}
-          className="flex size-6 items-center justify-center rounded-full border border-border text-[12px] leading-none font-semibold text-muted-foreground"
+          className="flex size-6 items-center justify-center rounded-full border border-border text-t14 leading-none font-semibold text-muted-foreground"
         >
           i
         </button>
       </div>
       {showSource ? (
-        <div className="mx-3 mb-2 rounded-md bg-card px-2.5 py-2 text-[11px] leading-snug text-muted-foreground">
+        <div className="mx-3 mb-2 rounded-md bg-card px-2.5 py-2 text-t13 leading-snug text-muted-foreground">
           <p>Wind and gust: {windModel}, 10 m, via Open-Meteo.</p>
           <p className="mt-1">{tideOriginLabel(sea?.tideOrigin)}</p>
           <p className="mt-1">
-            Draw is the draft you set ({draftM.toFixed(1)} m), not a sounding.
+            Draw is the draft you set ({formatDepth(draftM)}), not a sounding.
             {need != null
-              ? ` Stay in water charted deeper than ${need.toFixed(1)} m. Not a sounder.`
+              ? ` Stay in water charted deeper than ${formatDepth(need)}. Not a sounder.`
               : ""}
           </p>
         </div>
       ) : null}
 
       <div className="grid grid-cols-[3.4rem_1fr_4.2rem_1.4rem] items-center gap-y-1.5 px-3 pb-2">
-        <p className="col-span-4 text-[9px] tracking-[0.12em] text-muted-foreground uppercase">
+        <p className="col-span-4 text-t12 text-muted-foreground">
           Wind · max
         </p>
-        <span className="text-[11px] text-muted-foreground">Wind</span>
+        <span className="text-t13 text-muted-foreground">Wind</span>
         <span className="font-display text-xl leading-none font-semibold tabular-nums">
           {formatKn(maxWind.windKn)}
-          <span className="ml-1 text-[11px] font-medium text-muted-foreground">
+          <span className="ml-1 text-t13 font-medium text-muted-foreground">
             kn {windCardinal(maxWind.dirDeg)}
           </span>
         </span>
         <span className="text-right text-xs text-muted-foreground">{hourLabel(maxWind.at)}</span>
         <MiniArrow deg={maxWind.dirDeg + 180} className="justify-self-end text-primary" />
-        <span className={gustWarn ? "text-[11px] text-destructive" : "text-[11px] text-muted-foreground"}>
+        <span className={gustWarn ? "text-t13 text-destructive" : "text-t13 text-muted-foreground"}>
           Gust
         </span>
         <span
@@ -1912,7 +1737,7 @@ export function AnchorWxCard() {
           {gustKn != null ? formatKn(gustKn) : "—"}
           {gustKn != null ? (
             <span
-              className={`ml-1 text-[11px] font-medium ${
+              className={`ml-1 text-t13 font-medium ${
                 gustWarn ? "text-destructive" : "text-muted-foreground"
               }`}
             >
@@ -1941,48 +1766,43 @@ export function AnchorWxCard() {
         aria-pressed={showDelta}
         className="grid w-full grid-cols-[3.4rem_1fr_4.2rem_1.4rem] items-center gap-y-1.5 border-t border-border px-3 py-2 text-left"
       >
-        <p className="col-span-4 text-[9px] tracking-[0.12em] text-muted-foreground uppercase">
+        <p className="col-span-4 text-t12 text-muted-foreground">
           {showDelta ? "Tide · change from now" : "Tide · tap for change from now"}
         </p>
-        <span className="text-[11px] text-muted-foreground">Draw</span>
+        <span className="text-t13 text-muted-foreground">Draw</span>
         <span className="font-display text-xl leading-none font-semibold tabular-nums">
           {draftM.toFixed(1)}
-          <span className="ml-1 text-[11px] font-medium text-muted-foreground">m</span>
+          <span className="ml-1 text-t13 font-medium text-muted-foreground">m</span>
         </span>
-        <span className="text-right text-[11px] text-muted-foreground">draft</span>
+        <span className="text-right text-t13 text-muted-foreground">draft</span>
         <span />
-        <span className="text-[11px] text-muted-foreground">HW</span>
+        <span className="text-t13 text-muted-foreground">HW</span>
         <span className="font-display text-xl leading-none font-semibold tabular-nums">
           {tideValue(hwM)}
         </span>
         <span className="text-right text-xs text-muted-foreground">{hw ? hourLabel(hw.at) : ""}</span>
         <span />
-        <span className="text-[11px] text-muted-foreground">LW</span>
+        <span className="text-t13 text-muted-foreground">LW</span>
         <span className="font-display text-xl leading-none font-semibold tabular-nums">
           {tideValue(lwM)}
         </span>
         <span className="text-right text-xs text-muted-foreground">{lw ? hourLabel(lw.at) : ""}</span>
         <span />
         {showDelta && tideNow != null ? (
-          <p className="col-span-4 text-[11px] text-muted-foreground">
+          <p className="col-span-4 text-t13 text-muted-foreground">
             Now {tideNow >= 0 ? "+" : "−"}
-            {Math.abs(tideNow).toFixed(1)} m LAT
+            {formatDepth(Math.abs(tideNow))} LAT
           </p>
         ) : null}
       </button>
-    </div>
-  );
-}
-
-function Stat({ label, value }: { label: string; value: string }) {
-  return (
-    <div>
-      <p className="text-[10px] tracking-[0.14em] text-muted-foreground uppercase">
-        {label}
-      </p>
-      <p className="font-display text-lg leading-none font-semibold tabular-nums">
-        {value}
-      </p>
+      <Button
+        variant="outline"
+        size="sm"
+        className="mt-1.5 w-full"
+        onClick={() => useHelm.getState().setPanel("weather")}
+      >
+        Full forecast
+      </Button>
     </div>
   );
 }
@@ -2000,7 +1820,7 @@ export function WindInstrument({ compact }: { compact?: boolean }) {
       className={compact ? "min-w-0 flex-1 px-2 py-1.5 text-left" : "min-w-[5.5rem] px-3 py-2 text-left"}
       aria-label="24 hour wind and weather"
     >
-      <p className="text-[9px] tracking-[0.12em] text-muted-foreground uppercase">
+      <p className="text-t12 text-muted-foreground">
         Wind
       </p>
       <p
@@ -2009,10 +1829,17 @@ export function WindInstrument({ compact }: { compact?: boolean }) {
         } ${strong ? "text-destructive" : ""}`}
       >
         {hour ? formatKn(hour.windKn) : wx.isLoading ? "…" : "—"}
-        <span className="ml-0.5 text-[10px] font-medium text-muted-foreground">
+        <span className="ml-0.5 text-t12 font-medium text-muted-foreground">
           {hour ? `kn ${windCardinal(hour.dirDeg)}` : "kn"}
         </span>
       </p>
     </button>
   );
+}
+
+function savedAgo(at: number): string {
+  const h = Math.max(0, Math.round((Date.now() - at) / 3_600_000));
+  if (h < 1) return "just now";
+  if (h < 48) return `${h} h ago`;
+  return `${Math.round(h / 24)} days ago`;
 }

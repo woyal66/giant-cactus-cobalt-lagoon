@@ -6,6 +6,7 @@ import {
   Map as MapIcon,
   Pencil,
   Radio,
+  Route as RouteIcon,
   Square,
   Undo2,
 } from "lucide-react";
@@ -20,6 +21,17 @@ import { fetchTideRise, latDatumM, tideRiseAt, toLatM } from "@/lib/tides";
 import type { SeaState } from "@/lib/weather";
 import { AnchorWxCard } from "@/components/helm/weather";
 import { useHelm } from "@/store/helm";
+import {
+  depthSuffix,
+  depthWheel,
+  formatLength,
+  fromDepth,
+  fromLength,
+  lengthSuffix,
+  lengthWheel,
+  toDepth,
+  toLength,
+} from "@/lib/units";
 
 export function BottomDock() {
   const panel = useHelm((s) => s.panel);
@@ -33,8 +45,7 @@ export function BottomDock() {
   const canReverse = draft.length >= 2 || crumb.length >= 2;
   const anchorStep = useHelm((s) => s.anchorStep);
   const watching = useHelm((s) => Boolean(s.anchor?.radiusLocked));
-  const weigh = useHelm((s) => s.weighAnchor);
-  const [stopAsk, setStopAsk] = useState(false);
+  const breach = useHelm((s) => s.alarmOn || s.gpsLost);
 
   if (anchorStep) return <AnchorSetBar />;
 
@@ -43,7 +54,7 @@ export function BottomDock() {
 
   if (drawMode === "record") {
     return (
-      <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20 p-2 pb-[max(0.5rem,env(safe-area-inset-bottom))]">
+      <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20 p-2 pb-[max(0.5rem,var(--safe-area-inset-bottom,env(safe-area-inset-bottom)))]">
         <div className="pointer-events-auto mx-auto flex max-w-lg items-center gap-2 rounded-xl border border-border bg-card p-1.5 shadow-[var(--shadow-border)]">
           <Button
             variant="danger"
@@ -66,7 +77,7 @@ export function BottomDock() {
             Discard
           </Button>
         </div>
-        <p className="pointer-events-none mt-1.5 text-center text-[11px] text-foreground">
+        <p className="pointer-events-none mt-1.5 text-center text-t13 text-foreground">
           Recording from the start. Stop marks the end.
         </p>
       </div>
@@ -75,7 +86,7 @@ export function BottomDock() {
 
   if (drawMode !== "idle") {
     return (
-      <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20 p-2 pb-[max(0.5rem,env(safe-area-inset-bottom))]">
+      <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20 p-2 pb-[max(0.5rem,var(--safe-area-inset-bottom,env(safe-area-inset-bottom)))]">
         <div className="pointer-events-auto mx-auto flex max-w-lg items-center gap-2 rounded-xl border border-border bg-card p-1.5 shadow-[var(--shadow-border)]">
           <Button
             variant="danger"
@@ -108,7 +119,7 @@ export function BottomDock() {
             Save {draft.length ? `(${draft.length})` : ""}
           </Button>
         </div>
-        <p className="pointer-events-none mt-1.5 text-center text-[11px] text-foreground">
+        <p className="pointer-events-none mt-1.5 text-center text-t13 text-foreground">
           {drawMode === "draw"
             ? "Tap the water to drop waypoints along the safe colour."
             : "Logging your GPS trail. Reverse follows it back out."}
@@ -118,30 +129,11 @@ export function BottomDock() {
   }
 
   return (
-    <nav className="pointer-events-none absolute inset-x-0 bottom-0 z-20 p-2 pb-[max(0.5rem,env(safe-area-inset-bottom))]">
-      <div className="pointer-events-auto mx-auto grid max-w-lg grid-cols-5 gap-0.5 rounded-xl border border-border bg-card p-1 shadow-[var(--shadow-border)]">
-        {watching && stopAsk ? (
-          <div className="col-span-5 mb-1 rounded-lg border border-destructive/40 bg-destructive/10 p-2">
-            <p className="text-center text-sm font-medium">Stop the anchor watch?</p>
-            <div className="mt-2 grid grid-cols-2 gap-2">
-              <Button variant="outline" onClick={() => setStopAsk(false)}>
-                Keep
-              </Button>
-              <Button
-                variant="danger"
-                onClick={() => {
-                  setStopAsk(false);
-                  weigh();
-                }}
-              >
-                Stop
-              </Button>
-            </div>
-          </div>
-        ) : null}
+    <nav className="pointer-events-none absolute inset-x-0 bottom-0 z-20 p-2 pb-[max(0.5rem,var(--safe-area-inset-bottom,env(safe-area-inset-bottom)))]">
+      <div className="pointer-events-auto mx-auto grid max-w-lg grid-cols-6 gap-0.5 rounded-xl border border-border bg-card p-1 shadow-[var(--shadow-border)]">
         <DockBtn
           active={panel === "atlas"}
-          label="Atlas"
+          label="Places"
           onClick={() => toggle("atlas")}
         >
           <MapIcon />
@@ -154,17 +146,25 @@ export function BottomDock() {
           <BookOpen />
         </DockBtn>
         <DockBtn
-          active={panel === "anchor"}
-          label={watching ? "Stop" : "Anchor"}
-          emphasize={!watching}
-          danger={watching}
+          active={panel === "route"}
+          label="Route"
           onClick={() => {
             const s = useHelm.getState();
-            if (s.anchor?.radiusLocked) {
-              setStopAsk(true);
-              setPanel(null);
-              return;
-            }
+            if (s.panel === "route" || s.tapMode.startsWith("route-")) s.endRoutePlan();
+            else s.beginRoutePlan();
+          }}
+        >
+          <RouteIcon />
+        </DockBtn>
+        <DockBtn
+          active={panel === "anchor"}
+          label={breach ? "Alarm" : watching ? "Watch" : "Anchor"}
+          // Filled only while the watch runs (red on alarm), so the dock shows the watch state.
+          emphasize={watching}
+          danger={breach}
+          onClick={() => {
+            const s = useHelm.getState();
+            // On watch: open the anchor sheet (settings, test, stop with a confirm).
             if (s.anchor) {
               toggle("anchor");
               return;
@@ -220,7 +220,7 @@ function DockBtn({
     <Button
       variant={danger ? "danger" : active || emphasize ? "default" : "ghost"}
       onClick={onClick}
-      className="h-12 flex-col gap-0.5 rounded-lg px-1 text-[9px] font-medium tracking-wide uppercase"
+      className="h-14 flex-col gap-1 rounded-lg px-1 text-t13 font-semibold [&_svg]:size-5"
     >
       {children}
       {label}
@@ -254,21 +254,25 @@ function AnchorSetBar() {
     const [lat, lng] = tideKey.split(",").map(Number);
     if (lat == null || lng == null) return;
     let stop = false;
-    void fetchTideRise(lat, lng).then((d) => {
-      if (stop || !d.highAt) return;
-      useHelm.getState().setRode({
-        tideRiseM: d.riseM,
-        tideHighAt: d.highAt,
-        tideManual: false,
+    fetchTideRise(lat, lng)
+      .then((d) => {
+        if (stop || !d.highAt) return;
+        useHelm.getState().setRode({
+          tideRiseM: d.riseM,
+          tideHighAt: d.highAt,
+          tideManual: false,
+        });
+      })
+      .catch(() => {
+        /* no signal: keep the tide the skipper entered */
       });
-    });
     return () => {
       stop = true;
     };
   }, [tideKey]);
 
   return (
-    <div className="pointer-events-none absolute inset-x-0 bottom-0 z-30 p-2 pb-[max(0.5rem,env(safe-area-inset-bottom))]">
+    <div className="pointer-events-none absolute inset-x-0 bottom-0 z-30 p-2 pb-[max(0.5rem,var(--safe-area-inset-bottom,env(safe-area-inset-bottom)))]">
       <div className="pointer-events-auto mx-auto max-w-lg rounded-xl border border-border bg-card p-3 shadow-[var(--shadow-border)]">
         {step === "place" ? (
           <Prompt
@@ -295,13 +299,13 @@ function AnchorSetBar() {
         ) : null}
         {step === "scope" ? (
           <div>
-            <p className="text-[10px] tracking-[0.14em] text-muted-foreground uppercase">Length</p>
+            <p className="text-t12 text-muted-foreground">Length</p>
             <p className="mt-1 font-display text-2xl leading-tight font-semibold">
-              This length will be {Math.round(math.laybackM)} m
+              This length will be {formatLength(math.laybackM)}
               {astern != null ? `, ${astern}°` : " astern"}.
             </p>
             <p className="mt-1 text-sm text-muted-foreground">
-              Scope {math.scopeNow.toFixed(1)}:1. Swing circle {math.radiusM} m.
+              Scope {math.scopeNow.toFixed(1)}:1. Swing circle {formatLength(math.radiusM)}.
             </p>
             <Row
               cancel="Back"
@@ -341,7 +345,7 @@ function AnchorSetBar() {
         ) : null}
         {step === "watch" ? (
           <div className="max-h-[46dvh] overflow-y-auto">
-            <p className="mb-2 text-[10px] tracking-[0.14em] text-muted-foreground uppercase">
+            <p className="mb-2 text-t12 text-muted-foreground">
               Next 24 h
             </p>
             <AnchorWxCard />
@@ -385,12 +389,19 @@ function RodeDials({
   onOk: (depthM: number, chainM: number, scope: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10) => void;
   onCancel: () => void;
 }) {
-  const depths = useMemo(() => wheelValues(0.2, 40, 0.2), []);
-  const chains = useMemo(() => wheelValues(0, 200, 1), []);
+  // Wheels run in the skipper's units; everything is converted back to metres on OK.
+  const depthUnit = useHelm((s) => s.depthUnit);
+  const lengthUnit = useHelm((s) => s.lengthUnit);
+  const dw = depthWheel(depthUnit);
+  const lw = lengthWheel(lengthUnit);
+  const depths = useMemo(() => wheelValues(dw.min, dw.max, dw.step), [dw.min, dw.max, dw.step]);
+  const chains = useMemo(() => wheelValues(lw.min, lw.max, lw.step), [lw.min, lw.max, lw.step]);
   const scopes = useMemo(() => wheelValues(1, 10, 1), []);
-  const [depthM, setDepthM] = useState(() => nearest(depths, depth));
-  const [chainM, setChainM] = useState(() => nearest(chains, chain));
+  const [depthV, setDepthV] = useState(() => nearest(depths, toDepth(depth, depthUnit)));
+  const [chainV, setChainV] = useState(() => nearest(chains, toLength(chain, lengthUnit)));
   const [scopeN, setScopeN] = useState(() => nearest(scopes, scope));
+  const depthM = fromDepth(depthV, depthUnit);
+  const chainM = fromLength(chainV, lengthUnit);
   const rise = Math.max(0, tideM);
   const need = Math.ceil(scopeN * (depthM + bowM + rise));
   const enough = chainM + 0.05 >= need;
@@ -400,28 +411,30 @@ function RodeDials({
   const depthShort = draftM > atLat + 0.05;
   return (
     <div>
-      <p className="text-[10px] tracking-[0.18em] text-[#9eb0aa] uppercase">Rode</p>
+      <p className="text-t12 text-[#9eb0aa]">Rode</p>
       <div className="mt-2 grid grid-cols-3 gap-1.5">
         <Wheel label="Scope" value={scopeN} values={scopes} step={1} unit=":1" onChange={setScopeN} />
         <Wheel
           label="Chain"
-          value={chainM}
+          value={chainV}
           values={chains}
-          step={1}
+          step={lw.step}
+          unit={lengthSuffix(lengthUnit)}
           tone={enough ? "ok" : "short"}
-          onChange={setChainM}
+          onChange={setChainV}
         />
         <Wheel
           label="Depth"
-          value={depthM}
+          value={depthV}
           values={depths}
-          step={0.2}
+          step={dw.step}
+          unit={depthSuffix(depthUnit)}
           tone={depthShort ? "short" : "plain"}
-          onChange={setDepthM}
+          onChange={setDepthV}
         />
       </div>
       <p className={`mt-2 text-center text-sm font-medium ${enough ? "text-emerald-300" : "text-destructive"}`}>
-        {enough ? "Enough" : "Short"} · {need} m for {scopeN}:1
+        {enough ? "Enough" : "Short"} · {formatLength(need)} for {scopeN}:1
         {rise > 0.05 ? ` at high water${highWhen(highAt)}` : ""}
       </p>
       <Row
@@ -494,7 +507,7 @@ function Wheel({
   }, [value, values]);
   return (
     <div>
-      <p className="mb-1 text-center text-[10px] tracking-[0.2em] text-[#9eb0aa] uppercase">{label}</p>
+      <p className="mb-1 text-center text-t12 text-[#9eb0aa]">{label}</p>
       <div className="relative overflow-hidden rounded-lg bg-[#07141a] shadow-[inset_0_0_0_1px_rgba(215,230,225,0.18)]">
         <div
           className="pointer-events-none absolute inset-y-3 left-1 z-10 flex w-1.5 flex-col justify-between"
@@ -530,7 +543,7 @@ function Wheel({
               }`}
             >
               {v.toFixed(places)}
-              <span className="ml-0.5 text-[10px] font-medium tracking-wide text-[#9eb0aa]">{unit}</span>
+              <span className="ml-0.5 text-t12 font-medium text-[#9eb0aa]">{unit}</span>
             </div>
           ))}
           <div style={{ height: item * 1.5 }} />
@@ -551,7 +564,7 @@ function Prompt({
 }) {
   return (
     <div>
-      <p className="text-[10px] tracking-[0.14em] text-muted-foreground uppercase">{kicker}</p>
+      <p className="text-t12 text-muted-foreground">{kicker}</p>
       <p className="mt-1 text-sm">{title}</p>
       <Row cancel="Cancel" ok="" onCancel={onCancel} onOk={() => {}} hideOk />
     </div>

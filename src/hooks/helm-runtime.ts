@@ -1,12 +1,12 @@
 import { useEffect, useRef } from "react";
 import type { Position } from "@capacitor/geolocation";
 import { toast } from "sonner";
-import { cornerIndexes, haversineMeters, shouldAppendTrack } from "@/lib/geo";
-import { boatInsideWatch, anchorPollMs, ANCHOR_POLL_FAST_MS } from "@/lib/anchor";
+import { cornerIndexes, formatMeters, haversineMeters, shouldAppendTrack } from "@/lib/geo";
+import { boatInsideWatch, anchorPollMs, ANCHOR_POLL_FAST_MS, fixPreciseForWatch } from "@/lib/anchor";
 import { HELM_ZOOM } from "@/lib/imagery";
-import { startAlarmTone, stopAlarmTone, unlockAlarmAudio } from "@/lib/alarm";
+import { previewAlarm, startAlarmTone, stopAlarmTone, unlockAlarmAudio } from "@/lib/alarm";
 import { setSteerEar, stopSteerEar } from "@/lib/steer-audio";
-import { markNav, steerCue } from "@/lib/steer";
+import { markNav, steerCue, steerLegIndex } from "@/lib/steer";
 import {
   clearAnchorStatus,
   clearWatchNotice,
@@ -20,6 +20,23 @@ import {
   type GuardState,
 } from "@/lib/watch-guard";
 import { isNativeApp } from "@/lib/native";
+import { isDaylight } from "@/lib/sun";
+import {
+  REMOTE_MAX_REPEATS,
+  REMOTE_REPEAT_MS,
+  buildMessage,
+  publish,
+  remoteEvents,
+  type RemoteEvent,
+  type WatchSnapshot,
+} from "@/lib/remote-watch";
+import { nearestReef } from "@/lib/reefs";
+import {
+  FIX_EVENT,
+  isBackgroundGpsActive,
+  startBackgroundGps,
+  type BackgroundWatch,
+} from "@/lib/background-gps";
 import { useHelm, guidePoints } from "@/store/helm";
 import type { Waypoint } from "@/lib/passages";
 
@@ -68,14 +85,17 @@ export function useGpsWatch() {
     let stopped = false;
     let watchId: number | string | null = null;
     let pollTimer: number | null = null;
-    let mode: "watch" | "poll" | null = null;
+    let pollDue = 0;
+    let mode: "watch" | "poll" | "bg" | null = null;
+    let bgWatch: BackgroundWatch | null = null;
     let pending = false;
     let pendingAt = 0;
 
     const applyFix = (pos: GeolocationPosition) => {
       if (stopped) return;
       const s = useHelm.getState();
-      if (s.demoPlaying) return;
+      // A drag test parks the boat outside the circle; live GPS must not snap it back.
+      if (s.demoPlaying || Date.now() < demoHoldUntil) return;
       const heading = Number.isFinite(pos.coords.heading)
         ? (pos.coords.heading as number)
         : (s.boat?.heading ?? null);
@@ -123,6 +143,18 @@ export function useGpsWatch() {
       }
     };
 
+    const stopBg = () => {
+      bgWatch?.stop();
+      bgWatch = null;
+    };
+
+    /** On the phone, any armed watch must survive the screen locking. */
+    const wantBackground = () => {
+      if (!isNativeApp()) return false;
+      const s = useHelm.getState();
+      return Boolean(s.anchor) || s.drawMode === "record" || Boolean(s.activePassage);
+    };
+
     const wantPoll = () => {
       const s = useHelm.getState();
       return Boolean(s.anchor) && s.drawMode !== "record";
@@ -136,6 +168,16 @@ export function useGpsWatch() {
       const done = (pos: GeolocationPosition) => {
         pending = false;
         applyFix(pos);
+        // A fix near or past the circle edge: check again at the fast rate now, not after the
+        // slow wait already scheduled (that delayed the drag alarm by up to 30 s).
+        if (mode === "poll" && pollTimer != null) {
+          const st = useHelm.getState();
+          if (anchorPollMs(st.boat, st.anchor) === ANCHOR_POLL_FAST_MS && pollDue - Date.now() > ANCHOR_POLL_FAST_MS) {
+            clearPoll();
+            pollTimer = window.setTimeout(schedulePoll, ANCHOR_POLL_FAST_MS);
+            pollDue = Date.now() + ANCHOR_POLL_FAST_MS;
+          }
+        }
       };
       const fail = (err: GeolocationPositionError) => {
         pending = false;
@@ -174,6 +216,7 @@ export function useGpsWatch() {
       const wait = anchorPollMs(s.boat, s.anchor);
       requestFix(wait === ANCHOR_POLL_FAST_MS ? 5_000 : 25_000);
       pollTimer = window.setTimeout(schedulePoll, wait);
+      pollDue = Date.now() + wait;
     };
 
     const startWatch = () => {
@@ -217,6 +260,15 @@ export function useGpsWatch() {
 
     const sync = () => {
       if (stopped) return;
+      if (wantBackground()) {
+        if (mode === "bg") return;
+        clearWatch();
+        clearPoll();
+        mode = "bg";
+        bgWatch = startBackgroundGps(applyFix, () => useHelm.getState().setGpsDenied(true));
+        return;
+      }
+      stopBg();
       if (wantPoll()) {
         if (mode === "poll") return;
         clearWatch();
@@ -238,7 +290,11 @@ export function useGpsWatch() {
 
     sync();
     const unsub = useHelm.subscribe((s, prev) => {
-      if (Boolean(s.anchor) !== Boolean(prev.anchor) || s.drawMode !== prev.drawMode) {
+      if (
+        Boolean(s.anchor) !== Boolean(prev.anchor) ||
+        s.drawMode !== prev.drawMode ||
+        Boolean(s.activePassage) !== Boolean(prev.activePassage)
+      ) {
         sync();
       }
     });
@@ -250,6 +306,7 @@ export function useGpsWatch() {
       document.removeEventListener("visibilitychange", onVis);
       clearWatch();
       clearPoll();
+      stopBg();
     };
   }, []);
 }
@@ -335,10 +392,13 @@ export function useAnchorWatch() {
     };
 
     document.addEventListener("visibilitychange", kick);
+    // Background GPS delivers fixes while browser timers are frozen; check each one.
+    window.addEventListener(FIX_EVENT, kick);
     kick();
     return () => {
       stopped = true;
       document.removeEventListener("visibilitychange", kick);
+      window.removeEventListener(FIX_EVENT, kick);
       window.clearTimeout(timer);
       stopAlarmTone();
       stopSteerEar();
@@ -364,7 +424,11 @@ export function useAnchorWatch() {
           fresh,
       );
       const dragging = Boolean(
-        fresh && boat && anchor && !boatInsideWatch(boat, anchor),
+        fresh &&
+          boat &&
+          anchor &&
+          fixPreciseForWatch(boat.accuracy, anchor.radiusM) &&
+          !boatInsideWatch(boat, anchor),
       );
       const pts = s.activePassage
         ? guidePoints(s.activePassage, s.crumb, {
@@ -375,11 +439,13 @@ export function useAnchorWatch() {
       const leg = boat && pts.length >= 1 ? markNav(boat, pts, s.pinnedMark, s.courseMark) : null;
       const cue =
         boat && pts.length >= 2
-          ? steerCue(boat, pts, s.steerSense, s.xteAlarmM, leg?.index)
+          ? steerCue(boat, pts, s.steerSense, s.xteAlarmM, leg ? steerLegIndex(boat, pts, leg.index) : undefined)
           : null;
+      // With lock-screen GPS running the page is not frozen when hidden, so the
+      // guard can (and must) still raise "GPS lost" with the screen off.
       const { state, alarms } = stepGuard(guard.current, {
         now,
-        visible,
+        visible: visible || isBackgroundGpsActive(),
         goodFix,
         fixAt: boat?.at,
         dragging: dragging && goodFix,
@@ -509,10 +575,23 @@ export function useWakeLock() {
   }, [keepAwake]);
 }
 
+/**
+ * While a drag test runs, live GPS is ignored so the test position holds long
+ * enough (12 s) to sound the alarm. Without this, a real phone's 1 Hz GPS put
+ * the boat back inside the circle within a second and the test never rang.
+ */
+let demoHoldUntil = 0;
+export const DEMO_HOLD_MS = 30_000;
+
+export function endAlarmTest() {
+  demoHoldUntil = 0;
+}
+
 export function simulateAnchorDrag() {
   const s = useHelm.getState();
   if (!s.anchor) return;
   unlockAlarmAudio();
+  demoHoldUntil = Date.now() + DEMO_HOLD_MS;
   const a = s.anchor;
   let lat = a.lat;
   let lng = a.lng;
@@ -567,3 +646,131 @@ export function startMusgraveDemo() {
 }
 
 export { unlockAlarmAudio, MUSGRAVE };
+
+/** Auto look: night (red) view between sunset and sunrise at the boat, normal by day. */
+export function useAutoNight() {
+  const autoNight = useHelm((s) => s.autoNight);
+  useEffect(() => {
+    if (!autoNight) return;
+    const check = () => {
+      const s = useHelm.getState();
+      const at = s.boat ?? s.lastFix ?? s.flyTo;
+      if (!at) return;
+      const day = isDaylight(at.lat, at.lng, Date.now());
+      if (!day && s.look !== "night") s.setLook("night");
+      else if (day && s.look === "night") s.setLook("normal");
+    };
+    check();
+    const id = window.setInterval(check, 60_000);
+    document.addEventListener("visibilitychange", check);
+    return () => {
+      window.clearInterval(id);
+      document.removeEventListener("visibilitychange", check);
+    };
+  }, [autoNight]);
+}
+
+/**
+ * First-run demo: use the real anchor if one is set, else a temporary one that
+ * is never saved, then fake a drag so the new user hears the alarm. Returns a
+ * cleanup that puts everything back.
+ */
+export function runAlarmDemo(): () => void {
+  const s = useHelm.getState();
+  // A real watch is running: never fake a drag on it (and never pause its GPS). Just play the sound.
+  if (s.anchor?.radiusLocked && !s.anchor.demo) {
+    previewAlarm(s.alarmSound);
+    return () => stopAlarmTone();
+  }
+  const prevBoat = s.boat;
+  let madeAnchor = false;
+  if (!s.anchor) {
+    const at = s.boat ?? s.lastFix ?? s.flyTo;
+    if (!at) return () => undefined;
+    useHelm.setState({
+      anchor: {
+        lat: at.lat,
+        lng: at.lng,
+        radiusM: 30,
+        droppedAt: Date.now(),
+        radiusLocked: true,
+        fence: null,
+        demo: true,
+      },
+      alarmMuted: false,
+    });
+    madeAnchor = true;
+  }
+  simulateAnchorDrag();
+  return () => {
+    endAlarmTest();
+    stopAlarmTone();
+    const now = useHelm.getState();
+    if (madeAnchor && now.anchor?.demo) now.weighAnchor();
+    else now.setAlarmMuted(false);
+    if (prevBoat && now.boat?.source === "demo") now.setBoat(prevBoat);
+  };
+}
+
+/** Sends watch start/stop, alarms and all-clear to the paired second phone. */
+export function useRemoteWatch() {
+  useEffect(() => {
+    const snap = (): WatchSnapshot => {
+      const s = useHelm.getState();
+      const real = Boolean(s.anchor?.radiusLocked && !s.anchor.demo);
+      return { watching: real, drag: real && s.alarmOn, gps: real && s.gpsLost, mob: Boolean(s.mob) };
+    };
+    let prev = snap();
+    let lastRepeat = 0;
+    let repeats = 0;
+
+    const send = (event: RemoteEvent) => {
+      const s = useHelm.getState();
+      const pair = s.remoteWatch;
+      if (!pair) return;
+      const where = s.anchor ?? s.boat;
+      const reef = where ? nearestReef(where.lat, where.lng) : null;
+      const outside =
+        s.boat && s.anchor ? Math.max(0, haversineMeters(s.boat, s.anchor) - s.anchor.radiusM) : null;
+      void publish(
+        buildMessage(pair.topic, event, {
+          boatName: pair.boatName,
+          place: reef?.name,
+          radiusText: s.anchor ? formatMeters(s.anchor.radiusM) : undefined,
+          outsideText: outside != null ? `${formatMeters(outside)} outside` : undefined,
+          boat: event === "mob" ? (s.mob ?? s.boat) : s.boat,
+        }),
+      );
+    };
+
+    const onChange = () => {
+      const next = snap();
+      for (const e of remoteEvents(prev, next)) send(e);
+      if ((next.drag && !prev.drag) || (next.gps && !prev.gps)) {
+        lastRepeat = Date.now();
+        repeats = 0;
+      }
+      prev = next;
+    };
+
+    // Keep nudging the second phone while an alarm rings unanswered.
+    const repeat = () => {
+      const now = snap();
+      const ringing = (now.drag || now.gps) && !useHelm.getState().alarmMuted;
+      if (!ringing || repeats >= REMOTE_MAX_REPEATS) return;
+      if (Date.now() - lastRepeat < REMOTE_REPEAT_MS) return;
+      lastRepeat = Date.now();
+      repeats += 1;
+      send(now.drag ? "drag" : "gps");
+    };
+
+    const unsub = useHelm.subscribe(onChange);
+    const id = window.setInterval(repeat, 5_000);
+    window.addEventListener(FIX_EVENT, repeat);
+    return () => {
+      unsub();
+      window.clearInterval(id);
+      window.removeEventListener(FIX_EVENT, repeat);
+    };
+  }, []);
+}

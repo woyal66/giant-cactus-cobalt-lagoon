@@ -1,4 +1,5 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { HazardCheck } from "@/components/helm/hazard-check";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -13,9 +14,12 @@ import {
   suggestedPayOutM,
 } from "@/lib/anchor";
 import { bowFromGps, gpsReachM, gpsStationLabel } from "@/lib/boat";
+import { formatDuration, routeSummary } from "@/lib/measure";
+import { searchPlaces } from "@/lib/place-search";
 import { formatMeters, haversineMeters, pathLengthMeters, trackInView, TRACK_CHORD_PRESETS, TRACK_TURN_PRESETS } from "@/lib/geo";
-import { GARMIN_SDK_URL, IMAGERY } from "@/lib/imagery";
-import { getChartBounds } from "@/components/helm/map-view";
+import { BENTHIC_WMS, GARMIN_SDK_URL, PARK_ZONES, availableImagery, imageryShort, isImageryId } from "@/lib/imagery";
+import { centreTileSource, getChartBounds } from "@/components/helm/map-view";
+import { SOURCE_NOTE, describePhoto, fetchEsriPhotoInfo } from "@/lib/imagery-info";
 import { AnchorWxCard } from "@/components/helm/weather";
 import {
   boxAround,
@@ -42,93 +46,84 @@ import { REEFS } from "@/lib/reefs";
 import { fetchTideRise } from "@/lib/tides";
 import { STEER_PRESETS, XTE_ALARM_PRESETS } from "@/lib/steer";
 import { SignedIn, SignedOut, UserButton } from "@/lib/auth/gates";
+import { isNativeApp } from "@/lib/native";
+import { shareGpx } from "@/lib/share-gpx";
+import { restoreBackup, saveBackup } from "@/lib/backup-actions";
+import { dedupeLines, parseGpx } from "@/lib/gpx-import";
+import { mergeTracks } from "@/lib/backup";
+import { UnitStepField } from "@/components/helm/unit-field";
+import { MoonCard } from "@/components/helm/moon-card";
+import { RemoteWatchCard } from "@/components/helm/remote-watch-card";
+import { formatDepth, formatLength } from "@/lib/units";
+import { criticalAlerts, type CriticalStatus } from "@/lib/critical-alert";
+import { openLocationSettings } from "@/lib/background-gps";
+import { isFreeApp, isPreview } from "@/lib/subscription";
+import { radarAvailable } from "@/lib/radar";
+import { SubscriptionRow } from "@/components/subscription";
 import { useCurrentUserState } from "@/lib/auth/use-current-user";
 import { simulateAnchorDrag, startMusgraveDemo, unlockAlarmAudio } from "@/hooks/helm-runtime";
-import { useHelm, type LocalDraft, type PanelId } from "@/store/helm";
+import { useHelm, useUnitsKey, type LocalDraft, type PanelId } from "@/store/helm";
 
-function Sheet({
+export function Sheet({
   id,
   title,
   kicker,
+  help,
+  compact,
   children,
 }: {
   id: NonNullable<PanelId>;
   title: string;
+  /** Short context, read out to screen readers; not shown, to keep the heading to one row. */
   kicker?: string;
+  /** "How this works" text, behind an ⓘ button instead of always taking space. */
+  help?: ReactNode;
+  /** Open low (about a third of the screen) so the chart stays visible; the handle makes it taller. */
+  compact?: boolean;
   children: ReactNode;
 }) {
   const panel = useHelm((s) => s.panel);
   const setPanel = useHelm((s) => s.setPanel);
+  const [tall, setTall] = useState(false);
+  const [showHelp, setShowHelp] = useState(false);
+  useUnitsKey();
   if (panel !== id) return null;
+  const height = tall ? "max-h-[78vh]" : compact ? "max-h-[min(34vh,20rem)]" : "max-h-[min(46vh,24rem)]";
   return (
-    <div className="pointer-events-none absolute inset-x-0 bottom-0 z-30 md:inset-y-20 md:right-3 md:bottom-24 md:left-auto md:w-[22rem]">
-      <div className="pointer-events-auto max-h-[min(46vh,24rem)] overflow-y-auto rounded-t-xl border border-border bg-card px-3 pt-2 pb-[max(0.6rem,env(safe-area-inset-bottom))] shadow-[var(--shadow-border)] md:max-h-[min(72vh,36rem)] md:rounded-xl md:p-4">
-        <div className="mx-auto mb-1.5 h-1 w-10 rounded-full bg-border md:hidden" />
+    <div className="pointer-events-none absolute inset-x-0 bottom-0 z-40 md:inset-y-20 md:right-3 md:bottom-24 md:left-auto md:w-[22rem]">
+      <div
+        className={`pointer-events-auto ${height} overflow-y-auto rounded-t-xl border border-border bg-card px-3 pt-1 pb-[max(0.6rem,var(--safe-area-inset-bottom,env(safe-area-inset-bottom)))] shadow-[var(--shadow-border)] md:max-h-[min(72vh,36rem)] md:rounded-xl md:p-4`}
+        aria-label={kicker ? `${title}: ${kicker}` : title}
+      >
+        <button
+          type="button"
+          onClick={() => setTall((t) => !t)}
+          aria-label={tall ? "Make this panel shorter" : "Make this panel taller"}
+          className="mx-auto mb-1 flex h-5 w-16 items-center justify-center md:hidden"
+        >
+          <span className="h-1 w-10 rounded-full bg-muted-foreground/60" />
+        </button>
         <div className="mb-2 flex items-center justify-between gap-2">
-          <div className="min-w-0">
-            {kicker ? (
-              <p className="text-[9px] tracking-[0.14em] text-muted-foreground uppercase">
-                {kicker}
-              </p>
+          <div className="flex min-w-0 items-center gap-1.5">
+            <h2 className="font-display truncate text-xl leading-none font-semibold tracking-tight">{title}</h2>
+            {help ? (
+              <button
+                type="button"
+                onClick={() => setShowHelp((v) => !v)}
+                aria-expanded={showHelp}
+                aria-label={`How ${title.toLowerCase()} works`}
+                className={`grid size-8 shrink-0 place-items-center rounded-full border text-t14 font-semibold ${showHelp ? "border-primary bg-primary text-primary-foreground" : "border-border text-muted-foreground"}`}
+              >
+                i
+              </button>
             ) : null}
-            <h2 className="font-display text-xl leading-none font-semibold tracking-tight">
-              {title}
-            </h2>
           </div>
-          <Button variant="ghost" size="sm" className="h-8" onClick={() => setPanel(null)}>
+          <Button variant="outline" size="sm" className="h-10 min-w-16 px-3" onClick={() => setPanel(null)}>
             Close
           </Button>
         </div>
+        {help && showHelp ? <div className="mb-2 rounded-md bg-muted px-2.5 py-2 text-t14 leading-snug">{help}</div> : null}
         {children}
-      </div>
-    </div>
-  );
-}
-
-function roundStep(n: number, step: number) {
-  const s = step || 1;
-  return Math.round(n / s) * s;
-}
-
-function formatStep(n: number, step: number) {
-  if (step < 1) return n.toFixed(1);
-  return String(Math.round(n * 10) / 10);
-}
-
-function StepField({
-  label,
-  value,
-  step = 1,
-  onChange,
-}: {
-  label: string;
-  value: number;
-  step?: number;
-  onChange: (n: number) => void;
-}) {
-  return (
-    <div className="rounded-lg border border-border bg-background px-2 py-1.5">
-      <p className="text-[9px] tracking-[0.12em] text-muted-foreground uppercase">{label}</p>
-      <div className="mt-0.5 flex items-center gap-1.5">
-        <Button
-          variant="outline"
-          size="icon-sm"
-          onClick={() => onChange(Math.max(0, roundStep(value - step, step)))}
-          aria-label={`Decrease ${label}`}
-        >
-          −
-        </Button>
-        <p className="font-display flex-1 text-center text-xl font-semibold tabular-nums">
-          {formatStep(value, step)}
-        </p>
-        <Button
-          variant="outline"
-          size="icon-sm"
-          onClick={() => onChange(roundStep(value + step, step))}
-          aria-label={`Increase ${label}`}
-        >
-          +
-        </Button>
       </div>
     </div>
   );
@@ -146,12 +141,30 @@ function ToggleRow({
   return (
     <button
       type="button"
+      role="switch"
+      aria-checked={on}
       onClick={() => onChange(!on)}
-      className="flex items-center justify-between gap-2 rounded-md border border-border bg-background px-3 py-2 text-left"
+      className="flex min-h-11 items-center justify-between gap-3 rounded-md border border-border bg-background px-3 py-2 text-left"
     >
       <span className="text-sm">{label}</span>
-      <span className={`text-[11px] font-semibold tracking-wide uppercase ${on ? "text-primary" : "text-muted-foreground"}`}>
-        {on ? "On" : "Off"}
+      {/* A real switch reads at a glance in glare; the word stays for colour-blind users. */}
+      <span className="flex shrink-0 items-center gap-2">
+        <span className={`text-t13 font-semibold ${on ? "text-primary" : "text-muted-foreground"}`}>
+          {on ? "On" : "Off"}
+        </span>
+        <span
+          aria-hidden
+          className={`relative h-6 w-10 rounded-full transition-colors ${on ? "bg-primary" : "bg-muted"}`}
+        >
+          <span
+            className={`absolute top-0.5 size-5 rounded-full shadow transition-transform ${
+              // No white at night: it would wreck night vision on the red screen.
+              on
+                ? "translate-x-[1.125rem] bg-white in-[.rp-night]:bg-[#1a0904]"
+                : "translate-x-0.5 bg-white in-[.rp-night]:bg-[#9a4318]"
+            }`}
+          />
+        </span>
       </span>
     </button>
   );
@@ -165,6 +178,7 @@ export function AnchorPanel() {
   const gpsAlarmOn = useHelm((s) => s.gpsAlarmOn);
   const setGpsAlarmOn = useHelm((s) => s.setGpsAlarmOn);
   const [gpsOffAsk, setGpsOffAsk] = useState(false);
+  const [stopAsk, setStopAsk] = useState(false);
   const muted = useHelm((s) => s.alarmMuted);
   const weigh = useHelm((s) => s.weighAnchor);
   const startPlaceHook = useHelm((s) => s.startPlaceHook);
@@ -206,39 +220,68 @@ export function AnchorPanel() {
   }, [tide.data, rode.tideManual, rode.tideRiseM, rode.tideHighAt, setRode]);
 
   return (
-    <Sheet id="anchor" title="Anchor" kicker="Mark the hook">
+    <Sheet
+      id="anchor"
+      title="Anchor"
+      kicker="Mark the hook"
+      compact
+      help="The boat icon is where the boat has fallen back to. Chain is measured from the bow. Set the depth and chain out, then drag on the chart to where the anchor is."
+    >
       {anchor?.radiusLocked ? (
-        <Button variant="danger" className="mb-2 w-full" onClick={weigh}>
-          Stop watch
-        </Button>
+        stopAsk ? (
+          <div className="mb-2 rounded-lg border border-destructive/50 bg-destructive/10 p-2">
+            <p className="text-center text-sm font-medium">Stop the anchor watch?</p>
+            <p className="mt-0.5 text-center text-t13 text-muted-foreground">
+              The drag alarm won't sound until you set it again.
+            </p>
+            <div className="mt-2 grid grid-cols-2 gap-2">
+              <Button variant="outline" onClick={() => setStopAsk(false)}>
+                Keep watching
+              </Button>
+              <Button
+                variant="danger"
+                onClick={() => {
+                  setStopAsk(false);
+                  weigh();
+                  setPanel(null);
+                }}
+              >
+                Stop watch
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <Button variant="danger" className="mb-2 w-full" onClick={() => setStopAsk(true)}>
+            Stop watch
+          </Button>
+        )
       ) : null}
-      <p className="mb-2 text-xs text-pretty text-muted-foreground">
-        Boat is the fallen-back position. Chain from the bow. Set depth and chain, then drag to the hook.
-      </p>
       <div className="mb-2 grid grid-cols-2 gap-2">
-        <StepField label="Depth m" value={rode.depthM} step={0.2} onChange={(n) => setRode({ depthM: n })} />
-        <StepField label="Chain out m" value={rode.chainM} step={5} onChange={(n) => setRode({ chainM: n })} />
+        <UnitStepField label="Depth" kind="depth" valueM={rode.depthM} steps={{ m: 0.2, ft: 1, fm: 0.5 }} onChange={(n) => setRode({ depthM: n })} />
+        <UnitStepField label="Chain out" kind="length" valueM={rode.chainM} steps={{ m: 5, ft: 10 }} onChange={(n) => setRode({ chainM: n })} />
       </div>
       <div className="mb-2 rounded-lg border border-border bg-background px-3 py-2">
         <div className="flex items-baseline justify-between">
-          <p className="text-[9px] tracking-[0.12em] text-muted-foreground uppercase">Layback</p>
-          <p className="font-display text-2xl font-semibold tabular-nums">{Math.round(math.laybackM)} m</p>
+          <p className="text-t12 text-muted-foreground">Layback</p>
+          <p className="font-display text-2xl font-semibold tabular-nums">{formatLength(math.laybackM)}</p>
         </div>
-        <p className="mt-0.5 text-[11px] text-muted-foreground">
-          Chain on the sand: {rode.chainM} m − {rode.depthM.toFixed(1)} m − {rode.bowM.toFixed(1)} m bow.
-          Taut swing {math.radiusM} m.
+        <p className="mt-0.5 text-t13 text-muted-foreground">
+          Chain on the sand: {formatLength(rode.chainM)} − {formatDepth(rode.depthM)} −{" "}
+          {formatDepth(rode.bowM)} bow. Taut swing {formatLength(math.radiusM)}.
         </p>
       </div>
       {boat || anchor ? <AnchorWxCard /> : null}
+      <MoonCard compact />
+      <RemoteWatchCard />
       {anchor ? (
         <div className="mb-2 grid gap-2">
           <div className="flex items-center justify-between rounded-lg border border-border bg-background px-3 py-2">
             <div>
-              <p className="text-[9px] tracking-[0.12em] text-muted-foreground uppercase">Distance</p>
+              <p className="text-t12 text-muted-foreground">Distance</p>
               <p className="font-display text-xl font-semibold tabular-nums">
                 {dist ?? "—"}
                 <span className="ml-1 text-xs font-medium text-muted-foreground">
-                  {Math.abs(distM - math.laybackM) <= 8 ? "on rode" : `want ${Math.round(math.laybackM)} m`}
+                  {Math.abs(distM - math.laybackM) <= 8 ? "on rode" : `want ${formatLength(math.laybackM)}`}
                 </span>
               </p>
             </div>
@@ -258,7 +301,7 @@ export function AnchorPanel() {
           />
           {gpsOffAsk ? (
             <div className="rounded-md border border-destructive/50 bg-destructive/10 px-2.5 py-2">
-              <p className="text-[11px] leading-snug text-destructive">
+              <p className="text-t13 leading-snug text-destructive">
                 A dead fix will not warn you at anchor or on a cut until you turn this back on.
               </p>
               <div className="mt-2 grid grid-cols-2 gap-2">
@@ -279,12 +322,10 @@ export function AnchorPanel() {
             </div>
           ) : null}
           <ToggleRow label="Swing trail" on={swingTrailOn} onChange={setSwingTrailOn} />
-          <p className="text-[11px] leading-snug text-muted-foreground">
-            Screen can sleep. You can use the phone. On the hook it checks about
-            every half minute, faster near the circle. Sleep or a short GPS hole
-            will not alarm. GPS lost only after 60 s with the app actually running.
-            Allow notifications. iPhone may pause GPS when the screen locks — leave
-            Anchor Mate open. Android can keep watching if Chrome is not battery-restricted.
+          <p className="text-t13 leading-snug text-muted-foreground">
+            {isNativeApp()
+              ? "Lock the phone and sleep: the watch keeps checking the GPS with the screen off. The alarm needs the boat outside the circle for 12 s, and ignores fixes too vague to judge. GPS lost sounds after 60 s without a fix. Keep the phone on charge, and don't swipe Anchor Mate closed."
+              : "In a browser the watch only runs while this page is open and the screen is on. Install the Anchor Mate app to keep watch with the phone locked."}
           </p>
           <div className="grid grid-cols-2 gap-2">
             <Button variant="outline" size="sm" onClick={() => startPlaceHook()}>
@@ -315,10 +356,18 @@ export function AnchorPanel() {
           <Button variant="outline" size="sm" className="w-full" onClick={() => setMuted(!muted)}>
             {muted ? "Unmute" : "Silence"}
           </Button>
-          <Button variant="ghost" size="sm" onClick={() => simulateAnchorDrag()}>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              simulateAnchorDrag();
+              toast("Test: the alarm sounds in about 12 s. Live GPS pauses for 30 s, then the watch carries on.");
+            }}
+          >
             Test drag alarm
           </Button>
-          <p className="text-[10px] tracking-[0.14em] text-muted-foreground uppercase">Alarm</p>
+          <p className="text-t12 text-muted-foreground">Alarm</p>
+          <AlarmReach />
           <div className="grid grid-cols-3 gap-1.5">
             {ALARM_SOUNDS.map((s) => (
               <Button
@@ -337,7 +386,7 @@ export function AnchorPanel() {
           {math.shortHwM > 0.4 ? (
             <p className="text-xs text-destructive">
               Short of {formatScope(rode.scopeTarget)} at HW
-              {letMoreM > 0 ? ` — pay ${letMoreM} m more` : ""}.
+              {letMoreM > 0 ? ` — pay ${formatLength(letMoreM)} more` : ""}.
               {rode.tideHighAt ? ` High ${hoursUntil(rode.tideHighAt)}.` : ""}
             </p>
           ) : null}
@@ -358,7 +407,7 @@ export function AnchorPanel() {
         onClick={() => setPanel("boat")}
         className="mt-2 w-full rounded-lg border border-border bg-background px-3 py-2 text-left"
       >
-        <p className="text-[9px] tracking-[0.12em] text-muted-foreground uppercase">Hull · GPS</p>
+        <p className="text-t12 text-muted-foreground">Hull · GPS</p>
         <p className="font-display text-sm font-semibold">{gpsStationLabel(hull)}</p>
       </button>
     </Sheet>
@@ -370,11 +419,13 @@ export function AtlasPanel() {
   const setReef = useHelm((s) => s.setReef);
   const packs = useHelm((s) => s.offlinePacks);
   return (
-    <Sheet id="atlas" title="Reef atlas" kicker="Cuts and lagoons">
-      <p className="mb-3 text-sm text-muted-foreground">
-        Jump a known cut. Colour of water is the chart — dark is deep, brown is coral, pale is sand.
-        Green means this reef is on the phone.
-      </p>
+    <Sheet
+      id="atlas"
+      title="Places"
+      kicker="Search reefs, harbours and your tracks"
+      help="Search works offline. Reefs in green are saved on the phone. Dark water is deep, brown is coral, pale is sand."
+    >
+      <PlaceSearch />
       <Button className="mb-3 w-full" onClick={startMusgraveDemo}>
         Run Lady Musgrave entrance
       </Button>
@@ -393,7 +444,7 @@ export function AtlasPanel() {
                 <div className="flex items-center justify-between gap-2">
                   <p className="font-display text-lg leading-none font-semibold">{r.name}</p>
                   {onPhone ? (
-                    <span className="shrink-0 rounded-full bg-emerald-500/20 px-2 py-0.5 text-[10px] font-semibold tracking-wide text-emerald-400 uppercase">
+                    <span className="shrink-0 rounded-full bg-emerald-500/20 px-2 py-0.5 text-t12 font-semibold text-emerald-400">
                       On phone
                     </span>
                   ) : null}
@@ -422,6 +473,17 @@ export function LayersPanel() {
   const setSeamarks = useHelm((s) => s.setSeamarks);
   const depths = useHelm((s) => s.depths);
   const setDepths = useHelm((s) => s.setDepths);
+  const reefOutlines = useHelm((s) => s.reefOutlines);
+  const parkZones = useHelm((s) => s.parkZones);
+  const setParkZones = useHelm((s) => s.setParkZones);
+  const setReefOutlines = useHelm((s) => s.setReefOutlines);
+  const radar = useHelm((s) => s.radar);
+  const baseMap = useHelm((s) => s.baseMap);
+  const sharpTiles = useHelm((s) => s.sharpTiles);
+  const setSharpTiles = useHelm((s) => s.setSharpTiles);
+  const reefClarity = useHelm((s) => s.reefClarity);
+  const setReefClarity = useHelm((s) => s.setReefClarity);
+  const setRadar = useHelm((s) => s.setRadar);
   const crumbOn = useHelm((s) => s.crumbOn);
   const setCrumbOn = useHelm((s) => s.setCrumbOn);
   const crumb = useHelm((s) => s.crumb);
@@ -429,6 +491,8 @@ export function LayersPanel() {
   const reverseTrack = useHelm((s) => s.reverseTrack);
   const look = useHelm((s) => s.look);
   const setLook = useHelm((s) => s.setLook);
+  const autoNight = useHelm((s) => s.autoNight);
+  const setAutoNight = useHelm((s) => s.setAutoNight);
   const sunPunch = useHelm((s) => s.sunPunch);
   const setSunPunch = useHelm((s) => s.setSunPunch);
   const tapMode = useHelm((s) => s.tapMode);
@@ -438,41 +502,66 @@ export function LayersPanel() {
   return (
     <Sheet id="layers" title="View" kicker="Map stays up">
       <div className="mb-2 flex items-center justify-between gap-2">
-        <SignedIn>
-          <UserButton />
-        </SignedIn>
-        <SignedOut>
-          <Button asChild variant="outline" size="sm">
-            <Link to="/login">Sign in</Link>
-          </Button>
-        </SignedOut>
+        {isNativeApp() || isPreview() ? (
+          isFreeApp() ? null : <SubscriptionRow />
+        ) : (
+          <>
+            <SignedIn>
+              <UserButton />
+            </SignedIn>
+            <SignedOut>
+              <Button asChild variant="outline" size="sm">
+                <Link to="/login">Sign in</Link>
+              </Button>
+            </SignedOut>
+          </>
+        )}
       </div>
-      <div className="mb-2 grid gap-1">
-        {IMAGERY.map((im) => (
+      <div className="mb-1.5 grid grid-cols-3 gap-1.5" role="radiogroup" aria-label="Base map">
+        {(
+          [
+            ["photo", "Photo"],
+            ["chart", "Chart"],
+            ["lines", "Photo + lines"],
+          ] as const
+        ).map(([id, label]) => (
+          <Button
+            key={id}
+            role="radio"
+            aria-checked={baseMap === id}
+            variant={baseMap === id ? "default" : "outline"}
+            className="h-11 px-1"
+            onClick={() => useHelm.setState({ baseMap: id })}
+          >
+            {label}
+          </Button>
+        ))}
+      </div>
+      {/* Compact picker: tap to flip between photos and compare. */}
+      <div className="mb-2 grid grid-cols-3 gap-1.5" role="radiogroup" aria-label="Satellite photo">
+        {availableImagery().map((im) => (
           <button
             key={im.id}
             type="button"
+            role="radio"
+            aria-checked={imagery === im.id}
+            title={im.detail}
             onClick={() => setImagery(im.id)}
-            className={`flex items-center gap-2 rounded-md border px-2 py-1.5 text-left ${
-              imagery === im.id ? "border-primary bg-primary/10" : "border-border bg-background"
+            className={`flex min-h-11 min-w-0 items-center gap-1.5 rounded-md border px-1.5 text-left ${
+              imagery === im.id ? "border-primary bg-primary/15" : "border-border bg-background"
             }`}
           >
             <span
-              className="grid size-7 shrink-0 place-items-center rounded-md font-display text-sm font-semibold"
+              className="grid size-6 shrink-0 place-items-center rounded font-display text-t13 font-semibold"
               style={{ background: im.markBg, color: im.markFg }}
+              aria-hidden
             >
               {im.mark}
             </span>
-            <span className="min-w-0">
-              <span className="block font-display text-sm leading-none font-semibold">{im.name}</span>
-              <span className="mt-0.5 block truncate text-[11px] text-muted-foreground">{im.detail}</span>
-            </span>
+            <span className="min-w-0 truncate text-t14 font-semibold">{imageryShort(im.id)}</span>
           </button>
         ))}
       </div>
-      <p className="mb-2 text-[11px] leading-snug text-muted-foreground">
-        The chart button centres the boat. Tap again for heading-up, with the boat just below centre so the water ahead stays on screen. Drag the chart to let go. Tap to come back.
-      </p>
       <OfflinePacks />
       <TrackSteerSettings />
       <div className="mb-2 grid grid-cols-2 gap-2">
@@ -490,14 +579,26 @@ export function LayersPanel() {
           Boat
         </Button>
         <Button variant="outline" size="sm" onClick={() => setPanel("legend")}>
-          Read water
+          Colour guide
         </Button>
       </div>
       <div className="mb-2 grid gap-1.5">
+        <Button variant="outline" className="h-11" onClick={() => useHelm.setState({ reef3d: true, panel: null })}>
+          3D reef view
+        </Button>
+        <DepthRow />
+        <TextSizeRow />
+        <PhotoInfoRow />
+        <ToggleRow label="Sharp photos (HD, about 4× the data)" on={sharpTiles} onChange={setSharpTiles} />
+        <ToggleRow label="Reef clarity (more contrast to read depth)" on={reefClarity} onChange={setReefClarity} />
         <ToggleRow label="Place names" on={labels} onChange={setLabels} />
         <ToggleRow label="Lat / long lines" on={graticule} onChange={setGraticule} />
         <ToggleRow label="Seamarks" on={seamarks} onChange={setSeamarks} />
         <ToggleRow label="Depth contours" on={depths} onChange={setDepths} />
+        <ToggleRow label="Reefs, rocks and cays (GBR, offline)" on={reefOutlines} onChange={setReefOutlines} />
+        <ToggleRow label="Marine park zones (GBR)" on={parkZones} onChange={setParkZones} />
+        {parkZones ? <ZoneLegend /> : null}
+        {radarAvailable() ? <ToggleRow label="Rain radar (needs signal)" on={radar} onChange={setRadar} /> : null}
         <ToggleRow label="Yellow line while recording" on={crumbOn} onChange={setCrumbOn} />
       </div>
       {crumb.length >= 2 ? (
@@ -510,8 +611,16 @@ export function LayersPanel() {
           </Button>
         </div>
       ) : null}
-      <p className="mb-1.5 text-[10px] tracking-[0.14em] text-muted-foreground uppercase">Look</p>
-      <div className="mb-2 grid grid-cols-3 gap-2">
+      <p className="mb-1.5 text-t12 text-muted-foreground">Look</p>
+      <div className="mb-2 grid grid-cols-4 gap-2">
+        <Button
+          variant={autoNight ? "default" : "outline"}
+          size="sm"
+          onClick={() => setAutoNight(!autoNight)}
+          aria-pressed={autoNight}
+        >
+          Auto
+        </Button>
         {([
           ["normal", "Normal"],
           ["sunlight", "Sun"],
@@ -519,9 +628,10 @@ export function LayersPanel() {
         ] as const).map(([id, label]) => (
           <Button
             key={id}
-            variant={look === id ? "default" : "outline"}
+            variant={!autoNight && look === id ? "default" : "outline"}
             size="sm"
             onClick={() => {
+              setAutoNight(false);
               setLook(id);
               if (id === "sunlight") {
                 void document.documentElement.requestFullscreen?.().catch(() => {});
@@ -534,6 +644,18 @@ export function LayersPanel() {
           </Button>
         ))}
       </div>
+      <UnitsPicker />
+      <Button
+        variant="outline"
+        size="sm"
+        className="mb-2 w-full"
+        onClick={() => {
+          setPanel(null);
+          useHelm.getState().setGuideDone(false);
+        }}
+      >
+        Show the getting-started guide
+      </Button>
       {look === "sunlight" ? (
         <div className="mb-2 grid grid-cols-3 gap-2">
           {([1, 2, 3] as const).map((n) => (
@@ -543,7 +665,7 @@ export function LayersPanel() {
           ))}
         </div>
       ) : null}
-      <p className="text-[11px] leading-snug text-muted-foreground">
+      <p className="text-t13 leading-snug text-muted-foreground">
         OpenSeaMap marks and depth contours sit over the satellite. Official Navionics tiles need Garmin’s native marine SDK — there is no web login that unlocks them here.{" "}
         <a href={GARMIN_SDK_URL} target="_blank" rel="noreferrer" className="underline underline-offset-2">
           Garmin marine SDK
@@ -565,14 +687,15 @@ function OfflinePacks() {
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState<{ done: number; total: number; bytes: number } | null>(null);
+  const [extraStep, setExtraStep] = useState<string | null>(null);
 
   const refresh = () => {
     void listPacks().then(setPacks);
   };
 
   useEffect(() => {
-    refresh();
-  }, []);
+    void listPacks().then(setPacks);
+  }, [setPacks]);
 
   useEffect(() => {
     if (!packBox) return;
@@ -588,8 +711,20 @@ function OfflinePacks() {
     setBusy(true);
     setProgress({ done: 0, total: 1, bytes: 0 });
     try {
-      await downloadPack(box, maxZ, name.trim() || packName(box), setProgress);
-      toast.success(`${name.trim() || packName(box)} on this phone`);
+      const pack = await downloadPack(box, maxZ, name.trim() || packName(box), setProgress);
+      const label = name.trim() || packName(box);
+      // Then the rest of the region: seabed, Chart map and weather, so those work offline too.
+      setExtraStep("Seabed depth");
+      const { saveRegionExtras } = await import("@/lib/region-pack");
+      const extras = await saveRegionExtras(box, setExtraStep);
+      const missingParts = [extras.depthTiles ? null : "seabed", extras.chartTiles ? null : "chart map", extras.weather ? null : "weather"].filter(Boolean);
+      if (pack.missing) {
+        toast.warning(`${label} saved with ${pack.missing} photo tiles missing. Download again to fill gaps.`);
+      } else if (missingParts.length) {
+        toast.warning(`${label} saved. Couldn't save the ${missingParts.join(", ")}: those need a signal there.`);
+      } else {
+        toast.success(`${label} on this phone: photos, seabed, chart map and 3 days of weather`);
+      }
       setPackBox(null);
       refresh();
     } catch (err) {
@@ -598,10 +733,11 @@ function OfflinePacks() {
     } finally {
       setBusy(false);
       setProgress(null);
+      setExtraStep(null);
     }
   };
 
-  const useReef = (lat: number, lng: number, reefName: string, radiusM: number) => {
+  const pickReef = (lat: number, lng: number, reefName: string, radiusM: number) => {
     const b = boxAround({ lat, lng }, radiusM);
     setPackBox(b);
     setName(reefName);
@@ -611,16 +747,16 @@ function OfflinePacks() {
   return (
     <div className="mb-2 rounded-lg border border-border bg-background px-2.5 py-2">
       <div className="flex items-center justify-between gap-2">
-        <p className="text-[9px] tracking-[0.12em] text-muted-foreground uppercase">Offline packs</p>
+        <p className="text-t12 text-muted-foreground">Offline packs</p>
         {here ? (
-          <span className="rounded-full bg-emerald-500/20 px-2 py-0.5 text-[10px] font-semibold tracking-wide text-emerald-400 uppercase">
+          <span className="rounded-full bg-emerald-500/20 px-2 py-0.5 text-t12 font-semibold text-emerald-400">
             On phone
           </span>
         ) : (
-          <span className="text-[10px] text-muted-foreground">Not on phone</span>
+          <span className="text-t12 text-muted-foreground">Not on phone</span>
         )}
       </div>
-      <p className="mt-0.5 text-[11px] leading-snug text-muted-foreground">
+      <p className="mt-0.5 text-t13 leading-snug text-muted-foreground">
         Zoom out, then drag a box around the reef. A line will not download. z16 covers a whole cay. Green = this water is in the phone.
       </p>
       <div className="mt-1.5 grid grid-cols-2 gap-1.5">
@@ -631,7 +767,7 @@ function OfflinePacks() {
           variant="outline"
           size="sm"
           disabled={busy}
-          onClick={() => useReef(-23.904, 152.395, "Lady Musgrave", 2200)}
+          onClick={() => pickReef(-23.904, 152.395, "Lady Musgrave", 2200)}
         >
           Lady Musgrave
         </Button>
@@ -639,18 +775,23 @@ function OfflinePacks() {
       {box && est ? (
         <div className="mt-2 grid gap-1.5 rounded-md border border-border px-2 py-1.5">
           <label className="grid gap-1">
-            <span className="text-[10px] tracking-[0.14em] text-muted-foreground uppercase">Name</span>
+            <span className="text-t12 text-muted-foreground">Name</span>
             <Input value={name} onChange={(e) => setName(e.target.value)} className="h-8" />
           </label>
-          <p className="text-[10px] tracking-[0.14em] text-muted-foreground uppercase">Close-up zoom</p>
-          <div className="grid grid-cols-4 gap-1">
+          <p className="text-t12 text-muted-foreground">Close-up zoom</p>
+          <div className="grid grid-cols-5 gap-1">
             {PACK_ZOOMS.map((z) => (
               <Button key={z} variant={maxZ === z ? "default" : "outline"} size="sm" className="h-8" onClick={() => setMaxZ(z)}>
-                z{z}
+                {z === 20 ? "Max" : `z${z}`}
               </Button>
             ))}
           </div>
-          <p className="text-[11px] tabular-nums text-muted-foreground">
+          {maxZ === 20 ? (
+            <p className="text-t13 text-muted-foreground">
+              Maximum detail: as sharp offline as online with Sharp photos on. About 4× the size of z19; keep the area small.
+            </p>
+          ) : null}
+          <p className="text-t13 tabular-nums text-muted-foreground">
             {est.km.toFixed(1)} km · z16–{est.maxZ} · {est.tiles.toLocaleString()} tiles · {formatBytes(est.bytes)}
             {est.tooWide ? " — too big or too thin. Use z16 for a whole reef." : ""}
           </p>
@@ -673,8 +814,8 @@ function OfflinePacks() {
             />
           </div>
           <div className="mt-1 flex items-center justify-between gap-2">
-            <p className="text-[11px] tabular-nums text-muted-foreground">
-              {progress.done}/{progress.total} · {formatBytes(progress.bytes)}
+            <p className="text-t13 tabular-nums text-muted-foreground">
+              {extraStep ? `Saving ${extraStep.toLowerCase()}…` : `Photos ${progress.done}/${progress.total} · ${formatBytes(progress.bytes)}`}
             </p>
             <Button variant="ghost" size="sm" className="h-7" onClick={() => cancelPackDownload()}>
               Cancel
@@ -743,7 +884,7 @@ function TrackSteerSettings() {
 
   return (
     <div className="mb-2 rounded-lg border border-border bg-background px-2.5 py-2">
-      <p className="text-[9px] tracking-[0.12em] text-muted-foreground uppercase">Track steer</p>
+      <p className="text-t12 text-muted-foreground">Track steer</p>
       <div className="mt-1.5 grid grid-cols-3 gap-1.5">
         {(Object.keys(STEER_PRESETS) as Array<keyof typeof STEER_PRESETS>).map((id) => (
           <Button key={id} variant={sense === id ? "default" : "outline"} size="sm" onClick={() => setSense(id)}>
@@ -751,7 +892,7 @@ function TrackSteerSettings() {
           </Button>
         ))}
       </div>
-      <p className="mt-1.5 text-[11px] leading-snug text-muted-foreground">
+      <p className="mt-1.5 text-t13 leading-snug text-muted-foreground">
         Stay inside the 1 m tube. A corner counts only when you are on the line.
         Ear guide: a soft tick on the line. Past 2 m, two high pips means steer to port, one low tone means steer to starboard. Faster means further off.
       </p>
@@ -766,7 +907,7 @@ function TrackSteerSettings() {
       >
         {ear ? "Ear guide on" : "Ear guide off"}
       </Button>
-      <p className="mt-1.5 text-[10px] tracking-[0.14em] text-muted-foreground uppercase">
+      <p className="mt-1.5 text-t12 text-muted-foreground">
         Keep a turn of
       </p>
       <div className="mt-1 grid grid-cols-5 gap-1">
@@ -782,7 +923,7 @@ function TrackSteerSettings() {
           </Button>
         ))}
       </div>
-      <p className="mt-1.5 text-[10px] tracking-[0.14em] text-muted-foreground uppercase">
+      <p className="mt-1.5 text-t12 text-muted-foreground">
         Or off the line by
       </p>
       <div className="mt-1 grid grid-cols-5 gap-1">
@@ -794,18 +935,18 @@ function TrackSteerSettings() {
             className="h-8 px-0"
             onClick={() => setChordM(m)}
           >
-            {m} m
+            {formatLength(m)}
           </Button>
         ))}
       </div>
-      <p className="mt-1 text-[11px] leading-snug text-muted-foreground">
+      <p className="mt-1 text-t13 leading-snug text-muted-foreground">
         Straights are dropped on save and reverse. A tighter turn or a smaller distance keeps more of the bend.
       </p>
-      <p className="mt-1.5 text-[10px] tracking-[0.14em] text-muted-foreground uppercase">Off-track alarm</p>
+      <p className="mt-1.5 text-t12 text-muted-foreground">Off-track alarm</p>
       <div className="mt-1 grid grid-cols-5 gap-1">
         {XTE_ALARM_PRESETS.map((m) => (
           <Button key={m} variant={alarmM === m ? "default" : "outline"} size="sm" className="h-8" onClick={() => setAlarmM(m)}>
-            {m} m
+            {formatLength(m)}
           </Button>
         ))}
       </div>
@@ -815,7 +956,7 @@ function TrackSteerSettings() {
 
 export function LegendPanel() {
   return (
-    <Sheet id="legend" title="Read the water" kicker="Colour is the chart">
+    <Sheet id="legend" title="Colour guide" kicker="Reading depth from the photo">
       <ul className="grid gap-3 text-sm">
         <li>
           <p className="font-display text-lg font-semibold">Deep indigo / navy</p>
@@ -852,6 +993,8 @@ export function SavePanel() {
   const [kind, setKind] = useState<"passage" | "anchorage">("passage");
   const [busy, setBusy] = useState(false);
   const len = pathLengthMeters(draft);
+  const prefs = useHelm((s) => s.routePrefs);
+  const card = routeSummary(draft, prefs.motorKn, prefs.fuelLph);
 
   const local = () => {
     const saved: LocalDraft = saveDraft({
@@ -897,9 +1040,11 @@ export function SavePanel() {
 
   return (
     <Sheet id="save" title="Save track" kicker={`${draft.length} marks · ${formatMeters(len)}`}>
+      <RouteCard distM={card.distM} hours={card.hours} litres={card.litres} kn={prefs.motorKn} />
+      {draft.length >= 2 ? <HazardCheck points={draft} /> : null}
       <div className="grid gap-3">
         <label className="grid gap-1">
-          <span className="text-[10px] tracking-[0.14em] text-muted-foreground uppercase">Title</span>
+          <span className="text-t12 text-muted-foreground">Title</span>
           <Input
             autoFocus
             value={title}
@@ -912,11 +1057,11 @@ export function SavePanel() {
           />
         </label>
         <label className="grid gap-1">
-          <span className="text-[10px] tracking-[0.14em] text-muted-foreground uppercase">Region</span>
+          <span className="text-t12 text-muted-foreground">Region</span>
           <Input value={region} onChange={(e) => setRegion(e.target.value)} placeholder="Great Barrier Reef" />
         </label>
         <label className="grid gap-1">
-          <span className="text-[10px] tracking-[0.14em] text-muted-foreground uppercase">Notes</span>
+          <span className="text-t12 text-muted-foreground">Notes</span>
           <Input value={notes} onChange={(e) => setNotes(e.target.value)} />
         </label>
         <div className="grid grid-cols-2 gap-2">
@@ -993,15 +1138,37 @@ export function PassagesPanel() {
       ) : null}
       {drafts.length ? (
         <div className="mb-3">
-          <p className="mb-1 text-[10px] tracking-[0.14em] text-muted-foreground uppercase">On this helm</p>
+          <p className="mb-1 text-t12 text-muted-foreground">On this helm</p>
           <ul className="grid gap-1.5">
             {drafts.map((d) => (
               <li key={d.localId} className="flex items-center gap-2 rounded-md border border-border px-2 py-1.5">
                 <button type="button" className="min-w-0 flex-1 text-left" onClick={() => follow(d)}>
                   <p className="truncate text-sm font-medium">{d.title}</p>
-                  <p className="text-[11px] text-muted-foreground">{d.waypoints.length} marks</p>
+                  <p className="text-t13 text-muted-foreground">{d.waypoints.length} marks</p>
                 </button>
-                <Button variant="ghost" size="sm" className="h-7" onClick={() => removeDraft(d.localId)}>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7"
+                  onClick={() => {
+                    shareGpx(d.title, d.waypoints).catch((err: unknown) => {
+                      // Closing the share sheet is not an error.
+                      if (!/cancel/i.test(String(err))) toast.error("Couldn't export the track");
+                    });
+                  }}
+                >
+                  GPX
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7"
+                  onClick={() => {
+                    if (window.confirm(`Delete "${d.title}"? This can't be undone.`)) {
+                      removeDraft(d.localId);
+                    }
+                  }}
+                >
                   Del
                 </Button>
               </li>
@@ -1012,13 +1179,13 @@ export function PassagesPanel() {
       <SignedIn>
         {mine.data?.length ? (
           <div className="mb-3">
-            <p className="mb-1 text-[10px] tracking-[0.14em] text-muted-foreground uppercase">Mine</p>
+            <p className="mb-1 text-t12 text-muted-foreground">Mine</p>
             <ul className="grid gap-1.5">
               {mine.data.map((p) => (
                 <li key={p.id} className="flex items-center gap-2 rounded-md border border-border px-2 py-1.5">
                   <button type="button" className="min-w-0 flex-1 text-left" onClick={() => follow(p)}>
                     <p className="truncate text-sm font-medium">{p.title}</p>
-                    <p className="text-[11px] text-muted-foreground">{p.published ? "Public" : "Private"}</p>
+                    <p className="text-t13 text-muted-foreground">{p.published ? "Public" : "Private"}</p>
                   </button>
                   <Button
                     variant="ghost"
@@ -1046,7 +1213,21 @@ export function PassagesPanel() {
           </div>
         ) : null}
       </SignedIn>
-      <p className="mb-1 text-[10px] tracking-[0.14em] text-muted-foreground uppercase">Library</p>
+      {!drafts.length && !pub.isLoading && !(pub.data ?? []).length ? (
+        <div className="rounded-lg border border-dashed border-border px-3 py-4 text-center">
+          <p className="font-display text-base font-semibold">No tracks yet</p>
+          <p className="mx-auto mt-1 max-w-xs text-t14 leading-snug text-muted-foreground">
+            Tap <span className="font-semibold text-foreground">Start</span> to record your way in
+            through a cut, or <span className="font-semibold text-foreground">Draw</span> to plan one
+            on the satellite. Saved tracks appear here to follow back out, even at night.
+          </p>
+        </div>
+      ) : null}
+      <GpxImportRow />
+      <BackupRow />
+      {(pub.data ?? []).length || pub.isLoading ? (
+        <p className="mb-1 text-t12 text-muted-foreground">Library</p>
+      ) : null}
       {pub.isLoading ? <p className="text-sm text-muted-foreground">Loading cuts…</p> : null}
       <ul className="grid gap-1.5">
         {(pub.data ?? []).map((p) => (
@@ -1057,7 +1238,7 @@ export function PassagesPanel() {
               className="w-full rounded-md border border-border px-2 py-1.5 text-left"
             >
               <p className="truncate text-sm font-medium">{p.title}</p>
-              <p className="text-[11px] text-muted-foreground">
+              <p className="text-t13 text-muted-foreground">
                 {p.region || p.authorName} · {p.waypoints.length} marks
               </p>
             </button>
@@ -1065,5 +1246,419 @@ export function PassagesPanel() {
         ))}
       </ul>
     </Sheet>
+  );
+}
+
+/** iPhone: says whether the drag alarm will sound through silent mode and Focus. */
+function AlarmReach() {
+  const [st, setSt] = useState<CriticalStatus | null>(null);
+  useEffect(() => {
+    const plugin = criticalAlerts();
+    if (!plugin) return;
+    let live = true;
+    const read = () => {
+      void plugin.status().then((v) => {
+        if (live) setSt(v);
+      }).catch(() => undefined);
+    };
+    read();
+    document.addEventListener("visibilitychange", read);
+    return () => {
+      live = false;
+      document.removeEventListener("visibilitychange", read);
+    };
+  }, []);
+  if (!st) return null;
+  const [tone, text] = !st.granted
+    ? (["warn", "Notifications are off. The alarm can't sound with the phone locked."] as const)
+    : st.critical
+      ? (["ok", "Critical Alerts on: sounds through silent mode and Do Not Disturb."] as const)
+      : st.timeSensitive
+        ? (["note", "Breaks through Focus, but not the silent switch. Keep the ringer on."] as const)
+        : (["warn", "Focus and silent mode can mute the alarm. Allow Time Sensitive alerts."] as const);
+  return (
+    <div
+      className={`flex items-start justify-between gap-2 rounded-md border px-2 py-1.5 text-t13 leading-snug ${
+        tone === "ok"
+          ? "border-primary/40 text-foreground"
+          : tone === "note"
+            ? "border-border text-muted-foreground"
+            : "border-destructive/50 text-destructive"
+      }`}
+    >
+      <span>{text}</span>
+      {tone !== "ok" ? (
+        <button type="button" className="shrink-0 underline" onClick={() => openLocationSettings()}>
+          Settings
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
+function UnitsPicker() {
+  const depthUnit = useHelm((s) => s.depthUnit);
+  const lengthUnit = useHelm((s) => s.lengthUnit);
+  const setDepthUnit = useHelm((s) => s.setDepthUnit);
+  const setLengthUnit = useHelm((s) => s.setLengthUnit);
+  return (
+    <div className="mb-2">
+      <p className="mb-1.5 text-t12 text-muted-foreground">Units</p>
+      <div className="grid grid-cols-[4.5rem_1fr] items-center gap-x-2 gap-y-1.5">
+        <span className="text-t14 text-muted-foreground">Depth</span>
+        <div className="grid grid-cols-3 gap-1.5">
+          {([
+            ["m", "Metres"],
+            ["ft", "Feet"],
+            ["fm", "Fathoms"],
+          ] as const).map(([id, label]) => (
+            <Button
+              key={id}
+              size="sm"
+              variant={depthUnit === id ? "default" : "outline"}
+              aria-pressed={depthUnit === id}
+              onClick={() => setDepthUnit(id)}
+            >
+              {label}
+            </Button>
+          ))}
+        </div>
+        <span className="text-t14 text-muted-foreground">Chain, distance</span>
+        <div className="grid grid-cols-2 gap-1.5">
+          {([
+            ["m", "Metres"],
+            ["ft", "Feet"],
+          ] as const).map(([id, label]) => (
+            <Button
+              key={id}
+              size="sm"
+              variant={lengthUnit === id ? "default" : "outline"}
+              aria-pressed={lengthUnit === id}
+              onClick={() => setLengthUnit(id)}
+            >
+              {label}
+            </Button>
+          ))}
+        </div>
+      </div>
+      <p className="mt-1 text-t13 leading-snug text-muted-foreground">
+        Over 1 km, distances show in nautical miles. Speeds are in knots.
+      </p>
+    </div>
+  );
+}
+
+function ZoneLegend() {
+  return (
+    <div className="rounded-md border border-border bg-background px-3 py-2">
+      <ul className="grid gap-1">
+        {PARK_ZONES.map((z) => (
+          <li key={z.name} className="flex items-start gap-2 text-t14 leading-snug">
+            <span
+              aria-hidden
+              className="mt-0.5 size-3.5 shrink-0 rounded-sm border border-black/20"
+              style={{ background: z.color }}
+            />
+            <span>
+              <span className="font-semibold">{z.name}</span>
+              <span className="text-muted-foreground"> · {z.rule}</span>
+            </span>
+          </li>
+        ))}
+      </ul>
+      <p className="mt-1.5 text-t13 leading-snug text-muted-foreground">
+        A guide, not the law. Rules change and some areas have extra limits, including
+        no-anchoring areas in the Whitsundays, Keppels and Hinchinbrook. Check the
+        official GBRMPA zoning maps before you fish or anchor. Anchor on sand, not coral.
+      </p>
+    </div>
+  );
+}
+
+/** Back up tracks and settings to a file (iCloud Drive, Google Drive, Files), or restore one. */
+function BackupRow() {
+  const input = useRef<HTMLInputElement>(null);
+  const count = useHelm((s) => s.drafts.length);
+  return (
+    <div className="mb-3 rounded-lg border border-border bg-background px-3 py-2">
+      <p className="text-t12 text-muted-foreground">Backup</p>
+      <p className="mt-0.5 text-t14 leading-snug text-muted-foreground">
+        Save your {count ? `${count} track${count === 1 ? "" : "s"}` : "tracks"} and settings to iCloud Drive,
+        Google Drive or Files, and restore them on a new phone.
+      </p>
+      <div className="mt-2 grid grid-cols-2 gap-2">
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => {
+            saveBackup().catch((err: unknown) => {
+              if (!/cancel/i.test(String(err))) toast.error("Couldn't save the backup");
+            });
+          }}
+        >
+          Save backup
+        </Button>
+        <Button variant="outline" size="sm" onClick={() => input.current?.click()}>
+          Restore
+        </Button>
+      </div>
+      <input
+        ref={input}
+        type="file"
+        accept="application/json,.json"
+        className="hidden"
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          e.target.value = "";
+          if (!file) return;
+          void file
+            .text()
+            .then((text) => {
+              const r = restoreBackup(text);
+              toast.success(
+                r.added
+                  ? `Restored ${r.added} track${r.added === 1 ? "" : "s"} and your settings`
+                  : "Settings restored. Those tracks were already on this phone.",
+              );
+              if (r.dropped) toast.warning(`${r.dropped} oldest tracks didn't fit (40 max).`);
+            })
+            .catch((err: unknown) => toast.error(err instanceof Error ? err.message : "Couldn't restore"));
+        }}
+      />
+    </div>
+  );
+}
+
+/** Open a GPX route or track from a chartplotter, another app, or a friend. */
+function GpxImportRow() {
+  const input = useRef<HTMLInputElement>(null);
+  return (
+    <div className="mb-2">
+      <Button variant="outline" className="w-full" onClick={() => input.current?.click()}>
+        Import route or track (GPX)
+      </Button>
+      <input
+        ref={input}
+        type="file"
+        // iOS greys out .gpx files under a strict filter, so accept broadly and check the contents.
+        accept=".gpx,application/gpx+xml,application/xml,text/xml,application/octet-stream"
+        className="hidden"
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          e.target.value = "";
+          if (!file) return;
+          void file
+            .text()
+            .then((xml) => {
+              const lines = dedupeLines(parseGpx(xml));
+              const base = file.name.replace(/\.gpx$/i, "");
+              const now = Date.now();
+              const tracks = lines.map((l, i) => ({
+                localId: `gpx-${now}-${i}`,
+                title: l.name || (lines.length > 1 ? `${base} ${i + 1}` : base) || "Imported route",
+                region: "",
+                notes: `Imported from ${file.name}`,
+                kind: "passage" as const,
+                waypoints: l.points,
+                savedAt: new Date(now - i).toISOString(),
+              }));
+              const s = useHelm.getState();
+              const merged = mergeTracks(s.drafts, tracks);
+              useHelm.setState({ drafts: merged.tracks });
+              toast.success(
+                tracks.length === 1
+                  ? `Imported "${tracks[0]!.title}". Tap it to follow.`
+                  : `Imported ${tracks.length} routes and tracks.`,
+              );
+              if (merged.dropped) toast.warning(`${merged.dropped} oldest tracks didn't fit (40 max).`);
+            })
+            .catch((err: unknown) => toast.error(err instanceof Error ? err.message : "Couldn't read that file"));
+        }}
+      />
+    </div>
+  );
+}
+
+/** Photo under the chart centre: source, and for Esri (Maxar) the capture date and resolution. */
+function PhotoInfoRow() {
+  const imagery = useHelm((s) => s.imagery);
+  const [text, setText] = useState<string>("…");
+  const [nonce, setNonce] = useState(0);
+  useEffect(() => {
+    let live = true;
+    const t = window.setTimeout(() => {
+      const src = centreTileSource();
+      const view = getChartBounds();
+      const name = src && isImageryId(src) ? imageryShort(src) : imageryShort(imagery);
+      if (!src || !view) {
+        setText(`${name} · no photo loaded here yet`);
+        return;
+      }
+      if (src === "maxar" || src === "clarity") {
+        setText(`${name} · checking date…`);
+        const lat = (view.north + view.south) / 2;
+        const lng = (view.east + view.west) / 2;
+        void fetchEsriPhotoInfo(lat, lng, view.zoom).then((info) => {
+          if (live) setText(`${name} · ${describePhoto(info)}`);
+        });
+      } else {
+        setText(`${name} · ${SOURCE_NOTE[src] ?? "date not published"}`);
+      }
+    }, 300);
+    return () => {
+      live = false;
+      window.clearTimeout(t);
+    };
+  }, [imagery, nonce]);
+  return (
+    <button
+      type="button"
+      onClick={() => setNonce((n) => n + 1)}
+      className="rounded-md border border-border px-2.5 py-1.5 text-left text-t14 leading-snug"
+      aria-label="Photo at the chart centre. Tap to check again."
+    >
+      <span className="block text-t12 text-muted-foreground">Photo at chart centre</span>
+      {text}
+    </button>
+  );
+}
+
+/** Reader text size for the whole app. */
+function TextSizeRow() {
+  const size = useHelm((s) => s.textSize);
+  const setSize = useHelm((s) => s.setTextSize);
+  const opts: Array<{ id: "standard" | "large" | "xl"; label: string }> = [
+    { id: "standard", label: "Standard" },
+    { id: "large", label: "Large" },
+    { id: "xl", label: "Extra large" },
+  ];
+  return (
+    <div>
+      <p className="mb-1 text-t13 text-muted-foreground">Text size</p>
+      <div className="grid grid-cols-3 gap-1.5" role="radiogroup" aria-label="Text size">
+        {opts.map((o) => (
+          <Button
+            key={o.id}
+            role="radio"
+            aria-checked={size === o.id}
+            variant={size === o.id ? "default" : "outline"}
+            className="h-11"
+            onClick={() => setSize(o.id)}
+          >
+            {o.label}
+          </Button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/** Seabed overlay choice, and the Allen Coral Atlas layer when this build has it. */
+function DepthRow() {
+  const mode = useHelm((s) => s.depthLayer);
+  const setMode = useHelm((s) => s.setDepthLayer);
+  const benthicOn = useHelm((s) => s.benthic);
+  const setBenthic = useHelm((s) => s.setBenthic);
+  const opts: Array<{ id: "off" | "depth" | "shallow"; label: string }> = [
+    { id: "off", label: "Off" },
+    { id: "depth", label: "Depth" },
+    { id: "shallow", label: "Too shallow" },
+  ];
+  return (
+    <div>
+      <p className="mb-1 text-t13 text-muted-foreground">Seabed (approximate)</p>
+      <div className="grid grid-cols-3 gap-1.5" role="radiogroup" aria-label="Seabed overlay">
+        {opts.map((o) => (
+          <Button
+            key={o.id}
+            role="radio"
+            aria-checked={mode === o.id}
+            variant={mode === o.id ? "default" : "outline"}
+            className="h-11"
+            onClick={() => setMode(o.id)}
+          >
+            {o.label}
+          </Button>
+        ))}
+      </div>
+      {mode !== "off" ? (
+        <p className="mt-1 text-t13 leading-snug text-muted-foreground">
+          {mode === "shallow"
+            ? "Red where the water is shallower than your draft plus 0.5 m at today's tide. "
+            : ""}
+          The depth model shows reefs and drop-offs at a few hundred metres, not bommies.
+        </p>
+      ) : null}
+      {BENTHIC_WMS ? (
+        <div className="mt-1.5">
+          <ToggleRow label="Sand, coral and seagrass (Allen Coral Atlas)" on={benthicOn} onChange={setBenthic} />
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+/** Distance, time and fuel for a route at cruising speed (speed and fuel are in Route settings). */
+function RouteCard({ distM, hours, litres, kn }: { distM: number; hours: number | null; litres: number | null; kn: number }) {
+  return (
+    <div className="mb-2 grid grid-cols-3 gap-1.5 rounded-lg border border-border bg-background px-2 py-1.5 text-center tabular-nums">
+      <div>
+        <p className="text-t12 text-muted-foreground">Distance</p>
+        <p className="text-t16 font-semibold">{formatMeters(distM)}</p>
+      </div>
+      <div>
+        <p className="text-t12 text-muted-foreground">At {kn} kn</p>
+        <p className="text-t16 font-semibold">{hours != null ? formatDuration(hours) : "—"}</p>
+      </div>
+      <div>
+        <p className="text-t12 text-muted-foreground">Fuel</p>
+        <p className="text-t16 font-semibold">{litres != null ? `${Math.ceil(litres)} L` : "—"}</p>
+      </div>
+    </div>
+  );
+}
+
+/** Search reefs, tide ports and saved tracks (offline); tap a result to go there. */
+function PlaceSearch() {
+  const [q, setQ] = useState("");
+  const drafts = useHelm((s) => s.drafts);
+  const extra = drafts
+    .filter((d) => d.waypoints.length)
+    .map((d) => ({ name: d.title, detail: "Your track", lat: d.waypoints[0]!.lat, lng: d.waypoints[0]!.lng, zoom: 16, kind: "track" as const }));
+  const hits = searchPlaces(q, extra);
+  return (
+    <div className="mb-3">
+      <Input
+        value={q}
+        onChange={(e) => setQ(e.target.value)}
+        placeholder="Search: reef, harbour or track"
+        aria-label="Search places"
+        className="h-11 text-base"
+        type="search"
+      />
+      {hits.length ? (
+        <ul className="mt-1.5 grid gap-1">
+          {hits.map((p) => (
+            <li key={`${p.kind}:${p.name}:${p.lat}`}>
+              <button
+                type="button"
+                onClick={() => {
+                  const st = useHelm.getState();
+                  st.setFollowBoat(false);
+                  st.fly(p.lat, p.lng, p.zoom);
+                  st.setPanel(null);
+                }}
+                className="flex min-h-11 w-full items-center justify-between gap-2 rounded-md border border-border bg-background px-3 py-1.5 text-left"
+              >
+                <span className="min-w-0 truncate text-t15 font-semibold">{p.name}</span>
+                <span className="shrink-0 text-t13 text-muted-foreground">{p.detail}</span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      ) : q.trim().length >= 2 ? (
+        <p className="mt-1.5 text-t13 text-muted-foreground">Nothing found on the phone for “{q.trim()}”.</p>
+      ) : null}
+    </div>
   );
 }

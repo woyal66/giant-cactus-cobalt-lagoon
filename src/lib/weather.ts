@@ -7,6 +7,32 @@ import {
   type TideTurn,
 } from "./tides.ts";
 import { fetchBomStationTide, modelTideOrigin } from "./tide-station.ts";
+import { openMeteoUrl } from "./open-meteo.ts";
+import { thunderRisk, type Risk } from "./routing/storm.ts";
+
+function optNum<K extends string>(key: K, v: unknown): Partial<Record<K, number>> {
+  return typeof v === "number" && Number.isFinite(v) ? ({ [key]: v } as Record<K, number>) : {};
+}
+
+/** Thunderstorm risk 0–3 for a forecast hour (same rules as the passage planner). */
+export function stormRiskOf(h: WxHour): Risk {
+  if (h.capeJkg == null && h.code == null) return 0;
+  return thunderRisk({
+    capeJkg: h.capeJkg ?? 0,
+    liftedIndex: h.liftedIndex ?? Number.NaN,
+    cinJkg: Number.NaN,
+    precipMm: h.precipMm,
+    code: h.code ?? 0,
+    gustKn: h.gustKn ?? h.windKn,
+    tempC: h.tempC,
+  });
+}
+
+/** Wind-driven sea from total height and swell (heights add as squares). */
+export function windSeaM(totalM: number, swellM: number | null): number {
+  if (swellM == null) return totalM;
+  return Math.sqrt(Math.max(0, totalM * totalM - swellM * swellM));
+}
 
 export type WxSky =
   | "clear"
@@ -29,6 +55,10 @@ export type WxHour = {
   precipMm: number;
   cloudPct: number;
   sky: WxSky;
+  /** Convective energy (J/kg), lifted index (°C) and WMO weather code, where the model gives them. */
+  capeJkg?: number;
+  liftedIndex?: number;
+  code?: number;
 };
 
 export type CurrentHour = {
@@ -72,6 +102,8 @@ export type WxForecast = {
   /** Other models drawn against the primary line. */
   compare?: Array<{ source: WxModel; hours: WxHour[] }>;
   alt?: { source: WxModel; hours: WxHour[] };
+  /** Set when there was no signal and this is the last forecast saved on the phone. */
+  savedAt?: number;
 };
 
 export const WX_MODEL_LABEL: Record<WxModel, string> = {
@@ -224,8 +256,8 @@ export type AxisMark = { at: number; time: string; day: string | null };
 /** Clock-aligned marks. They move with the window instead of stretching a fake Now to the left edge. */
 export function axisMarks(t0: number, horizonH: number): AxisMark[] {
   const end = t0 + Math.max(1, horizonH) * 3_600_000;
-  const stepH =
-    horizonH <= 8 ? 1 : horizonH <= 18 ? 2 : horizonH <= 36 ? 3 : horizonH <= 72 ? 6 : horizonH <= 168 ? 12 : 24;
+  // At most about 6 labels across a phone-width graph, or "12 PM" and "6 PM" run together.
+  const stepH = [1, 2, 3, 4, 6, 12, 24, 48, 72].find((h) => horizonH / h <= 6) ?? 72;
   const step = stepH * 3_600_000;
   const start = new Date(t0);
   start.setMinutes(0, 0, 0);
@@ -533,6 +565,8 @@ type OpenMeteoPayload = {
     temperature_2m?: (number | null)[];
     precipitation?: (number | null)[];
     cloud_cover?: (number | null)[];
+    cape?: (number | null)[];
+    lifted_index?: (number | null)[];
   };
 };
 
@@ -559,6 +593,9 @@ export function parseOpenMeteo(
       precipMm: num(json.hourly?.precipitation?.[i]),
       cloudPct: Math.round(num(json.hourly?.cloud_cover?.[i])),
       sky: skyFromWmo(num(json.hourly?.weather_code?.[i])),
+      ...optNum("capeJkg", json.hourly?.cape?.[i]),
+      ...optNum("liftedIndex", json.hourly?.lifted_index?.[i]),
+      ...optNum("code", json.hourly?.weather_code?.[i]),
     });
     if (hours.length >= 384) break;
   }
@@ -696,7 +733,7 @@ async function fetchJson(url: string, headers?: HeadersInit): Promise<unknown> {
 }
 
 async function fetchSea(lat: number, lng: number): Promise<SeaState | null> {
-  const url = new URL("https://marine-api.open-meteo.com/v1/marine");
+  const url = openMeteoUrl("https://marine-api.open-meteo.com/v1/marine");
   url.searchParams.set("latitude", lat.toFixed(4));
   url.searchParams.set("longitude", lng.toFixed(4));
   url.searchParams.set(
@@ -720,12 +757,12 @@ async function fetchNamedModel(
     icon: { base: "https://api.open-meteo.com/v1/forecast", model: "icon_global", days: "7" },
     ukmo: { base: "https://api.open-meteo.com/v1/forecast", model: "ukmo_global_deterministic_10km", days: "7" },
   }[source];
-  const url = new URL(spec.base);
+  const url = openMeteoUrl(spec.base);
   url.searchParams.set("latitude", lat.toFixed(4));
   url.searchParams.set("longitude", lng.toFixed(4));
   url.searchParams.set(
     "hourly",
-    "wind_speed_10m,wind_direction_10m,wind_gusts_10m,weather_code,temperature_2m,precipitation,cloud_cover",
+    "wind_speed_10m,wind_direction_10m,wind_gusts_10m,weather_code,temperature_2m,precipitation,cloud_cover,cape,lifted_index",
   );
   url.searchParams.set("forecast_days", spec.days);
   url.searchParams.set("wind_speed_unit", "kn");
@@ -746,12 +783,12 @@ async function fetchOpenMeteo(
   lng: number,
   model: "ecmwf_ifs025" | "gfs_global" | "auto",
 ): Promise<WxForecast> {
-  const url = new URL("https://api.open-meteo.com/v1/forecast");
+  const url = openMeteoUrl("https://api.open-meteo.com/v1/forecast");
   url.searchParams.set("latitude", lat.toFixed(4));
   url.searchParams.set("longitude", lng.toFixed(4));
   url.searchParams.set(
     "hourly",
-    "wind_speed_10m,wind_direction_10m,wind_gusts_10m,weather_code,temperature_2m,precipitation,cloud_cover",
+    "wind_speed_10m,wind_direction_10m,wind_gusts_10m,weather_code,temperature_2m,precipitation,cloud_cover,cape,lifted_index",
   );
   url.searchParams.set("forecast_days", "16");
   url.searchParams.set("wind_speed_unit", "kn");
@@ -769,7 +806,61 @@ async function fetchMetNo(lat: number, lng: number): Promise<WxForecast> {
   return parseMetNo(json, lat, lng);
 }
 
+/* ---------- offline: keep the last forecast for out-of-signal anchorages ---------- */
+
+const WX_SAVE_PREFIX = "anchormate.wx.";
+/** Older than this, a saved forecast is more misleading than helpful. */
+export const WX_SAVE_MAX_AGE_MS = 72 * 3_600_000;
+
+function wxSaveKey(lat: number, lng: number): string {
+  // ~10 km cells: a forecast for the bay is still right after the boat swings or moves a little.
+  return `${WX_SAVE_PREFIX}${lat.toFixed(1)},${lng.toFixed(1)}`;
+}
+
+function saveForecast(f: WxForecast) {
+  try {
+    const slim: WxForecast = { ...f, compare: undefined, alt: undefined, savedAt: Date.now() };
+    localStorage.setItem(wxSaveKey(f.lat, f.lng), JSON.stringify(slim));
+  } catch {
+    /* storage full or blocked */
+  }
+}
+
+/** Re-anchor a saved forecast on the current hour so "now" is not hours out of date. */
+export function reviveForecast(f: WxForecast, now = Date.now()): WxForecast | null {
+  if (!f.savedAt || now - f.savedAt > WX_SAVE_MAX_AGE_MS) return null;
+  const hours = f.hours.filter((h) => h.at >= now - 3_600_000);
+  if (hours.length < 3) return null;
+  const { maxWind, rainMm } = windowStats(hours);
+  return { ...f, hours, now: hours[0]!, maxWind, rainMm };
+}
+
+function loadForecast(lat: number, lng: number): WxForecast | null {
+  try {
+    const raw = localStorage.getItem(wxSaveKey(lat, lng));
+    return raw ? reviveForecast(JSON.parse(raw) as WxForecast) : null;
+  } catch {
+    return null;
+  }
+}
+
 export async function fetchWeather(
+  lat: number,
+  lng: number,
+  opts?: { compare?: boolean },
+): Promise<WxForecast> {
+  try {
+    const live = await fetchWeatherLive(lat, lng, opts);
+    saveForecast(live);
+    return live;
+  } catch (err) {
+    const saved = loadForecast(lat, lng);
+    if (saved) return saved;
+    throw err;
+  }
+}
+
+async function fetchWeatherLive(
   lat: number,
   lng: number,
   opts?: { compare?: boolean },
@@ -831,3 +922,23 @@ export function graphMaxKn(hours: WxHour[]): number {
   }
   return Math.max(15, Math.ceil(m / 5) * 5);
 }
+
+/** Wind strength colours (knots), dark-background friendly, in Beaufort-like steps. */
+const WIND_SCALE: Array<[number, string, string]> = [
+  [5, "#334155", "#e2e8f0"],
+  [10, "#1d6f8f", "#ffffff"],
+  [15, "#1f9e6e", "#ffffff"],
+  [20, "#c9a227", "#111827"],
+  [25, "#e07b24", "#111827"],
+  [30, "#d63c3c", "#ffffff"],
+  [40, "#b02a8f", "#ffffff"],
+  [Infinity, "#6b2bb0", "#ffffff"],
+];
+
+/** Background and text colour for a wind or gust speed. */
+export function windColor(kn: number): { bg: string; fg: string } {
+  const row = WIND_SCALE.find(([upTo]) => kn < upTo) ?? WIND_SCALE[WIND_SCALE.length - 1]!;
+  return { bg: row[1], fg: row[2] };
+}
+
+export const WIND_SCALE_STEPS = WIND_SCALE.map(([upTo, bg]) => ({ upTo, bg }));

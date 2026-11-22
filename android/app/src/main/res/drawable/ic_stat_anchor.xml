@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Monochrome status-bar icon (Android tints it). Same mark as the app icon. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="32"
+    android:viewportHeight="32">
+    <path android:fillColor="#FFFFFFFF"
+        android:pathData="M16,3.5a3.7,3.7 0,1 1,0 7.4a3.7,3.7 0,1 1,0 -7.4z" />
+    <path android:fillColor="#FFFFFFFF"
+        android:pathData="M9.35,11.2h13.3a1.75,1.75 0,0 1,0 3.5h-13.3a1.75,1.75 0,0 1,0 -3.5z" />
+    <path android:fillColor="#FFFFFFFF"
+        android:pathData="M15.45,12.6h1.1a1.2,1.2 0,0 1,1.2 1.2v6.8a1.2,1.2 0,0 1,-1.2 1.2h-1.1a1.2,1.2 0,0 1,-1.2 -1.2v-6.8a1.2,1.2 0,0 1,1.2 -1.2z" />
+    <path android:fillColor="#00000000"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="4"
+        android:strokeLineCap="round"
+        android:pathData="M8.2,19.2C9,25.4 12.2,27.6 16,27.6s7,-2.2 7.8,-8.4" />
+</vector>

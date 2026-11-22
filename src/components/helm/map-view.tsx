@@ -15,7 +15,7 @@ import type {
 } from "leaflet";
 import { useHelm, guidePoints, passagePoints } from "@/store/helm";
 import { getReef } from "@/lib/reefs";
-import { bearingDegrees, destPoint, haversineMeters, chartBearing, hullScreenHeading, lerpBearing, segmentTube, cornerIndexes, TUBE_M } from "@/lib/geo";
+import { bearingDegrees, destPoint, formatHeading, formatMeters, haversineMeters, chartBearing, hullScreenHeading, lerpBearing, segmentTube, cornerIndexes, TUBE_M } from "@/lib/geo";
 import { rodeDropNote, laybackM, snapToLayback, clampAlarmRadius } from "@/lib/anchor";
 import { markNav } from "@/lib/steer";
 import { bowFromGps, type BoatSetup } from "@/lib/boat";
@@ -36,6 +36,10 @@ import {
   SEAMARK_URL,
   SENTINEL_URL,
   STUB_TILE_BYTES,
+  ATTR_MAPTILER,
+  ATTR_ZONING,
+  ZONING_WMS_LAYERS,
+  REEF_WMS_URL,
   autoSatOrder,
   satTileUrl,
   type ImageryId,
@@ -43,6 +47,16 @@ import {
 } from "@/lib/imagery";
 import { squareFromCorners } from "@/lib/offline-tiles";
 import { toast } from "sonner";
+import { measure } from "@/lib/measure";
+import { createRadar } from "@/components/helm/radar-layer";
+import { radarAvailable } from "@/lib/radar";
+import { createDepthLayer, type DepthLook } from "@/components/helm/depth-layer";
+import { createHazardLayer } from "@/components/helm/hazard-layer";
+import { createWxLayer } from "@/components/helm/wx-layer";
+import { createChartLayer } from "@/components/helm/chart-layer";
+import { loadViewField } from "@/lib/wx-map-data";
+import type { WeatherField } from "@/lib/routing/field";
+import { ATTR_BENTHIC, BENTHIC_LAYERS, BENTHIC_WMS } from "@/lib/imagery";
 
 /** LatLng to put at screen centre so the boat sits just below it. */
 function followCenter(
@@ -139,10 +153,24 @@ export function getChartBounds(): ChartBounds | null {
   return chartBounds;
 }
 
+/** Which satellite source painted the tile under the chart centre (Auto mixes sources). */
+export function centreTileSource(): string | null {
+  const box = document.querySelector<HTMLElement>(".leaflet-container");
+  if (!box) return null;
+  const r = box.getBoundingClientRect();
+  const cx = r.left + r.width / 2;
+  const cy = r.top + r.height / 2;
+  for (const img of document.querySelectorAll<HTMLImageElement>(".leaflet-tile-pane img[data-sat]")) {
+    const t = img.getBoundingClientRect();
+    if (cx >= t.left && cx < t.right && cy >= t.top && cy < t.bottom && img.style.opacity !== "0") return img.dataset.sat ?? null;
+  }
+  return null;
+}
+
 const TRANSPARENT_GIF =
   "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==";
 
-let satEpoch = 0;
+const satEpoch = 0;
 const memTiles = new Map<string, Blob>();
 
 function rememberTile(key: string | undefined, blob: Blob) {
@@ -166,17 +194,29 @@ function leafletFrom(mod: unknown): LeafletNS {
   throw new Error("Leaflet TileLayer missing");
 }
 
+/** One tiny reusable canvas for the placeholder test (was one new canvas per tile). */
+let probe: CanvasRenderingContext2D | null = null;
+function probeCtx(): CanvasRenderingContext2D | null {
+  if (probe) return probe;
+  const canvas = document.createElement("canvas");
+  canvas.width = 8;
+  canvas.height = 8;
+  probe = canvas.getContext("2d", { willReadFrequently: true });
+  return probe;
+}
+
 /** Light grey "no imagery" tiles are tiny and flat. Real ocean can be small and dark — keep those. */
 async function isPlaceholder(blob: Blob): Promise<boolean> {
   if (blob.size < 400) return true;
   if (blob.size > 6000) return false;
   try {
     const bmp = await createImageBitmap(blob);
-    const canvas = document.createElement("canvas");
-    canvas.width = 8;
-    canvas.height = 8;
-    const g = canvas.getContext("2d", { willReadFrequently: true });
-    if (!g) return false;
+    const g = probeCtx();
+    if (!g) {
+      bmp.close();
+      return false;
+    }
+    g.clearRect(0, 0, 8, 8);
     g.drawImage(bmp, 0, 0, 8, 8);
     bmp.close();
     const d = g.getImageData(0, 0, 8, 8).data;
@@ -206,7 +246,11 @@ async function isPlaceholder(blob: Blob): Promise<boolean> {
   }
 }
 
-async function fetchRealTile(url: string, cacheKey?: string): Promise<Blob | null> {
+async function fetchRealTile(
+  url: string,
+  cacheKey?: string,
+  signal?: AbortSignal,
+): Promise<Blob | null> {
   if (cacheKey) {
     const mem = memTiles.get(cacheKey);
     if (mem) return mem;
@@ -217,7 +261,8 @@ async function fetchRealTile(url: string, cacheKey?: string): Promise<Blob | nul
     }
   }
   try {
-    const r = await fetch(url, { mode: "cors" });
+    if (signal?.aborted) return null;
+    const r = await fetch(url, { mode: "cors", signal });
     if (!r.ok) return null;
     const blob = await r.blob();
     if (await isPlaceholder(blob)) return null;
@@ -228,11 +273,42 @@ async function fetchRealTile(url: string, cacheKey?: string): Promise<Blob | nul
   }
 }
 
+/** Tiles that scroll away mid-download are aborted so the visible ones load first. */
+const tileAborts = new WeakMap<HTMLElement, AbortController>();
+
+/** The quarter of a tile one zoom level up, scaled to a full tile. */
+async function cropQuadrant(blob: Blob, qx: number, qy: number): Promise<Blob | null> {
+  try {
+    const bmp = await createImageBitmap(blob);
+    const half = bmp.width / 2;
+    const c = document.createElement("canvas");
+    c.width = bmp.width;
+    c.height = bmp.height;
+    const g = c.getContext("2d");
+    if (!g) {
+      bmp.close();
+      return null;
+    }
+    g.imageSmoothingQuality = "high";
+    g.drawImage(bmp, qx * half, qy * half, half, half, 0, 0, c.width, c.height);
+    bmp.close();
+    return await new Promise((resolve) => c.toBlob((b) => resolve(b), "image/jpeg", 0.92));
+  } catch {
+    return null;
+  }
+}
+
+type TileSource = { id: string; url: string; cacheKey?: string };
+
 function loadSatTile(
   tile: HTMLImageElement,
-  sources: { id: string; url: string; cacheKey?: string }[],
+  sources: TileSource[],
   done: DoneCallback,
+  /** Same place one zoom level down: used when no source has this tile (sharp mode offline, coverage gaps). */
+  parent?: { sources: TileSource[]; qx: number; qy: number },
 ) {
+  const ctrl = new AbortController();
+  tileAborts.set(tile, ctrl);
   const ok = () => done(undefined, tile);
   const blank = () => {
     tile.src = TRANSPARENT_GIF;
@@ -250,13 +326,24 @@ function loadSatTile(
 
   void (async () => {
     for (const src of sources) {
-      if (tile.dataset.gen !== String(satEpoch)) return;
-      const blob = await fetchRealTile(src.url, src.cacheKey);
+      if (tile.dataset.gen !== String(satEpoch) || ctrl.signal.aborted) return;
+      const blob = await fetchRealTile(src.url, src.cacheKey, ctrl.signal);
       if (!blob) continue;
       paint(blob, src.id);
       return;
     }
-    if (tile.dataset.gen !== String(satEpoch)) return;
+    if (parent) {
+      for (const src of parent.sources) {
+        if (tile.dataset.gen !== String(satEpoch) || ctrl.signal.aborted) return;
+        const blob = await fetchRealTile(src.url, src.cacheKey, ctrl.signal);
+        if (!blob) continue;
+        const part = await cropQuadrant(blob, parent.qx, parent.qy);
+        if (!part) continue;
+        paint(part, src.id);
+        return;
+      }
+    }
+    if (tile.dataset.gen !== String(satEpoch) || ctrl.signal.aborted) return;
     const first = sources[0];
     if (!first) {
       blank();
@@ -283,16 +370,24 @@ function satLayer(
     cacheSource?: OfflineSource;
     /** Tried in order. First real photo wins. Sentinel-only passes one. */
     sources?: (coords: Coords) => { id: string; url: string; cacheKey?: string }[];
+    /**
+     * Sharp mode for high-density screens: 128 px tiles from one zoom level deeper, so each
+     * photo pixel lands on one screen pixel instead of being stretched 2–3×.
+     */
+    hd?: boolean;
   },
 ): TileLayer {
+  const hd = Boolean(opts.hd && opts.sources);
   const options: TileLayerOptions = {
     maxZoom: MAX_ZOOM,
-    maxNativeZoom: opts.maxNativeZoom,
+    maxNativeZoom: hd ? opts.maxNativeZoom - 1 : opts.maxNativeZoom,
+    ...(hd ? { tileSize: 128, zoomOffset: 1 } : {}),
     minZoom: 3,
     detectRetina: false,
     keepBuffer: 6,
     updateWhenIdle: false,
-    updateWhenZooming: true,
+    // Fetching every in-between level during a pinch stutters on phones; load when the zoom settles.
+    updateWhenZooming: false,
     attribution: opts.attribution,
     errorTileUrl: TRANSPARENT_GIF,
     opacity: opts.opacity ?? 1,
@@ -327,8 +422,10 @@ function satLayer(
       tile.alt = "";
       tile.dataset.gen = String(satEpoch);
       tile.setAttribute("role", "presentation");
+      // Leaflet's coords.z leaves out zoomOffset; the tile servers need the real level.
+      const at = hd ? ({ x: coords.x, y: coords.y, z: coords.z + 1 } as Coords) : coords;
       const list = opts.sources
-        ? opts.sources(coords)
+        ? opts.sources(at)
         : [
             {
               id: opts.cacheSource ?? "sat",
@@ -355,7 +452,15 @@ function satLayer(
         }
       }
       tile.src = TRANSPARENT_GIF;
-      loadSatTile(tile, list, done);
+      const parent =
+        opts.sources && at.z > 3
+          ? {
+              sources: opts.sources({ x: at.x >> 1, y: at.y >> 1, z: at.z - 1 } as Coords),
+              qx: at.x & 1,
+              qy: at.y & 1,
+            }
+          : undefined;
+      loadSatTile(tile, list, done, parent);
       return tile;
     };
   }
@@ -366,6 +471,8 @@ function satLayer(
   ) => TileLayer;
   const layer = new Ctor(url, options);
   layer.on("tileunload", (e: TileEvent) => {
+    tileAborts.get(e.tile)?.abort();
+    tileAborts.delete(e.tile);
     const blob = e.tile.dataset.blob;
     if (blob) URL.revokeObjectURL(blob);
   });
@@ -384,6 +491,7 @@ function tileChoice(id: SatSource, coords: Coords) {
 
 function nativeZoom(id: ImageryId): number {
   if (id === "google" || id === "auto") return 21;
+  if (id === "maptiler") return 20;
   if (id === "bing") return 19;
   return 18;
 }
@@ -418,6 +526,8 @@ export function MapView() {
     const host = hostRef.current;
     if (!host) return;
     let cancelled = false;
+    let stopRadar = () => {};
+    let stopWx = () => {};
     let map: LeafletMap | null = null;
     let unsub: () => void = () => {};
 
@@ -474,16 +584,21 @@ export function MapView() {
         if (chartPane) chartPane.style.zIndex = "270";
 
         let activeImagery: ImageryId = useHelm.getState().imagery;
-        const attrFor = (id: ImageryId) =>
+        const attrOne = (id: Exclude<ImageryId, "auto">) =>
           id === "google"
             ? ATTR_GOOGLE
             : id === "bing"
               ? ATTR_BING
               : id === "sentinel"
                 ? ATTR_SENTINEL
-                : id === "auto"
-                  ? "Clearest satellite · Google, Maxar, Bing, Copernicus"
+                : id === "maptiler"
+                  ? ATTR_MAPTILER
                   : ATTR_ESRI;
+        // Auto credits every source it may draw from in this build.
+        const attrFor = (id: ImageryId) =>
+          id === "auto"
+            ? [...new Set(autoSatOrder(18).concat(autoSatOrder(12)).map(attrOne))].join(" · ")
+            : attrOne(id);
         const sourcesFor = (id: ImageryId) => (c: Coords) =>
           id === "auto"
             ? autoSatOrder(c.z).map((src) => ({
@@ -492,10 +607,12 @@ export function MapView() {
                 cacheKey: `${src}/${c.z}/${c.x}/${c.y}`,
               }))
             : tileChoice(id, c);
+        let activeHd = useHelm.getState().sharpTiles;
         let photo = satLayer(L, SENTINEL_URL, {
           maxNativeZoom: nativeZoom(activeImagery),
           attribution: attrFor(activeImagery),
           sources: sourcesFor(activeImagery),
+          hd: activeHd,
         });
         photo.addTo(map);
         let incoming: TileLayer | null = null;
@@ -522,6 +639,91 @@ export function MapView() {
           pane: "chartOverlay",
           attribution: ATTR_OPENSEAMAP,
         });
+
+        // Reefs, drying reef, rocks and cays from the bundled GBRMPA file (works offline).
+        const reefs = createHazardLayer(L, MAX_ZOOM);
+        let reefsOn = false;
+        // Under the reef outlines and seamarks, translucent so the satellite still reads.
+        const zones: TileLayer = L.tileLayer.wms(REEF_WMS_URL, {
+          layers: ZONING_WMS_LAYERS,
+          format: "image/png",
+          transparent: true,
+          version: "1.1.1",
+          maxZoom: MAX_ZOOM,
+          opacity: 0.4,
+          pane: "chartOverlay",
+          attribution: ATTR_ZONING,
+        });
+        let zonesOn = false;
+        const radar = createRadar(L, map, MAX_ZOOM);
+        // Seabed overlay: depth shading or too-shallow-for-my-draft at the tide now.
+        const depthLook = (): DepthLook => {
+          const st = useHelm.getState();
+          return {
+            mode: st.depthLayer === "shallow" ? "shallow" : "depth",
+            tideMsl: st.tideNowMsl ?? 0,
+            limitM: st.hull.draftM + 0.5,
+          };
+        };
+        const depthLayer = createDepthLayer(L, MAX_ZOOM, depthLook);
+        let depthStamp = "";
+        let chartLayer: import("leaflet").Layer | null = null;
+        let chartStamp = "photo";
+        let chartToken = 0;
+        // Weather on the chart: grid for the view, loaded when a layer is on and after panning away.
+        const wxLayer = createWxLayer(L, map);
+        let wxField: WeatherField | null = null;
+        let wxLoading = false;
+        const wxCovers = (f: WeatherField | null) => {
+          if (!f || !map) return false;
+          const b = map.getBounds();
+          return (
+            f.lat0 <= b.getSouth() &&
+            f.lat0 + (f.ny - 1) * f.dLat >= b.getNorth() &&
+            f.lng0 <= b.getWest() &&
+            f.lng0 + (f.nx - 1) * f.dLng >= b.getEast()
+          );
+        };
+        const wxLoad = () => {
+          const st = useHelm.getState();
+          if (!map || st.wxMapLayer === "off" || wxLoading || wxCovers(wxField)) return;
+          wxLoading = true;
+          st.setWxMap({ wxMapInfo: { source: "loading", fetchedAt: null, times: wxField?.times ?? [] } });
+          const b = map.getBounds();
+          void loadViewField({ south: b.getSouth(), west: b.getWest(), north: b.getNorth(), east: b.getEast() })
+            .then((r) => {
+              wxField = r?.field ?? wxField;
+              useHelm.getState().setWxMap({
+                wxMapInfo: r
+                  ? { source: r.source, fetchedAt: r.field.fetchedAt ?? null, times: r.field.times }
+                  : { source: "none", fetchedAt: null, times: [] },
+              });
+            })
+            .finally(() => {
+              wxLoading = false;
+              const s2 = useHelm.getState();
+              wxLayer.set({ layer: s2.wxMapLayer, style: s2.wxMapStyle, at: s2.wxMapAt, field: wxField });
+            });
+        };
+        map.on("moveend", wxLoad);
+        stopWx = () => {
+          map?.off("moveend", wxLoad);
+          wxLayer.destroy();
+        };
+        // Allen Coral Atlas sand / coral / seagrass, only when the build names its map service.
+        const benthic: TileLayer | null = BENTHIC_WMS
+          ? L.tileLayer.wms(BENTHIC_WMS, {
+              layers: BENTHIC_LAYERS,
+              format: "image/png",
+              transparent: true,
+              version: "1.1.1",
+              maxZoom: MAX_ZOOM,
+              opacity: 0.55,
+              pane: "chartOverlay",
+              attribution: ATTR_BENTHIC,
+            })
+          : null;
+        stopRadar = () => radar.destroy();
 
         L.control
           .scale({ metric: true, imperial: false, position: "bottomright" })
@@ -694,6 +896,39 @@ export function MapView() {
           opacity: 0.22,
           lineJoin: "round",
         });
+        // Passage planner: suggested route plus start (green) and finish (chequered) marks.
+        const planLine: Polyline = L.polyline([], {
+          color: "#f0c14a",
+          weight: 4,
+          opacity: 0.95,
+          lineJoin: "round",
+          interactive: false,
+        });
+        const planStart = L.circleMarker([0, 0], {
+          radius: 9,
+          color: "#ffffff",
+          weight: 3,
+          fillColor: "#2bb673",
+          fillOpacity: 1,
+          interactive: false,
+        });
+        const planFinish = L.circleMarker([0, 0], {
+          radius: 9,
+          color: "#ffffff",
+          weight: 3,
+          fillColor: "#e5484d",
+          fillOpacity: 1,
+          interactive: false,
+        });
+        let planStamp = "";
+        const planCursor = L.circleMarker([0, 0], {
+          radius: 7,
+          color: "#071318",
+          weight: 3,
+          fillColor: "#f0c14a",
+          fillOpacity: 1,
+          interactive: false,
+        });
         const draftLine: Polyline = L.polyline([], {
           color: primary,
           weight: 3,
@@ -731,48 +966,21 @@ export function MapView() {
           interactive: false,
           zIndexOffset: 900,
         });
-        const wxOpen = document.createElement("button");
-        wxOpen.type = "button";
-        wxOpen.className = "rp-wx-open";
-        wxOpen.dataset.wx = "open";
-        wxOpen.textContent = "Forecast";
-        const openWx = (ev: Event) => {
-          ev.preventDefault();
-          ev.stopPropagation();
-          useHelm.getState().setPanel("weather");
-          wxMarker.closePopup();
-        };
-        wxOpen.addEventListener("pointerup", openWx);
-        wxOpen.addEventListener("click", openWx);
+        // The press-and-hold pin. Tapping it reopens the spot card (PinCard).
         const wxMarker: Marker = L.marker([0, 0], {
           icon: L.divIcon({
             className: "rp-divicon",
-            html: `<div class="rp-pin">WX</div>`,
-            iconSize: [36, 22],
-            iconAnchor: [18, 11],
+            html: `<div class="rp-pin">◎</div>`,
+            iconSize: [30, 22],
+            iconAnchor: [15, 11],
           }),
           interactive: true,
           zIndexOffset: 700,
         });
-        wxMarker.bindPopup(wxOpen, {
-          closeButton: false,
-          closeOnClick: false,
-          autoPan: true,
-          offset: [0, -6],
-          className: "rp-wx-pop",
-          minWidth: 108,
+        wxMarker.on("click", (ev) => {
+          L.DomEvent.stop(ev);
+          useHelm.setState({ pinCard: true });
         });
-        wxMarker.on("popupopen", () => {
-          const el = wxMarker.getPopup()?.getElement();
-          if (!el) return;
-          el.onpointerup = (ev) => {
-            ev.preventDefault();
-            ev.stopPropagation();
-            useHelm.getState().setPanel("weather");
-            wxMarker.closePopup();
-          };
-        });
-        let wxWantPopup = false;
         const packDraftRect: Rectangle = L.rectangle(
           [
             [0, 0],
@@ -788,11 +996,18 @@ export function MapView() {
         );
         const packGroup: LayerGroup = L.layerGroup();
         const wpGroup: LayerGroup = L.layerGroup();
+        // MOB drift: where the person is likely to be at +5 / +10 / +20 min (and now).
+        const mobDriftGroup: LayerGroup = L.layerGroup();
+        let mobDriftStamp = "";
+        // Measuring tool: line, points and a distance and bearing label on each leg.
+        const measureGroup: LayerGroup = L.layerGroup();
+        let measureStamp = "";
         const tubeGroup: LayerGroup = L.layerGroup();
         routeGlow.addTo(map);
         routeLine.addTo(map);
         draftLine.addTo(map);
         swingLine.addTo(map);
+        planLine.addTo(map);
         crumbLine.addTo(map);
         packGroup.addTo(map);
         tubeGroup.addTo(map);
@@ -955,7 +1170,16 @@ export function MapView() {
         let packStamp = "";
         let boatIconKey = "";
 
+        // Two-finger gesture guard. Follow-boat only paused for one-finger drags, so a GPS fix
+        // (once a second) re-centred or rotated the chart mid-pinch: the jumpy zoom.
+        let pinchTouches = 0;
+        let gestureUntil = 0;
+        const gesturing = () =>
+          pinchTouches >= 2 ||
+          Date.now() < gestureUntil ||
+          Boolean((map as unknown as { _animatingZoom?: boolean })._animatingZoom);
         const setMapBearing = (deg: number) => {
+          if (gesturing()) return;
           const m = map as LeafletMap & {
             setBearing?: (b: number) => void;
             getBearing?: () => number;
@@ -967,8 +1191,8 @@ export function MapView() {
           m.setBearing(deg);
         };
 
-        const applyImagery = (id: ImageryId) => {
-          if (!map || id === activeImagery) return;
+        const applyImagery = (id: ImageryId, hd: boolean) => {
+          if (!map || (id === activeImagery && hd === activeHd)) return;
           if (incoming) {
             map.removeLayer(incoming);
             incoming = null;
@@ -977,6 +1201,7 @@ export function MapView() {
             maxNativeZoom: nativeZoom(id),
             attribution: attrFor(id),
             sources: sourcesFor(id),
+            hd,
           });
           next.addTo(map);
           incoming = next;
@@ -987,6 +1212,7 @@ export function MapView() {
             if (map.hasLayer(photo)) map.removeLayer(photo);
             photo = next;
             activeImagery = id;
+            activeHd = hd;
             incoming = null;
           };
           next.once("load", commit);
@@ -1004,6 +1230,8 @@ export function MapView() {
           nextI: number | null,
         ) => {
           wpGroup.clearLayers();
+          // While drawing a route, points can be dragged to adjust them.
+          const editing = useHelm.getState().drawMode === "draw";
           pathIndex.forEach((src, n) => {
             const w = wps[src];
             if (!w) return;
@@ -1019,8 +1247,16 @@ export function MapView() {
               }),
               interactive: true,
               keyboard: false,
+              draggable: editing,
               zIndexOffset: next ? 400 : 200,
             });
+            if (editing) {
+              mk.on("dragend", () => {
+                const ll = mk.getLatLng();
+                const st = useHelm.getState();
+                st.setDraft(st.draft.map((p, i) => (i === src ? { ...p, lat: ll.lat, lng: ll.lng } : p)));
+              });
+            }
             mk.on("click", (ev) => {
               L.DomEvent.stop(ev);
               const st = useHelm.getState();
@@ -1054,7 +1290,27 @@ export function MapView() {
             map.getContainer().style.touchAction = "";
           }
 
-          applyImagery(s.imagery);
+          applyImagery(s.imagery, s.sharpTiles);
+          // Base map: the photo is removed in Chart mode; the vector chart (or its lines) is added.
+          const photoWanted = s.baseMap !== "chart";
+          if (!photoWanted && map.hasLayer(photo)) map.removeLayer(photo);
+          else if (photoWanted && !map.hasLayer(photo)) photo.addTo(map);
+          const cStamp = s.baseMap === "photo" ? "photo" : `${s.baseMap}|${s.look === "night" ? "n" : "d"}`;
+          if (cStamp !== chartStamp) {
+            chartStamp = cStamp;
+            const token = ++chartToken;
+            if (chartLayer) {
+              map.removeLayer(chartLayer);
+              chartLayer = null;
+            }
+            if (s.baseMap !== "photo") {
+              void createChartLayer(L, s.baseMap === "chart" ? "chart" : "lines", s.look === "night").then((layer) => {
+                if (!map || token !== chartToken) return;
+                chartLayer = layer;
+                layer.addTo(map);
+              });
+            }
+          }
 
           const look = s.look;
           const sun = look === "sunlight";
@@ -1106,7 +1362,7 @@ export function MapView() {
             weight: sun ? 3 : 2,
           });
 
-          if (s.labels) {
+          if (s.labels && s.baseMap === "photo") {
             if (!labelsOn) {
               labels.addTo(map);
               labelsOn = true;
@@ -1132,6 +1388,41 @@ export function MapView() {
           } else if (depthsOn) {
             map.removeLayer(depths);
             depthsOn = false;
+          }
+          if (s.parkZones) {
+            if (!zonesOn) {
+              zones.addTo(map);
+              zones.bringToBack();
+              zonesOn = true;
+            }
+          } else if (zonesOn) {
+            map.removeLayer(zones);
+            zonesOn = false;
+          }
+          radar.set(s.radar && radarAvailable());
+          if (s.wxMapLayer !== "off") wxLoad();
+          wxLayer.set({ layer: s.wxMapLayer, style: s.wxMapStyle, at: s.wxMapAt, field: wxField });
+          const dStamp =
+            s.depthLayer === "off" ? "off" : `${s.depthLayer}|${(s.tideNowMsl ?? 0).toFixed(1)}|${s.hull.draftM.toFixed(1)}`;
+          if (dStamp !== depthStamp) {
+            const was = depthStamp;
+            depthStamp = dStamp;
+            if (dStamp === "off") map.removeLayer(depthLayer);
+            else if (!map.hasLayer(depthLayer)) depthLayer.addTo(map);
+            else if (was !== "off") depthLayer.redraw();
+          }
+          if (benthic) {
+            if (s.benthic && !map.hasLayer(benthic)) benthic.addTo(map);
+            else if (!s.benthic && map.hasLayer(benthic)) map.removeLayer(benthic);
+          }
+          if (s.reefOutlines || s.baseMap === "chart") {
+            if (!reefsOn) {
+              reefs.addTo(map);
+              reefsOn = true;
+            }
+          } else if (reefsOn) {
+            map.removeLayer(reefs);
+            reefsOn = false;
           }
 
           let framingTrack = false;
@@ -1194,7 +1485,7 @@ export function MapView() {
               boatMarker.addTo(map);
               boatOn = true;
             }
-            if (s.followBoat && !framingTrack && !mapDrag.moving?.()) {
+            if (s.followBoat && !framingTrack && !mapDrag.moving?.() && !gesturing()) {
               if (!followArmed && map.getZoom() < HELM_ZOOM) {
                 map.setView([s.boat.lat, s.boat.lng], HELM_ZOOM, { animate: false });
               }
@@ -1215,7 +1506,6 @@ export function MapView() {
           }
 
           const placing = s.tapMode === "drop-anchor";
-          const resizing = s.tapMode === "resize-swing";
 
           const bow = s.boat
             ? bowFromGps(s.boat, s.boat.heading, s.hull)
@@ -1295,7 +1585,7 @@ export function MapView() {
             s.courseMark,
             s.drawMode,
             s.draft.length,
-            s.draft[s.draft.length - 1]?.lat?.toFixed(5),
+            s.drawMode === "draw" ? s.draft.map((p) => `${p.lat.toFixed(6)},${p.lng.toFixed(6)}`).join(";") : s.draft[s.draft.length - 1]?.lat?.toFixed(5),
             s.pinnedMark,
             s.trackTurnDeg,
             s.trackChordM,
@@ -1336,9 +1626,133 @@ export function MapView() {
               draftLine.setLatLngs([]);
             }
           }
-          rangeLine.setLatLngs([]);
+          const pStamp = `${s.routeStart?.lat},${s.routeStart?.lng}|${s.routeFinish?.lat},${s.routeFinish?.lng}|${s.routePreview?.length ?? 0}|${s.routePreview?.[1]?.lat ?? ""}`;
+          if (pStamp !== planStamp) {
+            planStamp = pStamp;
+            planLine.setLatLngs((s.routePreview ?? []).map((p) => [p.lat, p.lng] as [number, number]));
+            // Frame the whole route in the space above the planner sheet.
+            if (s.routePreview && s.routePreview.length >= 2) {
+              const h = map.getSize().y;
+              map.fitBounds(
+                L.latLngBounds(s.routePreview.map((p) => [p.lat, p.lng] as [number, number])),
+                { paddingTopLeft: [28, 90], paddingBottomRight: [28, Math.round(h * 0.5) + 16], maxZoom: 15, animate: true },
+              );
+            }
+            for (const [mk, at] of [
+              [planStart, s.routeStart],
+              [planFinish, s.routeFinish],
+            ] as const) {
+              if (at) {
+                mk.setLatLng([at.lat, at.lng]);
+                if (!map.hasLayer(mk)) mk.addTo(map);
+              } else if (map.hasLayer(mk)) {
+                map.removeLayer(mk);
+              }
+            }
+          }
+          if (s.routeCursor) {
+            planCursor.setLatLng([s.routeCursor.lat, s.routeCursor.lng]);
+            if (!map.hasLayer(planCursor)) planCursor.addTo(map);
+          } else if (map.hasLayer(planCursor)) {
+            map.removeLayer(planCursor);
+          }
+          // Measuring tool: two pins you drag anywhere; distance and bearing on the line.
+          const mStamp = `${s.depthUnit}|${s.lengthUnit}|` + s.measurePts.map((p) => `${p.lat.toFixed(6)},${p.lng.toFixed(6)}`).join("|");
+          if (mStamp !== measureStamp) {
+            measureStamp = mStamp;
+            measureGroup.clearLayers();
+            const mp = s.measurePts;
+            if (mp.length === 2) {
+              const shadow = L.polyline([], { color: "#000000", weight: 7, opacity: 0.45, interactive: false }).addTo(measureGroup);
+              const line = L.polyline([], { color: "#ffffff", weight: 3.5, dashArray: "9 7", interactive: false }).addTo(measureGroup);
+              const label = L.marker([0, 0], { interactive: false, keyboard: false, zIndexOffset: 950 }).addTo(measureGroup);
+              const pins = mp.map((pt, i) =>
+                L.marker([pt.lat, pt.lng], {
+                  draggable: true,
+                  keyboard: false,
+                  zIndexOffset: 1000,
+                  icon: L.divIcon({
+                    className: "rp-divicon",
+                    // 48 px touch area around a clear 22 px pin.
+                    html: `<div style="width:48px;height:48px;display:grid;place-items:center"><div style="width:22px;height:22px;border-radius:50%;background:#fff;border:4px solid ${i === 0 ? "#0b7a6b" : "#c2410c"};box-shadow:0 0 0 2px rgba(0,0,0,.55)"></div></div>`,
+                    iconSize: [48, 48],
+                    iconAnchor: [24, 24],
+                  }),
+                }).addTo(measureGroup),
+              );
+              const redraw = () => {
+                const a = pins[0]!.getLatLng();
+                const b = pins[1]!.getLatLng();
+                const ll: [number, number][] = [[a.lat, a.lng], [b.lat, b.lng]];
+                shadow.setLatLngs(ll);
+                line.setLatLngs(ll);
+                const leg = measure([{ lat: a.lat, lng: a.lng }, { lat: b.lat, lng: b.lng }]).legs[0];
+                if (!leg) return;
+                label.setLatLng([(a.lat + b.lat) / 2, (a.lng + b.lng) / 2]);
+                label.setIcon(
+                  L.divIcon({
+                    className: "rp-divicon",
+                    html: `<span style="display:inline-block;transform:translate(-50%,-50%);font:600 15px system-ui;color:#fff;background:rgba(0,0,0,.8);padding:4px 9px;border-radius:8px;white-space:nowrap">${formatMeters(leg.distM)} · ${formatHeading(leg.bearing)}</span>`,
+                    iconSize: [0, 0],
+                    iconAnchor: [0, 0],
+                  }),
+                );
+              };
+              for (const pin of pins) {
+                pin.on("drag", redraw);
+                pin.on("dragend", () => {
+                  const pts = pins.map((m) => ({ lat: m.getLatLng().lat, lng: m.getLatLng().lng }));
+                  measureStamp = `${useHelm.getState().depthUnit}|${useHelm.getState().lengthUnit}|` + pts.map((q) => `${q.lat.toFixed(6)},${q.lng.toFixed(6)}`).join("|");
+                  useHelm.setState({ measurePts: pts });
+                });
+              }
+              redraw();
+              if (!map.hasLayer(measureGroup)) measureGroup.addTo(map);
+            } else if (map.hasLayer(measureGroup)) {
+              map.removeLayer(measureGroup);
+            }
+          }
+          const md = s.mob ? s.mobDrift : null;
+          const mdStamp = md ? md.points.map((p) => `${p.minutes.toFixed(0)}:${p.lat.toFixed(5)},${p.lng.toFixed(5)}`).join("|") : "";
+          if (mdStamp !== mobDriftStamp) {
+            mobDriftStamp = mdStamp;
+            mobDriftGroup.clearLayers();
+            if (md && s.mob) {
+              L.polyline([[s.mob.lat, s.mob.lng], ...md.points.map((p) => [p.lat, p.lng] as [number, number])], {
+                color: "#ff5a5f",
+                weight: 2,
+                dashArray: "4 6",
+                interactive: false,
+              }).addTo(mobDriftGroup);
+              for (const p of md.points) {
+                L.circle([p.lat, p.lng], {
+                  radius: p.radiusM,
+                  color: "#ff5a5f",
+                  weight: 1.5,
+                  fillColor: "#ff5a5f",
+                  fillOpacity: 0.12,
+                  interactive: false,
+                }).addTo(mobDriftGroup);
+                L.marker([p.lat, p.lng], {
+                  icon: L.divIcon({
+                    className: "rp-divicon",
+                    html: `<span style="font:600 11px system-ui;color:#fff;background:#c9363b;padding:1px 4px;border-radius:4px;white-space:nowrap">+${Math.round(p.minutes)} min</span>`,
+                    iconSize: [46, 16],
+                    iconAnchor: [23, -6],
+                  }),
+                  interactive: false,
+                  keyboard: false,
+                }).addTo(mobDriftGroup);
+              }
+              if (!map.hasLayer(mobDriftGroup)) mobDriftGroup.addTo(map);
+            } else if (map.hasLayer(mobDriftGroup)) {
+              map.removeLayer(mobDriftGroup);
+            }
+          }
+          // Only clear once; redrawing an empty path on every store change was wasted work.
+          if (rangeLine.getLatLngs().length) rangeLine.setLatLngs([]);
           paintGrid();
-          crumbLine.setLatLngs([]);
+          if (crumbLine.getLatLngs().length) crumbLine.setLatLngs([]);
 
           if (s.anchor && s.swingTrailOn && s.swingTrail.length >= 2) {
             const last = s.swingTrail[s.swingTrail.length - 1]!;
@@ -1382,10 +1796,6 @@ export function MapView() {
             if (!wxOn) {
               wxMarker.addTo(map);
               wxOn = true;
-            }
-            if (wxWantPopup) {
-              wxWantPopup = false;
-              wxMarker.openPopup();
             }
           } else if (wxOn) {
             map.removeLayer(wxMarker);
@@ -1617,6 +2027,14 @@ export function MapView() {
             });
             return;
           }
+          if (s.tapMode === "route-start") {
+            s.setRouteStart(wp);
+            return;
+          }
+          if (s.tapMode === "route-finish") {
+            s.setRouteFinish(wp);
+            return;
+          }
           if (s.tapMode === "place-boat") {
             s.setBoat({
               lat: wp.lat,
@@ -1663,8 +2081,7 @@ export function MapView() {
           oe?.preventDefault();
           const s = useHelm.getState();
           if (s.tapMode !== "none" || s.drawMode !== "idle" || s.anchorStep) return;
-          wxWantPopup = true;
-          s.setWxPin({ lat: e.latlng.lat, lng: e.latlng.lng });
+          useHelm.setState({ wxPin: { lat: e.latlng.lat, lng: e.latlng.lng }, pinCard: true });
           heldPin = true;
           window.setTimeout(() => {
             heldPin = false;
@@ -1699,8 +2116,8 @@ export function MapView() {
           window.setTimeout(() => {
             heldPin = false;
           }, 800);
-          wxWantPopup = true;
-          s.setWxPin({ lat, lng });
+          // Press and hold opens the spot card (see PinCard) instead of the old popup.
+          useHelm.setState({ wxPin: { lat, lng }, pinCard: true });
         };
         const box = map.getContainer();
         const eventToLatLng = (ev: PointerEvent) => {
@@ -1834,12 +2251,7 @@ export function MapView() {
           if (s.tapMode !== "drop-anchor") return;
           placeOnLayback(finger);
         };
-        const onPointerUp = (ev: PointerEvent) => {
-          const hit = ev.target;
-          if (hit instanceof Element && hit.closest(".rp-wx-pop, [data-wx=open]")) {
-            useHelm.getState().setPanel("weather");
-            wxMarker.closePopup();
-          }
+        const onPointerUp = () => {
           clearHold();
           if (packOrigin) {
             const draft = useHelm.getState().packDraft;
@@ -1890,6 +2302,15 @@ export function MapView() {
         };
         box.addEventListener("pointerdown", onPointerDown);
         box.addEventListener("pointermove", onPointerMove);
+        const countTouches = (ev: TouchEvent) => {
+          const was = pinchTouches;
+          pinchTouches = ev.touches.length;
+          if (pinchTouches >= 2) clearHold(); // a pinch is not a long-press
+          if (was >= 2 && pinchTouches < 2) gestureUntil = Date.now() + 700;
+        };
+        box.addEventListener("touchstart", countTouches, { passive: true });
+        box.addEventListener("touchend", countTouches, { passive: true });
+        box.addEventListener("touchcancel", countTouches, { passive: true });
         box.addEventListener("touchstart", holdTouch, { passive: false });
         box.addEventListener("touchmove", holdTouch, { passive: false });
         window.addEventListener("pointermove", onPointerMove);
@@ -1999,6 +2420,9 @@ export function MapView() {
           window.removeEventListener("rp-close-in", onCloseIn);
           box.removeEventListener("pointerdown", onPointerDown);
           box.removeEventListener("pointermove", onPointerMove);
+          box.removeEventListener("touchstart", countTouches);
+          box.removeEventListener("touchend", countTouches);
+          box.removeEventListener("touchcancel", countTouches);
           box.removeEventListener("touchstart", holdTouch);
           box.removeEventListener("touchmove", holdTouch);
           window.removeEventListener("pointermove", onPointerMove);
@@ -2010,6 +2434,8 @@ export function MapView() {
     return () => {
       cancelled = true;
       paintSeaSet = null;
+      stopRadar();
+      stopWx();
       unsub();
       map?.remove();
     };

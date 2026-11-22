@@ -81,7 +81,9 @@ export function rodeMath(rode: RodeSetup, gpsReachM?: number): RodeMath {
     scopeNow,
     scopeHw,
     status,
-    radiusM: swingRadiusM(rode.chainM, hwDepthM, rode.loaM, gpsReachM),
+    // The swing is widest in the shallowest water, so size the alarm circle at
+    // today's depth, not high water. Sizing it at HW false-alarms as the tide falls.
+    radiusM: swingRadiusM(rode.chainM, nowDepthM, rode.loaM, gpsReachM),
     overTotal: needHwM > rode.chainTotalM,
     laybackM: laybackM(rode),
   };
@@ -154,6 +156,17 @@ export function boatInsideWatch(
     return pointInPolygon(boat, watch.fence);
   }
   return haversineMeters(boat, watch) <= watch.radiusM;
+}
+
+/**
+ * A fix only counts toward a drag alarm if its uncertainty is small next to the
+ * swing circle. A 40 m-accuracy fix can't tell a 25 m circle from a drag, and
+ * acting on it wakes the crew for nothing. Fixes this vague still count as
+ * "GPS alive"; they just don't move the drag clock.
+ */
+export function fixPreciseForWatch(accuracyM: number | null | undefined, radiusM: number): boolean {
+  if (accuracyM == null || !Number.isFinite(accuracyM)) return true;
+  return accuracyM <= Math.max(10, radiusM * 0.75);
 }
 
 /** Slow GPS while well inside the swing. Faster near the edge or outside. */

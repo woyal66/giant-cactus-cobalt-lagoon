@@ -8,7 +8,7 @@ function Login() {
   return (
     <main className="grid min-h-dvh place-items-center bg-background px-6 text-foreground">
       <div className="w-full max-w-sm">
-        <p className="text-[10px] tracking-[0.18em] text-muted-foreground uppercase">
+        <p className="text-t12 text-muted-foreground">
           Anchor Mate
         </p>
         <h1 className="font-display mt-1 text-4xl font-semibold tracking-tight">

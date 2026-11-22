@@ -1,6 +1,12 @@
 import { isNativeApp } from "@/lib/native";
+import { criticalAlerts } from "@/lib/critical-alert";
 
 let lastKey = "";
+let lastShownAt = 0;
+/** A notification sound is at most ~30 s (iOS limit), so a live alarm re-fires on this beat. */
+export const ALARM_RENOTIFY_MS = 30_000;
+/** 28 s klaxon in ios/App/App and android res/raw. Without it iOS alarms are silent. */
+const ALARM_SOUND_FILE = "anchor_alarm.wav";
 let statusKey = "";
 let statusNote: Notification | null = null;
 
@@ -16,8 +22,14 @@ export async function registerWatchWorker(): Promise<void> {
 export async function armWatchAlerts(): Promise<void> {
   if (isNativeApp()) {
     try {
-      const { LocalNotifications } = await import("@capacitor/local-notifications");
-      await LocalNotifications.requestPermissions();
+      const critical = criticalAlerts();
+      if (critical) {
+        // iPhone: asks for alerts plus Critical Alerts (shown once Apple grants it).
+        await critical.requestPermission();
+      } else {
+        const { LocalNotifications } = await import("@capacitor/local-notifications");
+        await LocalNotifications.requestPermissions();
+      }
     } catch {
       /* denied */
     }
@@ -87,15 +99,54 @@ function post(msg: WatchMsg) {
   }
 }
 
+/** Android: alarms need their own max-importance channel to sound on a locked phone. */
+// Android fixes a channel's sound when it is first created, so a new sound needs a new id.
+const ALARM_CHANNEL = "anchor-alarm-v2";
+let channelReady: Promise<void> | null = null;
+
+function ensureAlarmChannel(
+  LocalNotifications: typeof import("@capacitor/local-notifications").LocalNotifications,
+): Promise<void> {
+  channelReady ??= LocalNotifications.createChannel({
+    id: ALARM_CHANNEL,
+    name: "Anchor and safety alarms",
+    description: "Anchor drag, GPS lost, off track and man overboard",
+    importance: 5,
+    visibility: 1,
+    vibration: true,
+    sound: ALARM_SOUND_FILE,
+  }).catch(() => undefined); // iOS has no channels; that is fine.
+  return channelReady;
+}
+
 function nativeAlarm(kind: "drag" | "xte" | "gps" | "mob", title: string, body: string) {
   if (!isNativeApp()) return;
   const id = kind === "drag" ? 1 : kind === "gps" ? 2 : kind === "xte" ? 3 : 4;
+  const critical = criticalAlerts();
+  if (critical) {
+    // Off-track is a nudge, not an emergency: keep it out of Critical Alerts.
+    if (kind !== "xte") {
+      void critical.notify({ id, title, body }).catch(() => undefined);
+      return;
+    }
+  }
   void import("@capacitor/local-notifications")
-    .then(({ LocalNotifications }) =>
-      LocalNotifications.schedule({
-        notifications: [{ id, title, body, ongoing: kind === "drag", autoCancel: false }],
-      }),
-    )
+    .then(async ({ LocalNotifications }) => {
+      await ensureAlarmChannel(LocalNotifications);
+      await LocalNotifications.schedule({
+        notifications: [
+          {
+            id,
+            title,
+            body,
+            ongoing: kind === "drag",
+            autoCancel: false,
+            channelId: ALARM_CHANNEL,
+            sound: ALARM_SOUND_FILE,
+          },
+        ],
+      });
+    })
     .catch(() => undefined);
 }
 
@@ -109,8 +160,17 @@ export function showWatchNotice(kind: "drag" | "xte" | "gps" | "mob", body: stri
           ? "Man overboard"
           : "GPS lost";
   const key = `${kind}:${body}`;
-  if (key === lastKey) return;
+  const now = Date.now();
+  // Same alarm still ringing: re-fire natively so the sound keeps going on a locked phone.
+  if (key === lastKey) {
+    if (isNativeApp() && now - lastShownAt >= ALARM_RENOTIFY_MS) {
+      lastShownAt = now;
+      nativeAlarm(kind, title, body);
+    }
+    return;
+  }
   lastKey = key;
+  lastShownAt = now;
   post({ type: "show", title, body });
   nativeAlarm(kind, title, body);
   try {
@@ -125,6 +185,7 @@ export function clearWatchNotice() {
   lastKey = "";
   post({ type: "clear" });
   if (isNativeApp()) {
+    void criticalAlerts()?.cancel({ ids: [1, 2, 3, 4] }).catch(() => undefined);
     void import("@capacitor/local-notifications")
       .then(({ LocalNotifications }) =>
         LocalNotifications.cancel({ notifications: [{ id: 1 }, { id: 2 }, { id: 3 }, { id: 4 }] }),

@@ -16,11 +16,25 @@ import {
   skyFromWmo,
   sliceByHorizon,
   axisMarks,
+  stormRiskOf,
+  windColor,
+  windSeaM,
   dayClock,
   windCardinal,
+  reviveForecast,
+  WX_SAVE_MAX_AGE_MS,
+  type WxForecast,
 } from "./weather.ts";
 
 describe("forecast axis", () => {
+  it("keeps time labels far enough apart to read", () => {
+    const t0 = Date.UTC(2026, 10, 20, 0);
+    for (const h of [6, 12, 24, 48, 72, 168, 336]) {
+      const n = axisMarks(t0, h).length;
+      assert.ok(n >= 3 && n <= 7, `${h} h → ${n} labels`);
+    }
+  });
+
   it("keeps the weekday on a zoomed window and aligns marks to the clock", () => {
     const t0 = Date.parse("2026-10-06T15:10:00");
     const marks = axisMarks(t0, 6);
@@ -248,5 +262,51 @@ describe("horizon", () => {
       30,
     );
     assert.notEqual(two, fortnight);
+  });
+});
+
+describe("offline forecast", () => {
+  const H = 3_600_000;
+  const t0 = Date.parse("2026-11-01T00:00:00Z");
+  const hour = (i: number, kn: number) => ({
+    at: t0 + i * H, windKn: kn, gustKn: null, dirDeg: 90, tempC: 25, precipMm: 0.5,
+    cloudPct: 10, sky: "sun" as const,
+  });
+  const base = {
+    lat: -23.9, lng: 152.4, source: "ecmwf" as const,
+    hours: Array.from({ length: 24 }, (_, i) => hour(i, i === 2 ? 30 : 10)),
+    rainMm: 12, sea: null, savedAt: t0,
+  } as unknown as WxForecast;
+
+  it("moves 'now' to the current hour and drops the past", () => {
+    const f = reviveForecast(base, t0 + 5 * H)!;
+    assert.equal(f.now.at, t0 + 4 * H); // keeps the hour just gone
+    assert.equal(f.hours.length, 20);
+    assert.equal(f.maxWind.windKn, 10); // the 30 kn hour is in the past now
+  });
+
+  it("refuses a forecast that is too old or nearly used up", () => {
+    assert.equal(reviveForecast(base, t0 + WX_SAVE_MAX_AGE_MS + 1), null);
+    assert.equal(reviveForecast(base, t0 + 23 * H), null);
+    assert.equal(reviveForecast({ ...base, savedAt: undefined }, t0), null);
+  });
+});
+
+describe("forecast table helpers", () => {
+  it("colours wind by strength", () => {
+    assert.notEqual(windColor(8).bg, windColor(27).bg);
+    assert.equal(windColor(27).bg, windColor(29.9).bg);
+    assert.equal(windColor(60).bg, "#6b2bb0");
+  });
+  it("splits wind sea from swell", () => {
+    assert.equal(windSeaM(1.5, null), 1.5);
+    assert.ok(Math.abs(windSeaM(1.0, 0.6) - 0.8) < 1e-9);
+    assert.equal(windSeaM(0.5, 0.9), 0);
+  });
+  it("storm risk from CAPE and thunder codes", () => {
+    const h = { at: 0, windKn: 12, gustKn: 20, dirDeg: 90, tempC: 26, precipMm: 0, cloudPct: 50, sky: "cloud" as const };
+    assert.equal(stormRiskOf(h), 0);
+    assert.ok(stormRiskOf({ ...h, capeJkg: 3200, precipMm: 2 }) >= 2);
+    assert.ok(stormRiskOf({ ...h, code: 95, precipMm: 2 }) >= 2);
   });
 });

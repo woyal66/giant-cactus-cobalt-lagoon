@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Time Sensitive alarms break through Focus. No Apple approval needed. -->
+	<key>com.apple.developer.usernotifications.time-sensitive</key>
+	<true/>
+	<!--
+	Critical Alerts: add these two lines ONLY after Apple approves the entitlement
+	for com.anchormate.app (see STORE-RELEASE.md). Adding them earlier makes
+	code signing fail.
+	<key>com.apple.developer.usernotifications.critical-alerts</key>
+	<true/>
+	-->
+</dict>
+</plist>

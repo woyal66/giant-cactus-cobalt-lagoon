@@ -1,7 +1,10 @@
+import { useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { toast } from "sonner";
 import {
   LocateFixed,
+  Ruler,
+  Wind as WindIcon,
   Satellite,
 } from "lucide-react";
 import { SignedIn, SignedOut, UserButton } from "@/lib/auth/gates";
@@ -18,17 +21,20 @@ import {
   msToKnots,
   cornerIndexes,
 } from "@/lib/geo";
-import { imageryShort } from "@/lib/imagery";
+import { imageryShort, availableImagery } from "@/lib/imagery";
+import { formatLength } from "@/lib/units";
 import { formatScope, hoursUntil, rodeMath } from "@/lib/anchor";
 import { steerCue, formatTtg, markNav } from "@/lib/steer";
 import { bowFromGps, gpsReachM } from "@/lib/boat";
 import { Badge } from "@/components/ui/badge";
+import { MobGuide } from "@/components/helm/mob-guide";
 import { Button } from "@/components/ui/button";
-import { closeInOnBoat } from "@/components/helm/map-view";
+import { centreTileSource, closeInOnBoat, getChartBounds } from "@/components/helm/map-view";
 import { WindInstrument } from "@/components/helm/weather";
+import { windCardinal } from "@/lib/weather";
 import { unlockAlarmAudio } from "@/hooks/helm-runtime";
 import { useWx } from "@/hooks/weather";
-import { useHelm, guidePoints } from "@/store/helm";
+import { useHelm, guidePoints, useUnitsKey } from "@/store/helm";
 
 function AuthSlot({ compact }: { compact?: boolean }) {
   const { user, isPending } = useCurrentUserState();
@@ -58,7 +64,29 @@ function AuthSlot({ compact }: { compact?: boolean }) {
   );
 }
 
+/** Push the chart button columns below the steering bar when it is showing. */
+let steerBottom = 0;
+let steerRow: HTMLDivElement | null = null;
+function placeRow() {
+  const row = steerRow;
+  if (!row) return;
+  row.style.paddingTop = "0px";
+  const top = row.getBoundingClientRect().top;
+  row.style.paddingTop = steerBottom > top ? `${Math.ceil(steerBottom - top + 6)}px` : "0px";
+}
+if (typeof window !== "undefined") {
+  window.addEventListener("rp:steer-bottom", (e) => {
+    steerBottom = (e as CustomEvent<number>).detail;
+    placeRow();
+  });
+}
+function clearSteerBar(row: HTMLDivElement | null) {
+  steerRow = row;
+  placeRow();
+}
+
 export function TopHud() {
+  useUnitsKey();
   const boat = useHelm((s) => s.boat);
   const hull = useHelm((s) => s.hull);
   const follow = useHelm((s) => s.followBoat);
@@ -68,6 +96,8 @@ export function TopHud() {
   const followCourse = useHelm((s) => s.followCourse);
   const passage = useHelm((s) => s.activePassage);
   const tapMode = useHelm((s) => s.tapMode);
+  const wxLayerOn = useHelm((s) => s.wxMapLayer !== "off");
+  const measuring = useHelm((s) => s.measurePts.length > 0);
   const anchorStep = useHelm((s) => s.anchorStep);
   const hookArmed = useHelm((s) => s.hookArmed);
   const demo = useHelm((s) => s.demoPlaying);
@@ -104,15 +134,15 @@ export function TopHud() {
   const tapeUp = Boolean(boat) && tapMode === "none" && panel !== "weather";
 
   return (
-    <header className="pointer-events-none absolute inset-x-0 top-0 z-20 p-2 pt-[max(0.5rem,env(safe-area-inset-top))]">
+    <header className="pointer-events-none absolute inset-x-0 top-0 z-20 p-2 pt-[max(0.5rem,var(--safe-area-inset-top,env(safe-area-inset-top)))]">
       {tapeUp ? <div className="h-[4.1rem] md:hidden" aria-hidden /> : null}
       <div className="pointer-events-auto mx-auto hidden max-w-6xl items-center gap-2 md:flex">
         <div className="flex min-w-0 items-center gap-3 rounded-xl border border-border bg-card/95 px-3 py-2 shadow-[var(--shadow-border)] rp-glass">
           <div className="min-w-0">
-            <p className="font-display text-lg leading-none font-semibold tracking-wide text-foreground">
+            <p className="font-display text-lg leading-none font-semibold text-foreground">
               Anchor Mate
             </p>
-            <p className="mt-0.5 text-[11px] tracking-wide text-muted-foreground uppercase">
+            <p className="mt-0.5 text-t13 text-muted-foreground">
               Satellite helm
             </p>
           </div>
@@ -139,12 +169,13 @@ export function TopHud() {
         </div>
       </div>
 
-      <div className="mx-auto mt-1.5 flex max-w-6xl justify-between gap-2">
-        <div className="pointer-events-auto flex flex-col gap-1.5">
+      <div ref={clearSteerBar} className="mx-auto mt-1.5 flex max-w-6xl justify-between gap-2">
+        <div className="pointer-events-auto flex w-[4.75rem] flex-col gap-1.5">
+          {/* Chart */}
           <Button
             variant={following || follow ? "default" : "helm"}
             size="icon"
-            className="size-10"
+            className="h-10 w-full"
             aria-label={tracking ? (following ? "Release the chart" : "Follow the track") : !follow ? "Centre on boat" : chartUp === "heading" ? "North up" : "Heading up"}
             onClick={() => {
               if (tracking) {
@@ -156,34 +187,118 @@ export function TopHud() {
             }}
           >
             {tracking ? (
-              <span className="font-display text-[10px] font-bold leading-none">
+              <span className="font-display text-t12 font-semibold leading-none">
                 {following ? "ON" : "GO"}
               </span>
             ) : !follow ? (
               <LocateFixed />
             ) : chartUp === "heading" ? (
-              <span className="font-display text-lg font-bold leading-none">↑</span>
+              <span className="font-display text-lg font-semibold leading-none">↑</span>
             ) : (
-              <span className="font-display text-sm font-bold leading-none">N</span>
+              <span className="font-display text-sm font-semibold leading-none">N</span>
             )}
           </Button>
           <button
             type="button"
             onClick={closeInOnBoat}
             aria-label="Helm scale"
-            className="rounded-md border border-border bg-card/95 px-1 py-1 text-center shadow-[var(--shadow-border)] rp-glass"
+            className="w-full rounded-md border border-border bg-card/95 px-1 py-1 text-center shadow-[var(--shadow-border)] rp-glass"
           >
-            <p className="font-display text-[11px] leading-none font-semibold tabular-nums">
+            <p className="font-display text-t13 leading-none font-semibold tabular-nums">
               {scale}
             </p>
-            <p className="mt-0.5 text-[8px] leading-none tracking-wide text-muted-foreground uppercase">
+            <p className="mt-0.5 text-t11 leading-none text-muted-foreground">
               {imageryShort(imagery)}
             </p>
           </button>
+          {availableImagery().length > 2 ? (
+            <button
+              type="button"
+              aria-label="Compare: flip to the other satellite photo"
+              onClick={() => {
+                const next = useHelm.getState().flipImagery(centreTileSource());
+                toast(`Showing ${imageryShort(next)}. Tap ⇄ to flip back.`, { duration: 2500 });
+              }}
+              className="h-10 w-full rounded-md border border-border bg-card/95 py-1 text-center text-t15 leading-none font-semibold shadow-[var(--shadow-border)] rp-glass"
+            >
+              ⇄
+            </button>
+          ) : null}
+          <div className="h-1.5" aria-hidden />
+          {/* Tools */}
+          <button
+            type="button"
+            aria-label={wxLayerOn ? "Hide weather on the chart" : "Show weather on the chart"}
+            onClick={() => {
+              const st = useHelm.getState();
+              st.setWxMap(st.wxMapLayer === "off" ? { wxMapLayer: "wind", wxMapAt: Date.now() } : { wxMapLayer: "off", wxMapPlaying: false });
+            }}
+            className={`flex h-10 w-full items-center justify-center rounded-md border shadow-[var(--shadow-border)] ${wxLayerOn ? "border-primary bg-primary text-primary-foreground" : "border-border bg-card/95 rp-glass"}`}
+          >
+            <WindIcon className="size-5" aria-hidden />
+          </button>
+          <button
+            type="button"
+            aria-label={measuring ? "Remove the measuring pins" : "Measure distance on the chart"}
+            onClick={() => {
+              const st = useHelm.getState();
+              if (st.measurePts.length) {
+                st.endMeasure();
+                return;
+              }
+              // Two pins across the middle of the view; drag either one anywhere.
+              const v = getChartBounds();
+              if (!v) return;
+              const lat = (v.north + v.south) / 2;
+              const dLng = (v.east - v.west) * 0.22;
+              const dLat = (v.north - v.south) * 0.08;
+              const mid = (v.east + v.west) / 2;
+              st.setPanel(null);
+              st.startMeasure({ lat: lat + dLat, lng: mid - dLng }, { lat: lat - dLat, lng: mid + dLng });
+            }}
+            className={`flex h-10 w-full items-center justify-center rounded-md border py-1.5 shadow-[var(--shadow-border)] ${measuring ? "border-primary bg-primary text-primary-foreground" : "border-border bg-card/95 rp-glass"}`}
+          >
+            <Ruler className="size-4" aria-hidden />
+          </button>
+          {/* Always here (the top bar's wind reading is hidden under the steering bar on phones). */}
+          <button
+            type="button"
+            onClick={() => setPanel("weather")}
+            aria-label={
+              wx.data
+                ? `Forecast. Wind ${Math.round(wx.data.now.windKn)} knots ${windCardinal(wx.data.now.dirDeg)}${gust >= 25 ? `, gusts ${Math.round(gust)}` : ""}`
+                : "Forecast"
+            }
+            className={`w-full rounded-md border px-0.5 py-1 text-center shadow-[var(--shadow-border)] ${
+              gust >= 25 ? "border-destructive bg-destructive text-white" : "border-border bg-card/95 rp-glass"
+            }`}
+          >
+            {wx.data ? (
+              <>
+                <span
+                  aria-hidden
+                  className="block text-t13 leading-none"
+                  style={{ transform: `rotate(${wx.data.now.dirDeg + 180}deg)` }}
+                >
+                  ↑
+                </span>
+                <span className="font-display block text-t15 leading-none font-semibold tabular-nums">
+                  {Math.round(gust >= 25 ? gust : wx.data.now.windKn)}
+                </span>
+                <span className="block text-t11 leading-none opacity-80">
+                  {gust >= 25 ? "gust" : windCardinal(wx.data.now.dirDeg)}
+                </span>
+              </>
+            ) : (
+              <span className="text-t11 font-semibold">Wx</span>
+            )}
+          </button>
+          <div className="h-1.5" aria-hidden />
+          {/* Emergency, on its own */}
           <Button
             variant={mob ? "danger" : "helm"}
             size="icon"
-            className="size-10"
+            className="h-12 w-full border-2 border-destructive/80"
             aria-label={mob ? "Man overboard is marked" : "Man overboard"}
             onClick={() => {
               if (mob) return;
@@ -191,17 +306,8 @@ export function TopHud() {
               if (!dropMob()) toast("Need a GPS fix before MOB.");
             }}
           >
-            <span className="font-display text-[11px] font-bold leading-none">MOB</span>
+            <span className="font-display text-t13 font-semibold leading-none">MOB</span>
           </Button>
-          {gust >= 25 ? (
-            <button
-              type="button"
-              onClick={() => setPanel("weather")}
-              className="rounded-md border border-destructive bg-destructive px-1 py-1 text-center text-[10px] font-bold text-white"
-            >
-              Gust {Math.round(gust)}
-            </button>
-          ) : null}
         </div>
         <div className="pointer-events-auto flex flex-col gap-1.5">
           <Button
@@ -216,7 +322,7 @@ export function TopHud() {
         </div>
       </div>
 
-      {tapMode !== "none" && anchorStep !== "circle" ? (
+      {tapMode !== "none" && !tapMode.startsWith("route-") && anchorStep !== "circle" ? (
         <div className="pointer-events-auto mx-auto mt-1.5 flex max-w-6xl items-center gap-1.5 rounded-md bg-card/95 px-2 py-1.5 text-xs text-foreground shadow-[var(--shadow-border)]">
           <p className="min-w-0 flex-1 truncate">
             {tapMode === "place-boat"
@@ -280,13 +386,13 @@ export function TopHud() {
       ) : null}
 
       {!boat && !gpsDenied ? (
-        <p className="pointer-events-none mx-auto mt-1.5 max-w-6xl text-center text-[11px] text-muted-foreground">
+        <p className="pointer-events-none mx-auto mt-1.5 max-w-6xl text-center text-t13 text-muted-foreground">
           Locating GPS…
         </p>
       ) : null}
 
       {!boat && gpsDenied ? (
-        <p className="pointer-events-none mx-auto mt-1.5 max-w-6xl text-center text-[11px] text-muted-foreground">
+        <p className="pointer-events-none mx-auto mt-1.5 max-w-6xl text-center text-t13 text-muted-foreground">
           GPS off — Layers → Place boat.
         </p>
       ) : null}
@@ -315,7 +421,7 @@ function Instrument({
           : `px-3 py-2 ${wide ? "min-w-[9.5rem]" : "min-w-[4.5rem]"}`
       }
     >
-      <p className="text-[9px] tracking-[0.12em] text-muted-foreground uppercase">
+      <p className="text-t11 text-muted-foreground">
         {label}
       </p>
       <p
@@ -325,7 +431,7 @@ function Instrument({
       >
         {value}
         {unit ? (
-          <span className="ml-0.5 text-[10px] font-medium text-muted-foreground">
+          <span className="ml-0.5 text-t12 font-medium text-muted-foreground">
             {unit}
           </span>
         ) : null}
@@ -336,11 +442,22 @@ function Instrument({
 
 export function MobHud() {
   const boat = useHelm((s) => s.boat);
-  const mob = useHelm((s) => s.mob);
+  const mark = useHelm((s) => s.mob);
+  const drift = useHelm((s) => s.mobDrift);
   const clearMob = useHelm((s) => s.clearMob);
   const panel = useHelm((s) => s.panel);
   const tapMode = useHelm((s) => s.tapMode);
-  if (!mob || panel || tapMode !== "none") return null;
+  const [guide, setGuide] = useState(false);
+  if (!mark) return null;
+  if (guide) return <MobGuide onClose={() => setGuide(false)} />;
+  if (panel || tapMode !== "none") return null;
+  // Steer for where they have probably drifted to by now, not the original mark.
+  const minsSince = (Date.now() - mark.at) / 60_000;
+  const nowPt = drift?.points.reduce<{ lat: number; lng: number; minutes: number } | null>(
+    (best, p) => (!best || Math.abs(p.minutes - minsSince) < Math.abs(best.minutes - minsSince) ? p : best),
+    null,
+  );
+  const mob = nowPt && drift && !drift.source.startsWith("no current") ? nowPt : mark;
   const rangeM = boat ? haversineMeters(boat, mob) : null;
   const brg = boat ? formatHeading(bearingDegrees(boat, mob)) : "—";
   const rng = rangeM != null ? formatMeters(rangeM) : "—";
@@ -349,46 +466,58 @@ export function MobHud() {
     boat && rangeM != null && sog >= 0.4 ? formatTtg(rangeM / (boat.speedMs || 1)) : "—";
 
   return (
-    <div className="pointer-events-none absolute inset-x-0 bottom-[4.6rem] z-30 px-2 md:bottom-[9.2rem] md:px-3">
+    <div className="pointer-events-none absolute inset-x-0 bottom-[5.2rem] z-30 px-2 md:bottom-[9.2rem] md:px-3">
       <div className="pointer-events-auto mx-auto flex w-full max-w-md items-stretch overflow-hidden rounded-xl border border-destructive bg-card/95 shadow-[var(--shadow-border)] rp-glass">
         <div className="min-w-0 flex-1 px-3 py-2">
-          <p className="truncate text-[10px] tracking-[0.14em] text-destructive uppercase">
-            Back to MOB
+          <p className="truncate text-t12 text-destructive">
+            {mob === mark ? "Back to MOB" : "To drift position now"}
           </p>
           <div className="mt-1 grid grid-cols-3 gap-1">
             <div>
-              <p className="text-[9px] tracking-[0.12em] text-muted-foreground uppercase">Brg</p>
+              <p className="text-t11 text-muted-foreground">Brg</p>
               <p className="font-display text-[1.4rem] leading-none font-semibold tabular-nums">
                 {brg}
               </p>
             </div>
             <div>
-              <p className="text-[9px] tracking-[0.12em] text-muted-foreground uppercase">Rng</p>
+              <p className="text-t11 text-muted-foreground">Rng</p>
               <p className="font-display text-[1.4rem] leading-none font-semibold tabular-nums">
                 {rng}
               </p>
             </div>
             <div>
-              <p className="text-[9px] tracking-[0.12em] text-muted-foreground uppercase">Ttg</p>
+              <p className="text-t11 text-muted-foreground">Ttg</p>
               <p className="font-display text-[1.4rem] leading-none font-semibold tabular-nums">
                 {ttg}
               </p>
             </div>
           </div>
         </div>
-        <button
-          type="button"
-          onClick={clearMob}
-          className="shrink-0 border-l border-border px-3 text-xs font-semibold tracking-wide text-destructive uppercase"
-        >
-          Clear
-        </button>
+        <div className="flex shrink-0 flex-col border-l border-border">
+          <button
+            type="button"
+            onClick={() => setGuide(true)}
+            className="flex-1 bg-destructive px-3 text-xs font-semibold text-white"
+          >
+            Steps
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              if (window.confirm("Clear the man-overboard mark?")) clearMob();
+            }}
+            className="flex-1 px-3 text-xs font-semibold text-destructive"
+          >
+            Clear
+          </button>
+        </div>
       </div>
     </div>
   );
 }
 
 export function NavRibbon() {
+  useUnitsKey();
   const boat = useHelm((s) => s.boat);
   const passage = useHelm((s) => s.activePassage);
   const anchor = useHelm((s) => s.anchor);
@@ -433,7 +562,7 @@ export function NavRibbon() {
   const fenced = Boolean(anchor?.fence && anchor.fence.length >= 3);
 
   return (
-    <div className="pointer-events-none absolute inset-x-0 bottom-[4.6rem] z-20 px-2 md:bottom-[9.2rem] md:px-3">
+    <div className="pointer-events-none absolute inset-x-0 bottom-[5.2rem] z-20 px-2 md:bottom-[9.2rem] md:px-3">
       <div className="mx-auto flex max-w-6xl flex-wrap gap-1.5">
         {passage ? (
           <button
@@ -445,7 +574,7 @@ export function NavRibbon() {
               {passage.title}
             </p>
             {remaining ? (
-              <p className="mt-0.5 text-[11px] text-muted-foreground">
+              <p className="mt-0.5 text-t13 text-muted-foreground">
                 {toCorner != null ? `${formatMeters(toCorner)} along to the corner · ` : ""}
                 {remaining} left · {xte}
               </p>
@@ -456,19 +585,27 @@ export function NavRibbon() {
           <button
             type="button"
             onClick={() => setPanel("anchor")}
-            className={`pointer-events-auto rounded-md border px-2 py-1 text-left shadow-[var(--shadow-border)] ${
+            aria-label="Anchor watch settings"
+            className={`pointer-events-auto min-h-11 rounded-md border px-2.5 py-1.5 text-left shadow-[var(--shadow-border)] ${
               alarmOn
                 ? "border-destructive bg-destructive text-white"
                 : "border-border bg-card/95"
             }`}
           >
-            <p className="font-display text-sm leading-none font-semibold tabular-nums">
-              {fenced
-                ? "Barrier"
-                : `${formatMeters(hook)} / ${Math.round(anchor.radiusM)} m`}
+            <p className="font-display text-base leading-none font-semibold tabular-nums">
+              {fenced ? (
+                "Barrier"
+              ) : (
+                <>
+                  {formatMeters(hook)}
+                  <span className={`ml-1 text-t13 font-medium ${alarmOn ? "text-white/85" : "text-muted-foreground"}`}>
+                    from anchor · circle {formatLength(anchor.radiusM)}
+                  </span>
+                </>
+              )}
             </p>
             <p
-              className={`mt-0.5 text-[11px] ${
+              className={`mt-0.5 text-t13 ${
                 alarmOn
                   ? "text-white/85"
                   : math.status === "critical"
@@ -482,7 +619,7 @@ export function NavRibbon() {
                   : "Inside"
                 : `${formatScope(math.scopeHw)} HW${
                     math.shortHwM > 0.4
-                      ? ` · +${Math.ceil(math.shortHwM)} m`
+                      ? ` · +${formatLength(Math.ceil(math.shortHwM))}`
                       : rode.tideHighAt
                         ? ` · ${hoursUntil(rode.tideHighAt)}`
                         : ""

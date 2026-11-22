@@ -15,6 +15,27 @@ let loopTimer: number | null = null;
 let stopTimer: number | null = null;
 let voices: Array<{ osc: OscillatorNode; gain: GainNode }> = [];
 let loopingId: AlarmSoundId | null = null;
+let out: AudioNode | null = null;
+
+/**
+ * Alarm voices run through a limiter so they can be loud (this has to wake a
+ * sleeping crew) without clipping into distortion on small phone speakers.
+ */
+function output(a: AudioContext): AudioNode {
+  if (out) return out;
+  const comp = a.createDynamicsCompressor();
+  comp.threshold.value = -10;
+  comp.knee.value = 6;
+  comp.ratio.value = 12;
+  comp.attack.value = 0.002;
+  comp.release.value = 0.12;
+  const master = a.createGain();
+  master.gain.value = 0.95;
+  comp.connect(master);
+  master.connect(a.destination);
+  out = comp;
+  return out;
+}
 
 function audio(): AudioContext | null {
   if (typeof window === "undefined") return null;
@@ -54,10 +75,21 @@ function pulse(
   gain.gain.exponentialRampToValueAtTime(peak, t0 + 0.018);
   gain.gain.exponentialRampToValueAtTime(0.0001, Math.max(t0 + 0.03, t1));
   osc.connect(gain);
-  gain.connect(a.destination);
+  gain.connect(output(a));
   osc.start(t0);
   osc.stop(t1 + 0.04);
-  voices.push({ osc, gain });
+  const voice = { osc, gain };
+  voices.push(voice);
+  // Drop finished voices; otherwise a long alarm keeps thousands of nodes alive.
+  osc.onended = () => {
+    voices = voices.filter((v) => v !== voice);
+    try {
+      osc.disconnect();
+      gain.disconnect();
+    } catch {
+      /* already gone */
+    }
+  };
 }
 
 function playCycle(id: AlarmSoundId) {
@@ -65,18 +97,18 @@ function playCycle(id: AlarmSoundId) {
   if (!a) return;
   if (a.state === "suspended") void a.resume();
   if (id === "foghorn") {
-    pulse(a, 165, 720, 0.16, "sine", 0);
-    pulse(a, 220, 720, 0.12, "sawtooth", 0);
+    pulse(a, 165, 720, 0.7, "sine", 0);
+    pulse(a, 220, 720, 0.45, "sawtooth", 0);
     return;
   }
   if (id === "bell") {
-    pulse(a, 1760, 90, 0.09, "triangle", 0);
-    pulse(a, 1320, 90, 0.08, "triangle", 110);
-    pulse(a, 990, 110, 0.07, "triangle", 220);
+    pulse(a, 1760, 90, 0.6, "triangle", 0);
+    pulse(a, 1320, 90, 0.55, "triangle", 110);
+    pulse(a, 990, 110, 0.5, "triangle", 220);
     return;
   }
-  pulse(a, 880, 260, 0.09, "square", 0);
-  pulse(a, 660, 260, 0.08, "square", 300);
+  pulse(a, 880, 260, 0.45, "square", 0);
+  pulse(a, 660, 260, 0.4, "square", 300);
 }
 
 function periodMs(id: AlarmSoundId): number {

@@ -6,6 +6,7 @@ import {
   reverseWaypoints,
   simplifyPath,
   simplifyTrack,
+  haversineMeters,
   thinTrail,
   chartBearing,
   hullScreenHeading,
@@ -59,6 +60,21 @@ describe("breadcrumb reverse", () => {
     assert.equal(simplifyTrack(straight).length, 2);
     const bend = [a, destPoint(a, 0, 40), destPoint(destPoint(a, 0, 40), 50, 40)];
     assert.equal(simplifyTrack(bend).length, 3);
+  });
+
+  it("GPS wobble on a recorded track does not become waypoints, real corners do", () => {
+    const a = { lat: -23.9, lng: 152.4 };
+    // 200 m north then 200 m east, a fix every 2 m with up to ±3 m of wobble.
+    let seed = 7;
+    const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647 - 0.5) * 6;
+    const raw = [];
+    for (let d = 0; d <= 200; d += 2) raw.push(destPoint(destPoint(a, 0, d), 90, rnd()));
+    const corner = destPoint(a, 0, 200);
+    for (let d = 2; d <= 200; d += 2) raw.push(destPoint(destPoint(corner, 90, d), 0, rnd()));
+    const kept = simplifyTrack(raw);
+    assert.ok(kept.length <= 8, `kept ${kept.length} of ${raw.length}`);
+    const nearCorner = kept.some((p) => haversineMeters(p, corner) < 6);
+    assert.ok(nearCorner, "corner kept");
   });
 
   it("skips crumbs closer than the step", () => {

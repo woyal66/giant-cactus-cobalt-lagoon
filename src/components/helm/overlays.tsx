@@ -1,9 +1,10 @@
 import { Link } from "@tanstack/react-router";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Bell } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { formatHeading, formatMeters, haversineMeters, msToKnots } from "@/lib/geo";
-import { formatXte, markNav, steerCue } from "@/lib/steer";
+import { bearingDegrees, formatHeading, formatMeters, haversineMeters, msToKnots } from "@/lib/geo";
+import { describeTurn, formatXte, markNav, nextTurn, steerCue, steerLegIndex, type TurnAhead } from "@/lib/steer";
+import { isNativeApp } from "@/lib/native";
 import { setAllowance } from "@/lib/weather";
 import { useWx } from "@/hooks/weather";
 import { cn } from "@/lib/utils";
@@ -35,18 +36,22 @@ export function AlarmOverlay() {
     const fenced = Boolean(anchor.fence && anchor.fence.length >= 3);
     const over = d - anchor.radiusM;
     return (
-      <div className="pointer-events-none absolute inset-x-0 top-[max(0.5rem,env(safe-area-inset-top))] z-50 flex justify-center px-3">
+      <div className="pointer-events-none absolute inset-x-0 top-[max(0.5rem,var(--safe-area-inset-top,env(safe-area-inset-top)))] z-50 flex justify-center px-3">
         <div className="rp-alarm pointer-events-auto w-full max-w-md rounded-xl border border-destructive bg-destructive px-4 py-3 text-white shadow-[var(--shadow-border)]">
           <div className="flex items-start gap-3">
             <Bell className="mt-0.5 size-5 shrink-0" />
             <div className="min-w-0 flex-1">
-              <p className="font-display text-2xl leading-none font-semibold tracking-wide">
+              <p className="font-display text-2xl leading-none font-semibold">
                 Anchor dragging
               </p>
               <p className="mt-1 text-sm text-white/85">
                 {fenced
                   ? "Outside the barrier"
-                  : `${formatMeters(over)} outside a ${Math.round(anchor.radiusM)} m circle`}
+                  : `${formatMeters(over)} outside a ${formatMeters(anchor.radiusM)} circle`}
+              </p>
+              <p className="mt-1 font-display text-lg leading-none font-semibold tabular-nums">
+                Anchor bears {formatHeading(bearingDegrees(boat, anchor))} ·{" "}
+                {formatMeters(d)}
               </p>
             </div>
           </div>
@@ -63,7 +68,7 @@ export function AlarmOverlay() {
               onClick={weigh}
               className="border-white/40 bg-transparent text-white hover:bg-white/10"
             >
-              Weigh
+              Weigh anchor
             </Button>
           </div>
         </div>
@@ -73,12 +78,12 @@ export function AlarmOverlay() {
 
   if (gpsLost) {
     return (
-      <div className="pointer-events-none absolute inset-x-0 top-[max(0.5rem,env(safe-area-inset-top))] z-50 flex justify-center px-3">
+      <div className="pointer-events-none absolute inset-x-0 top-[max(0.5rem,var(--safe-area-inset-top,env(safe-area-inset-top)))] z-50 flex justify-center px-3">
         <div className="rp-alarm pointer-events-auto w-full max-w-md rounded-xl border border-destructive bg-destructive px-4 py-3 text-white shadow-[var(--shadow-border)]">
           <div className="flex items-start gap-3">
             <Bell className="mt-0.5 size-5 shrink-0" />
             <div className="min-w-0 flex-1">
-              <p className="font-display text-2xl leading-none font-semibold tracking-wide">
+              <p className="font-display text-2xl leading-none font-semibold">
                 GPS lost
               </p>
               <p className="mt-1 text-sm text-white/85">
@@ -147,12 +152,12 @@ export function AlarmOverlay() {
   if (!cue) return null;
   const side = cue.xteM >= 0 ? "starboard" : "port";
   return (
-    <div className="pointer-events-none absolute inset-x-0 top-[max(0.5rem,env(safe-area-inset-top))] z-50 flex justify-center px-3">
+    <div className="pointer-events-none absolute inset-x-0 top-[max(0.5rem,var(--safe-area-inset-top,env(safe-area-inset-top)))] z-50 flex justify-center px-3">
       <div className="rp-alarm pointer-events-auto w-full max-w-md rounded-xl border border-destructive bg-destructive px-4 py-3 text-white shadow-[var(--shadow-border)]">
         <div className="flex items-start gap-3">
           <Bell className="mt-0.5 size-5 shrink-0" />
           <div className="min-w-0 flex-1">
-            <p className="font-display text-2xl leading-none font-semibold tracking-wide">
+            <p className="font-display text-2xl leading-none font-semibold">
               Off track
             </p>
             <p className="mt-1 text-sm text-white/85">
@@ -181,6 +186,28 @@ export function AlarmOverlay() {
   );
 }
 
+/**
+ * The steering bar's bottom edge, so the chart buttons can start below it. Its height changes
+ * with the look (night and sunlight are larger) and the text size.
+ */
+let steerObserver: ResizeObserver | null = null;
+function publishSteerBottom(el: HTMLDivElement | null) {
+  steerObserver?.disconnect();
+  steerObserver = null;
+  const emit = (px: number) => window.dispatchEvent(new CustomEvent("rp:steer-bottom", { detail: px }));
+  if (!el) {
+    emit(0);
+    return;
+  }
+  const measure = () => {
+    const bar = el.firstElementChild as HTMLElement | null;
+    emit(bar ? Math.round(bar.getBoundingClientRect().bottom) : 0);
+  };
+  steerObserver = new ResizeObserver(measure);
+  steerObserver.observe(el);
+  measure();
+}
+
 export function SteerOverlay() {
   const boat = useHelm((s) => s.boat);
   const passage = useHelm((s) => s.activePassage);
@@ -200,8 +227,11 @@ export function SteerOverlay() {
 
   const pts = passage ? guidePoints(passage, undefined, { turnDeg, chordM }) : [];
   const nav = boat && pts.length ? markNav(boat, pts, pinned, courseMark) : null;
+  const turn = nav && pts.length >= 2 ? nextTurn(boat, pts, nav.index) : null;
+  // A turn at the mark just counted as made is still to be steered (see steerLegIndex).
+  const legTo = nav ? steerLegIndex(boat, pts, nav.index) : undefined;
   const cue =
-    pts.length >= 2 ? steerCue(boat, pts, sense, alarmM, nav?.index) : null;
+    pts.length >= 2 ? steerCue(boat, pts, sense, alarmM, legTo) : null;
   const sog = msToKnots(boat.speedMs);
   const cog = boat.heading;
   const xte = formatXte(cue?.xteM);
@@ -225,7 +255,10 @@ export function SteerOverlay() {
           : "no track";
 
   return (
-    <div className="pointer-events-none absolute inset-x-0 top-0 z-30 px-2 pt-[max(0.2rem,env(safe-area-inset-top))] md:top-[6.15rem] md:px-3 md:pt-0">
+    <div
+      ref={publishSteerBottom}
+      className="pointer-events-none absolute inset-x-0 top-0 z-30 px-2 pt-[max(0.2rem,var(--safe-area-inset-top,env(safe-area-inset-top)))] md:top-[6.15rem] md:px-3 md:pt-0"
+    >
       <div
         className={`rp-steer rp-steer-${tone} mx-auto flex w-full max-w-lg flex-col items-center md:max-w-2xl`}
         aria-label={`Speed ${sogLabel} knots. Cross-track ${xteAria}. Course to steer ${ctsLabel}${
@@ -247,6 +280,7 @@ export function SteerOverlay() {
             unit={allow ? `${allow.deg}° ${allow.side}` : undefined}
           />
         </div>
+        {nav && pts.length >= 2 ? <TurnLine turn={turn} markIndex={nav.index} /> : null}
         {showArrow ? (
           <div
             className="rp-steer-bug mt-1"
@@ -259,6 +293,55 @@ export function SteerOverlay() {
           </div>
         ) : null}
       </div>
+    </div>
+  );
+}
+
+/** One short buzz: a turn is due, or a waypoint was passed. */
+function buzz(strong: boolean) {
+  if (isNativeApp()) {
+    void import("@capacitor/haptics")
+      .then(({ Haptics, ImpactStyle }) => Haptics.impact({ style: strong ? ImpactStyle.Heavy : ImpactStyle.Medium }))
+      .catch(() => navigator.vibrate?.(strong ? [120, 60, 120] : 80));
+  } else {
+    navigator.vibrate?.(strong ? [120, 60, 120] : 80);
+  }
+}
+
+/** Next turn on the route, called before it arrives, so the helm turns on time. */
+function TurnLine({ turn, markIndex }: { turn: TurnAhead | null; markIndex: number }) {
+  const lastNow = useRef<number>(-1);
+  const lastMark = useRef<number>(markIndex);
+  useEffect(() => {
+    if (turn?.now && lastNow.current !== turn.index) {
+      lastNow.current = turn.index;
+      buzz(true);
+    }
+  }, [turn?.now, turn?.index]);
+  useEffect(() => {
+    if (markIndex > lastMark.current) buzz(false);
+    lastMark.current = markIndex;
+  }, [markIndex]);
+  if (!turn) return null;
+  const text = describeTurn(turn, formatMeters, formatHeading);
+  const side = "turnDeg" in turn ? (turn.turnDeg > 0 ? "S" : "P") : null;
+  return (
+    <div
+      role="status"
+      aria-live="polite"
+      className={cn(
+        "rp-glass mt-1 flex items-center gap-2 rounded-full px-3 py-1 text-t15 font-semibold tabular-nums",
+        turn.now && side === "S" && "bg-emerald-600 text-white",
+        turn.now && side === "P" && "bg-red-600 text-white",
+        turn.now && !side && "bg-primary text-primary-foreground",
+      )}
+    >
+      {side ? (
+        <span aria-hidden className="text-base leading-none">
+          {side === "S" ? "↱" : "↰"}
+        </span>
+      ) : null}
+      {text}
     </div>
   );
 }
@@ -278,20 +361,20 @@ function HelmNum({
 }) {
   return (
     <div className={cn("flex min-w-0 flex-col items-center px-1 py-1.5", className)}>
-      <p className="rp-helm-label font-semibold tracking-[0.18em] text-muted-foreground uppercase">
+      <p className="rp-helm-label font-semibold text-muted-foreground">
         {label}
       </p>
-      <p className={cn("rp-helm-num font-display font-bold tabular-nums leading-none", warn && "rp-helm-warn")}>
+      <p className={cn("rp-helm-num font-display font-semibold tabular-nums leading-none", warn && "rp-helm-warn")}>
         {value}
       </p>
-      {unit ? <p className="rp-helm-unit mt-0.5 font-semibold tracking-wide text-muted-foreground uppercase">{unit}</p> : null}
+      {unit ? <p className="rp-helm-unit mt-0.5 font-semibold text-muted-foreground">{unit}</p> : null}
     </div>
   );
 }
 
 export function Disclaimer() {
   return (
-    <p className="pointer-events-none absolute bottom-4 left-3 z-10 hidden max-w-[16rem] text-[10px] leading-snug text-foreground/80 md:block">
+    <p className="pointer-events-none absolute bottom-4 left-3 z-10 hidden max-w-[16rem] text-t12 leading-snug text-foreground/80 md:block">
       Not a carriage chart. Satellite + OpenSeaMap are lookout aids.{" "}
       <Link to="/privacy" className="pointer-events-auto underline-offset-2 hover:underline">
         Privacy

@@ -3,7 +3,23 @@ import { persist } from "zustand/middleware";
 import type { Passage, PassageKind, Waypoint } from "@/lib/passages";
 import { DEFAULT_REEF_ID, getReef } from "@/lib/reefs";
 import { isChartUp, type ChartUp, type LatLng, appendTrail, reverseCourse, reverseWaypoints, simplifyTrack, fitTrackView, haversineMeters, type TrackClean } from "@/lib/geo";
-import { HELM_ZOOM, isImageryId, type ImageryId } from "@/lib/imagery";
+import { HELM_ZOOM, availableImagery, isImageryId, usableImagery, type ImageryId } from "@/lib/imagery";
+import {
+  isDepthUnit,
+  isLengthUnit,
+  setUnits,
+  type DepthUnit,
+  type LengthUnit,
+} from "@/lib/units";
+import { isTopic } from "@/lib/remote-watch";
+import type { DriftPoint } from "@/lib/mob";
+import type { CellTrend } from "@/lib/radar";
+import { WX_MAP_LAYERS, type WxMapLayer } from "@/lib/wx-map";
+import { readBoatType, type BoatPerf, type BoatType } from "@/lib/routing/polar";
+import { EMPTY_LEARNED, readLearned, type LearnedPolar, type PerfLive } from "@/lib/routing/learned";
+import { DEFAULT_LIMITS, DEFAULT_RULES, type Limits, type RouteRules } from "@/lib/routing/router";
+import { isTreat } from "@/lib/routing/storm";
+import { DEFAULT_SAILS, readSails, type SailDef } from "@/lib/routing/sails";
 import { boxShortM, squareFromCorners, type BBox, type OfflinePack } from "@/lib/offline-tiles";
 import {
   clampAlarmRadius,
@@ -32,6 +48,7 @@ export type { ImageryId };
 export type FixSource = "gps" | "last" | "demo" | "placed" | "none";
 export type PanelId =
   | null
+  | "route"
   | "atlas"
   | "passages"
   | "anchor"
@@ -72,6 +89,8 @@ export type AnchorWatch = {
   droppedAt: number;
   radiusLocked: boolean;
   fence: LatLng[] | null;
+  /** Temporary anchor for the first-run alarm demo. Never saved. */
+  demo?: boolean;
 };
 
 export type LocalDraft = {
@@ -82,6 +101,8 @@ export type LocalDraft = {
   kind: PassageKind;
   waypoints: Waypoint[];
   savedAt: string;
+  /** Waypoints tapped on the chart: followed exactly, never simplified. */
+  tapped?: boolean;
 };
 
 export type WxLayers = {
@@ -127,6 +148,8 @@ function readWxModels(value: unknown, fallback: WxModels): WxModels {
   return next.ecmwf || next.gfs || next.ukmo || next.icon ? next : { ...DEFAULT_WX_MODELS };
 }
 
+export type TextSize = "standard" | "large" | "xl";
+
 export type HelmState = {
   reefId: string;
   flyTo: { lat: number; lng: number; zoom: number; nonce: number; fit?: "track" } | null;
@@ -137,14 +160,28 @@ export type HelmState = {
   boatLow: boolean;
   chartUp: ChartUp;
   imagery: ImageryId;
+  /** The source before the current one, for the quick compare button. */
+  prevImagery: ImageryId | null;
   labels: boolean;
   /** Latitude and longitude grid. */
   graticule: boolean;
   seamarks: boolean;
   depths: boolean;
+  /** GBRMPA reef / cay / rock outlines overlay. */
+  reefOutlines: boolean;
+  /** GBR Marine Park zoning overlay. */
+  parkZones: boolean;
+  /** Live speed against the polar while underway (not saved). */
+  perfLive: PerfLive | null;
+  /** Rain radar overlay with loop. */
+  radar: boolean;
+  /** Radar frame on screen, and the nearest heavy-rain cell if it is closing on the boat. */
+  radarInfo: { frameAt: number; latestAt: number; playing: boolean; cell: CellTrend | null } | null;
   panel: PanelId;
   /** Forecast pin. Null means the forecast is for the boat. */
   wxPin: LatLng | null;
+  /** The press-and-hold card for the pin is showing (not saved). */
+  pinCard: boolean;
   drawMode: DrawMode;
   draft: Waypoint[];
   activePassage: Passage | LocalDraft | null;
@@ -169,7 +206,27 @@ export type HelmState = {
   introOpen: boolean;
   drafts: LocalDraft[];
   gpsDenied: boolean;
-  tapMode: "none" | "place-boat" | "drop-anchor" | "resize-swing" | "draw-fence" | "draw-pack";
+  tapMode:
+    | "none"
+    | "place-boat"
+    | "drop-anchor"
+    | "resize-swing"
+    | "draw-fence"
+    | "draw-pack"
+    | "route-start"
+    | "route-finish";
+  /** Measuring tool: the two draggable pins, or empty when off (not saved). */
+  measurePts: LatLng[];
+  /** Passage planner: start and finish taps, and the route shown on the chart. Not persisted. */
+  routeStart: LatLng | null;
+  routeFinish: LatLng | null;
+  routePreview: LatLng[] | null;
+  /** Predicted man-overboard drift (5/10/20 min) and where the inputs came from. Not persisted. */
+  mobDrift: { points: DriftPoint[]; source: string } | null;
+  /** Point on the route the timeline is scrubbed to. Not persisted. */
+  routeCursor: LatLng | null;
+  /** Planner choices, remembered between trips. */
+  routePrefs: RoutePrefs;
   hookPreview: LatLng | null;
   /** Tap the chart to place the boat, then drop the hook. Not persisted. */
   hookArmed: boolean;
@@ -183,7 +240,37 @@ export type HelmState = {
   chartZoom: number;
   sunlight: boolean;
   look: LookMode;
+  /** Switch to night (red) view at sunset and back at sunrise. */
+  autoNight: boolean;
+  depthUnit: DepthUnit;
+  lengthUnit: LengthUnit;
+  /** First-run guide finished or skipped. */
+  guideDone: boolean;
+  /** Second phone pairing for remote watch (ntfy topic). */
+  remoteWatch: { topic: string; boatName: string } | null;
   sunPunch: 1 | 2 | 3;
+  /** Fetch the next zoom level and show it at half size, so photos are sharp on high-density screens. */
+  sharpTiles: boolean;
+  /** Seabed overlay: off, depth shading, or "too shallow for my draft at this tide". */
+  depthLayer: "off" | "depth" | "shallow";
+  /** Weather drawn on the chart, its style, and the hour shown (hour not saved). */
+  wxMapLayer: WxMapLayer | "off";
+  wxMapStyle: "particles" | "arrows";
+  wxMapAt: number;
+  wxMapPlaying: boolean;
+  wxMapInfo: { source: "live" | "saved" | "passage" | "none" | "loading"; fetchedAt: number | null; times: number[] } | null;
+  /** Base map: satellite photo, vector chart, or chart lines over the photo. */
+  baseMap: "photo" | "chart" | "lines";
+  /** 3D reef view open (not saved). */
+  reef3d: boolean;
+  /** Tide height above mean sea level now (m), for the shallow-water overlay. Not saved. */
+  tideNowMsl: number | null;
+  /** Allen Coral Atlas sand / coral / seagrass overlay (needs VITE_BENTHIC_WMS). */
+  benthic: boolean;
+  /** Reader text size: Standard, Large (default) or Extra large. */
+  textSize: TextSize;
+  /** Extra contrast and colour on the satellite photo for reading water depth. */
+  reefClarity: boolean;
   rode: RodeSetup;
   hull: BoatSetup;
   alarmSound: AlarmSoundId;
@@ -216,10 +303,17 @@ type HelmActions = {
   followCourse: () => void;
   setChartUp: (v: ChartUp) => void;
   setImagery: (imagery: ImageryId) => void;
+  /** Swap to the previous source (or the next one available) at the same spot. Returns the new source. */
+  flipImagery: (shown?: string | null) => ImageryId;
   setLabels: (v: boolean) => void;
   setGraticule: (v: boolean) => void;
   setSeamarks: (v: boolean) => void;
   setDepths: (v: boolean) => void;
+  setReefOutlines: (v: boolean) => void;
+  setParkZones: (v: boolean) => void;
+  setRadar: (v: boolean) => void;
+  setPerfLive: (v: PerfLive | null) => void;
+  setRadarInfo: (v: HelmState["radarInfo"]) => void;
   setPanel: (panel: PanelId) => void;
   setWxPin: (p: LatLng | null) => void;
   setDrawMode: (mode: DrawMode) => void;
@@ -272,8 +366,32 @@ type HelmActions = {
   setChartZoom: (z: number) => void;
   setSunlight: (v: boolean) => void;
   setLook: (v: LookMode) => void;
+  setAutoNight: (v: boolean) => void;
+  setDepthUnit: (v: DepthUnit) => void;
+  setGuideDone: (v: boolean) => void;
+  setRemoteWatch: (v: { topic: string; boatName: string } | null) => void;
+  /** Start a new passage plan: tap the start, then the finish. */
+  beginRoutePlan: () => void;
+  setRouteStart: (p: LatLng | null) => void;
+  setRouteFinish: (p: LatLng | null) => void;
+  setRoutePreview: (pts: LatLng[] | null) => void;
+  setRouteCursor: (p: LatLng | null) => void;
+  setMobDrift: (d: { points: DriftPoint[]; source: string } | null) => void;
+  setRoutePrefs: (p: Partial<RoutePrefs>) => void;
+  endRoutePlan: () => void;
+  setLengthUnit: (v: LengthUnit) => void;
   cycleLook: () => void;
   setSunPunch: (n: 1 | 2 | 3) => void;
+  setSharpTiles: (v: boolean) => void;
+  setDepthLayer: (v: "off" | "depth" | "shallow") => void;
+  setWxMap: (p: Partial<Pick<HelmState, "wxMapLayer" | "wxMapStyle" | "wxMapAt" | "wxMapInfo" | "wxMapPlaying">>) => void;
+  setTideNowMsl: (v: number | null) => void;
+  setBenthic: (v: boolean) => void;
+  /** Put the two measuring pins on the chart (default: across the middle of the view). */
+  startMeasure: (a?: LatLng, b?: LatLng) => void;
+  endMeasure: () => void;
+  setTextSize: (v: TextSize) => void;
+  setReefClarity: (v: boolean) => void;
   setRode: (partial: Partial<RodeSetup>) => void;
   setHull: (partial: Partial<BoatSetup>) => void;
   setAlarmSound: (id: AlarmSoundId) => void;
@@ -372,8 +490,25 @@ function persistSig(state: Record<string, unknown>): string {
     state.graticule,
     state.seamarks,
     state.depths,
+    state.reefOutlines,
+    state.parkZones,
+    state.radar,
     state.sunlight,
+    state.sharpTiles,
+    state.depthLayer,
+    state.wxMapLayer,
+    state.baseMap,
+    state.wxMapStyle,
+    state.benthic,
+    state.textSize,
+    state.reefClarity,
     state.look,
+    state.autoNight,
+    state.depthUnit,
+    state.guideDone,
+    persistId(state.remoteWatch),
+    persistId(state.routePrefs),
+    state.lengthUnit,
     state.sunPunch,
     state.chartUp,
     state.boatLow,
@@ -398,10 +533,57 @@ function persistSig(state: Record<string, unknown>): string {
     persistId(state.wxModels),
     persistId(state.crumb),
     persistId(state.mob),
+    persistId(state.anchor),
   ].join("|");
 }
 
 let savedPersistSig = "";
+let savedAnchorId = -1;
+let pendingWrite: { name: string; value: { state: unknown; version?: number } } | null = null;
+let writeTimer: ReturnType<typeof setTimeout> | null = null;
+/** Settings and tracks are saved at most this often; the anchor is saved at once. */
+const PERSIST_DEBOUNCE_MS = 4_000;
+
+export function flushHelmWrite() {
+  if (writeTimer != null) {
+    clearTimeout(writeTimer);
+    writeTimer = null;
+  }
+  const w = pendingWrite;
+  pendingWrite = null;
+  if (!w || typeof localStorage === "undefined") return;
+  try {
+    localStorage.setItem(w.name, JSON.stringify(w.value));
+  } catch {
+    /* quota exceeded or storage blocked: keep running, the watch is in memory */
+  }
+}
+
+if (typeof document !== "undefined") {
+  // The OS may kill a backgrounded app without warning: write before that can happen.
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden") flushHelmWrite();
+  });
+  window.addEventListener("pagehide", flushHelmWrite);
+}
+
+export function isAnchorWatch(v: unknown): v is AnchorWatch {
+  if (!v || typeof v !== "object") return false;
+  const a = v as AnchorWatch;
+  const okFence =
+    a.fence === null ||
+    (Array.isArray(a.fence) &&
+      a.fence.every((p) => p && Number.isFinite(p.lat) && Number.isFinite(p.lng)));
+  return (
+    Number.isFinite(a.lat) &&
+    Number.isFinite(a.lng) &&
+    Number.isFinite(a.radiusM) &&
+    a.radiusM > 0 &&
+    Number.isFinite(a.droppedAt) &&
+    typeof a.radiusLocked === "boolean" &&
+    okFence
+  );
+}
 
 const helmStorage = {
   getItem: (name: string) => {
@@ -426,14 +608,172 @@ const helmStorage = {
     const sig = persistSig(state as Record<string, unknown>);
     if (sig === savedPersistSig) return;
     savedPersistSig = sig;
-    localStorage.setItem(name, JSON.stringify(value));
+    pendingWrite = { name, value };
+    const anchorId = persistId((state as { anchor?: unknown }).anchor);
+    if (anchorId !== savedAnchorId) {
+      savedAnchorId = anchorId;
+      flushHelmWrite();
+      return;
+    }
+    writeTimer ??= setTimeout(flushHelmWrite, PERSIST_DEBOUNCE_MS);
   },
   removeItem: (name: string) => {
     savedPersistSig = "";
+    pendingWrite = null;
     if (typeof localStorage === "undefined") return;
     localStorage.removeItem(name);
   },
 };
+
+/** Restore a saved unit and make the formatters use it. */
+function applyDepthUnit(v: unknown, fallback: DepthUnit): DepthUnit {
+  const u = isDepthUnit(v) ? v : fallback;
+  setUnits({ depth: u });
+  return u;
+}
+
+function applyLengthUnit(v: unknown, fallback: LengthUnit): LengthUnit {
+  const u = isLengthUnit(v) ? v : fallback;
+  setUnits({ length: u });
+  return u;
+}
+
+export type RoutePrefs = {
+  boatType: BoatType;
+  /** Motor when predicted sailing speed is below this (0 = off). */
+  motorBelowKn: number;
+  /** Motor when the wind is below this (0 = off). */
+  motorWindBelowKn: number;
+  /** Wind on the nose: motor straight into it instead of tacking. */
+  motorOnNose: boolean;
+  motorKn: number;
+  limits: Limits;
+  preset: RoutePreset;
+  rules: RouteRules;
+  /** Weather models to route on; the first is the main one. */
+  models: string[];
+  sails: SailDef[];
+  /** This boat's own speed against the polar, learned while sailing. */
+  learned: LearnedPolar;
+  /** Route with the learned polar instead of the built-in one. */
+  useLearned: boolean;
+  /** Engine running: pauses learning (GPS can't tell). */
+  engineOn: boolean;
+  /** Fuel burn at cruising speed, litres per hour (0 = don't show fuel). */
+  fuelLph: number;
+};
+
+/** Boat profile for the router from the route settings. */
+export function boatPerfOf(prefs: RoutePrefs, loaM: number): BoatPerf {
+  return {
+    type: prefs.boatType,
+    loaM,
+    motorBelowKn: prefs.motorBelowKn,
+    motorWindBelowKn: prefs.motorWindBelowKn,
+    motorOnNose: prefs.motorOnNose,
+    motorKn: prefs.motorKn,
+    ...(prefs.useLearned ? { learned: prefs.learned } : {}),
+  };
+}
+
+export type RoutePreset = "family" | "delivery" | "racing" | "custom";
+
+/** Starting points; any change afterwards makes the preset "custom". */
+export const ROUTE_PRESETS: Record<Exclude<RoutePreset, "custom">, { label: string; detail: string; motorDetail: string; prefs: Partial<RoutePrefs> }> = {
+  family: {
+    label: "Family cruising",
+    detail: "Cautious limits, keeps clear of storms, squalls and wind over tide, daylight arrivals.",
+    motorDetail: "Cautious limits, keeps clear of storms, squalls and wind over tide, daylight arrivals.",
+    prefs: {
+      limits: { maxWindKn: 20, maxGustKn: 28, maxWaveM: 2 },
+      motorBelowKn: 4,
+      motorWindBelowKn: 6,
+      rules: { thunder: "avoid", squall: "avoid", windOverTide: "avoid", night: "avoid", comfortWeight: 0.85 },
+    },
+  },
+  delivery: {
+    label: "Delivery",
+    detail: "Efficient and tolerant, prefers to avoid hazards, motors through calms.",
+    motorDetail: "Efficient and tolerant, prefers to avoid hazards.",
+    prefs: {
+      limits: { maxWindKn: 28, maxGustKn: 38, maxWaveM: 3 },
+      motorBelowKn: 4,
+      motorWindBelowKn: 0,
+      rules: { thunder: "penalise", squall: "penalise", windOverTide: "penalise", night: "warn", comfortWeight: 0.3 },
+    },
+  },
+  racing: {
+    label: "Racing",
+    detail: "Fastest route, wide limits, hazards shown as warnings only, no engine.",
+    motorDetail: "Fastest route, wide limits, hazards shown as warnings only.",
+    prefs: {
+      limits: { maxWindKn: 35, maxGustKn: 45, maxWaveM: 4 },
+      motorBelowKn: 0,
+      motorWindBelowKn: 0,
+      rules: { thunder: "warn", squall: "warn", windOverTide: "warn", night: "ignore", comfortWeight: 0 },
+    },
+  },
+};
+
+export const DEFAULT_ROUTE_PREFS: RoutePrefs = {
+  boatType: "mono",
+  motorBelowKn: 3,
+  motorWindBelowKn: 0,
+  motorOnNose: false,
+  motorKn: 6,
+  limits: DEFAULT_LIMITS,
+  preset: "custom",
+  rules: DEFAULT_RULES,
+  models: ["ecmwf", "gfs"],
+  sails: DEFAULT_SAILS,
+  learned: EMPTY_LEARNED,
+  useLearned: false,
+  engineOn: false,
+  fuelLph: 0,
+};
+
+function readRoutePrefs(v: unknown): RoutePrefs {
+  const p = (v ?? {}) as Partial<RoutePrefs>;
+  const num = (x: unknown, d: number, lo: number, hi: number) =>
+    typeof x === "number" && Number.isFinite(x) ? Math.min(hi, Math.max(lo, x)) : d;
+  const l = (p.limits ?? {}) as Partial<Limits>;
+  return {
+    boatType: readBoatType(p.boatType),
+    motorBelowKn: num(p.motorBelowKn, 3, 0, 10),
+    motorWindBelowKn: num(p.motorWindBelowKn, 0, 0, 20),
+    motorOnNose: typeof p.motorOnNose === "boolean" ? p.motorOnNose : false,
+    motorKn: num(p.motorKn, 6, 2, 45),
+    limits: {
+      maxWindKn: num(l.maxWindKn, DEFAULT_LIMITS.maxWindKn, 8, 50),
+      maxGustKn: num(l.maxGustKn, DEFAULT_LIMITS.maxGustKn, 10, 60),
+      maxWaveM: num(l.maxWaveM, DEFAULT_LIMITS.maxWaveM, 0.5, 8),
+    },
+    preset: p.preset === "family" || p.preset === "delivery" || p.preset === "racing" ? p.preset : "custom",
+    rules: readRules(p.rules),
+    models: Array.isArray(p.models) && p.models.length && p.models.every((m) => typeof m === "string")
+      ? p.models.slice(0, 4)
+      : DEFAULT_ROUTE_PREFS.models,
+    sails: readSails(p.sails),
+    learned: readLearned(p.learned),
+    useLearned: p.useLearned === true,
+    engineOn: p.engineOn === true,
+    fuelLph: num(p.fuelLph, 0, 0, 500),
+  };
+}
+
+function readRules(v: unknown): RouteRules {
+  const r = (v ?? {}) as Partial<RouteRules>;
+  return {
+    thunder: isTreat(r.thunder) ? r.thunder : DEFAULT_RULES.thunder,
+    squall: isTreat(r.squall) ? r.squall : DEFAULT_RULES.squall,
+    windOverTide: isTreat(r.windOverTide) ? r.windOverTide : DEFAULT_RULES.windOverTide,
+    night: isTreat(r.night) ? r.night : DEFAULT_RULES.night,
+    comfortWeight:
+      typeof r.comfortWeight === "number" && Number.isFinite(r.comfortWeight)
+        ? Math.min(1, Math.max(0, r.comfortWeight))
+        : DEFAULT_RULES.comfortWeight,
+  };
+}
 
 export const useHelm = create<HelmState & HelmActions>()(
   persist(
@@ -446,10 +786,16 @@ export const useHelm = create<HelmState & HelmActions>()(
       boatLow: false,
       chartUp: "north",
       imagery: "auto",
+      prevImagery: null,
       labels: true,
       graticule: false,
       seamarks: false,
       depths: false,
+      reefOutlines: false,
+      parkZones: false,
+      radar: false,
+      radarInfo: null,
+      perfLive: null,
       panel: null,
       drawMode: "idle",
       draft: [],
@@ -471,7 +817,9 @@ export const useHelm = create<HelmState & HelmActions>()(
       drafts: [],
       gpsDenied: false,
       tapMode: "none",
+      measurePts: [],
       wxPin: null,
+      pinCard: false,
       hookPreview: null,
       hookArmed: false,
       anchorStep: null,
@@ -481,7 +829,31 @@ export const useHelm = create<HelmState & HelmActions>()(
       chartZoom: 3,
       sunlight: false,
       look: "normal",
+      autoNight: false,
+      depthUnit: "m",
+      guideDone: false,
+      remoteWatch: null,
+      routeStart: null,
+      routeFinish: null,
+      routePreview: null,
+      routeCursor: null,
+      mobDrift: null,
+      routePrefs: DEFAULT_ROUTE_PREFS,
+      lengthUnit: "m",
       sunPunch: 2,
+      textSize: "large",
+      depthLayer: "off",
+      baseMap: "photo",
+      wxMapLayer: "off",
+      wxMapStyle: "particles",
+      wxMapAt: Date.now(),
+      wxMapPlaying: false,
+      wxMapInfo: null,
+      reef3d: false,
+      tideNowMsl: null,
+      benthic: false,
+      sharpTiles: typeof window !== "undefined" && (window.devicePixelRatio ?? 1) >= 2,
+      reefClarity: false,
       rode: DEFAULT_RODE,
       hull: DEFAULT_BOAT,
       alarmSound: "klaxon",
@@ -523,9 +895,12 @@ export const useHelm = create<HelmState & HelmActions>()(
           fix &&
           s.drawMode === "record" &&
           s.crumbOn &&
-          (fix.source === "gps" || fix.source === "demo")
+          (fix.source === "gps" || fix.source === "demo") &&
+          // Poor fixes and drift while stopped are what made recorded tracks jagged.
+          (fix.accuracy == null || fix.accuracy <= 15) &&
+          !(fix.speedMs < 0.25 && crumb.length > 0)
         ) {
-          crumb = appendTrail(crumb, fix, 2);
+          crumb = appendTrail(crumb, fix, 3);
         }
         if (
           fix === s.boat &&
@@ -570,11 +945,31 @@ export const useHelm = create<HelmState & HelmActions>()(
         });
       },
       setChartUp: (chartUp) => set({ chartUp }),
-      setImagery: (imagery) => set({ imagery }),
+      setImagery: (imagery) => {
+        const cur = get().imagery;
+        set(imagery === cur ? { imagery } : { imagery, prevImagery: cur });
+      },
+      flipImagery: (shown) => {
+        const cur = get().imagery;
+        const prev = get().prevImagery;
+        // Always compare two real sources: Auto may already be showing the one we'd flip to.
+        const list = availableImagery().map((im) => im.id).filter((id) => id !== "auto");
+        const now = cur === "auto" ? (shown ?? list[0]) : cur;
+        const next = list[(list.indexOf(now as (typeof list)[number]) + 1) % Math.max(1, list.length)] ?? cur;
+        const target = prev && prev !== "auto" && prev !== now && usableImagery(prev) === prev ? prev : next;
+        // From Auto, "back" means the photo Auto was showing.
+        set({ imagery: target, prevImagery: cur === "auto" && now && isImageryId(now) ? now : cur });
+        return target;
+      },
       setLabels: (labels) => set({ labels }),
       setGraticule: (graticule) => set({ graticule }),
       setSeamarks: (v) => set({ seamarks: v }),
       setDepths: (v) => set({ depths: v }),
+      setReefOutlines: (v) => set({ reefOutlines: v }),
+      setParkZones: (v) => set({ parkZones: v }),
+      setRadar: (v) => set(v ? { radar: true } : { radar: false, radarInfo: null }),
+      setRadarInfo: (v) => set({ radarInfo: v }),
+      setPerfLive: (v) => set({ perfLive: v }),
       setPanel: (panel) => set({ panel }),
       setWxPin: (wxPin) => set({ wxPin }),
       setDrawMode: (drawMode) => {
@@ -963,10 +1358,11 @@ export const useHelm = create<HelmState & HelmActions>()(
         set({ demoPlaying, followBoat: demoPlaying ? true : get().followBoat }),
       dismissIntro: () => set({ introOpen: false }),
       saveDraft: (input) => {
-        const waypoints = simplifyTrack(input.waypoints, {
-          turnDeg: get().trackTurnDeg,
-          chordM: get().trackChordM,
-        }).map((w, i) => ({
+        // Every tapped waypoint is deliberate (a dog-leg round a bommie): keep them all,
+        // dropping only double taps.
+        const waypoints = input.waypoints
+          .filter((w, i, all) => i === 0 || haversineMeters(all[i - 1]!, w) >= 1)
+          .map((w, i) => ({
           lat: w.lat,
           lng: w.lng,
           label:
@@ -975,6 +1371,7 @@ export const useHelm = create<HelmState & HelmActions>()(
         const draft: LocalDraft = {
           ...input,
           waypoints,
+          tapped: true,
           localId: `local-${Date.now()}`,
           savedAt: new Date().toISOString(),
         };
@@ -998,11 +1395,74 @@ export const useHelm = create<HelmState & HelmActions>()(
       setSunlight: (sunlight) =>
         set({ sunlight, look: sunlight ? "sunlight" : "normal" }),
       setLook: (look) => set({ look, sunlight: look === "sunlight" }),
+      setAutoNight: (autoNight) => set({ autoNight }),
+      setGuideDone: (guideDone) => set({ guideDone }),
+      setRemoteWatch: (remoteWatch) => set({ remoteWatch }),
+      beginRoutePlan: () =>
+        set({
+          routeStart: null,
+          routeFinish: null,
+          routePreview: null,
+          tapMode: "route-start",
+          panel: "route",
+          drawMode: "idle",
+          // Let the chart go so you can pan to the finish and see the whole route.
+          followBoat: false,
+        }),
+      setRouteStart: (routeStart) =>
+        set({ routeStart, routePreview: null, tapMode: routeStart ? "route-finish" : "route-start" }),
+      setRouteFinish: (routeFinish) => set({ routeFinish, routePreview: null, tapMode: "none" }),
+      setRoutePreview: (routePreview) => set({ routePreview, routeCursor: null }),
+      setRouteCursor: (routeCursor) => set({ routeCursor }),
+      setMobDrift: (mobDrift) => set({ mobDrift }),
+      setRoutePrefs: (p) => {
+        const cur = get().routePrefs;
+        set({
+          routePrefs: {
+            ...cur,
+            ...p,
+            limits: { ...cur.limits, ...(p.limits ?? {}) },
+            rules: { ...cur.rules, ...(p.rules ?? {}) },
+            // Hand-edits turn a preset into Custom; choosing a preset sets it explicitly.
+            preset: p.preset ?? (Object.keys(p).some((k) => !["sails", "boatType", "models", "learned", "useLearned", "engineOn", "fuelLph"].includes(k)) ? "custom" : cur.preset),
+          },
+        });
+      },
+      endRoutePlan: () =>
+        set({
+          routeStart: null,
+          routeFinish: null,
+          routePreview: null,
+          tapMode: get().tapMode.startsWith("route-") ? "none" : get().tapMode,
+          panel: null,
+        }),
+      setDepthUnit: (depthUnit) => {
+        setUnits({ depth: depthUnit });
+        set({ depthUnit });
+      },
+      setLengthUnit: (lengthUnit) => {
+        setUnits({ length: lengthUnit });
+        set({ lengthUnit });
+      },
       cycleLook: () => {
         const look = nextLook(get().look);
         set({ look, sunlight: look === "sunlight" });
       },
       setSunPunch: (sunPunch) => set({ sunPunch, sunlight: true, look: "sunlight" }),
+      setSharpTiles: (sharpTiles) => set({ sharpTiles }),
+      setDepthLayer: (depthLayer) => set({ depthLayer }),
+      setWxMap: (p) => set(p),
+      setTideNowMsl: (tideNowMsl) => {
+        if (get().tideNowMsl !== tideNowMsl) set({ tideNowMsl });
+      },
+      setBenthic: (benthic) => set({ benthic }),
+      startMeasure: (a, b) => {
+        if (!a || !b) return;
+        set({ measurePts: [{ lat: a.lat, lng: a.lng }, { lat: b.lat, lng: b.lng }] });
+      },
+      endMeasure: () => set({ measurePts: [] }),
+      setTextSize: (textSize) => set({ textSize }),
+      setReefClarity: (reefClarity) => set({ reefClarity }),
       setRode: (partial) => {
         const rode = clampRode({ ...get().rode, ...partial }, get().rode);
         const hull = clampBoat({
@@ -1160,7 +1620,7 @@ export const useHelm = create<HelmState & HelmActions>()(
         });
         return true;
       },
-      clearMob: () => set({ mob: null, mobMuted: false }),
+      clearMob: () => set({ mob: null, mobMuted: false, mobDrift: null }),
       setMobMuted: (mobMuted) => set({ mobMuted }),
     }),
     {
@@ -1168,13 +1628,28 @@ export const useHelm = create<HelmState & HelmActions>()(
       storage: helmStorage,
       partialize: (s) => ({
         imagery: s.imagery,
+        prevImagery: s.prevImagery,
         labels: s.labels,
         graticule: s.graticule,
         seamarks: s.seamarks,
         depths: s.depths,
+        reefOutlines: s.reefOutlines,
+        parkZones: s.parkZones,
+        radar: s.radar,
         sunlight: s.sunlight,
         look: s.look,
+        autoNight: s.autoNight,
+        depthUnit: s.depthUnit,
+        lengthUnit: s.lengthUnit,
         sunPunch: s.sunPunch,
+        sharpTiles: s.sharpTiles,
+        depthLayer: s.depthLayer,
+        baseMap: s.baseMap,
+        wxMapLayer: s.wxMapLayer,
+        wxMapStyle: s.wxMapStyle,
+        benthic: s.benthic,
+        textSize: s.textSize,
+        reefClarity: s.reefClarity,
         drafts: s.drafts,
         lastFix: s.lastFix,
         rode: s.rode,
@@ -1195,6 +1670,11 @@ export const useHelm = create<HelmState & HelmActions>()(
         crumb: s.crumb,
         crumbOn: s.crumbOn,
         mob: s.mob,
+        // Restored on relaunch so an OS kill overnight does not silently end the watch.
+        anchor: s.anchor?.demo ? null : s.anchor,
+        guideDone: s.guideDone,
+        remoteWatch: s.remoteWatch,
+        routePrefs: s.routePrefs,
       }),
       merge: (persisted, current) => {
         const p = (persisted ?? {}) as Partial<HelmState>;
@@ -1210,8 +1690,39 @@ export const useHelm = create<HelmState & HelmActions>()(
         return {
           ...current,
           ...p,
-          imagery: isImageryId(p.imagery) ? p.imagery : current.imagery,
+          imagery: isImageryId(p.imagery) ? usableImagery(p.imagery) : current.imagery,
+          prevImagery: isImageryId(p.prevImagery) ? usableImagery(p.prevImagery) : null,
           depths: typeof p.depths === "boolean" ? p.depths : current.depths,
+          reefOutlines:
+            typeof p.reefOutlines === "boolean" ? p.reefOutlines : current.reefOutlines,
+          parkZones: typeof p.parkZones === "boolean" ? p.parkZones : current.parkZones,
+          radar: typeof p.radar === "boolean" ? p.radar : current.radar,
+          radarInfo: null,
+          autoNight: typeof p.autoNight === "boolean" ? p.autoNight : current.autoNight,
+          depthUnit: applyDepthUnit(p.depthUnit, current.depthUnit),
+          guideDone: typeof p.guideDone === "boolean" ? p.guideDone : current.guideDone,
+          routePrefs: readRoutePrefs(p.routePrefs),
+          routeStart: null,
+          routeFinish: null,
+          routePreview: null,
+          remoteWatch:
+            p.remoteWatch &&
+            isTopic(p.remoteWatch.topic) &&
+            typeof p.remoteWatch.boatName === "string"
+              ? { topic: p.remoteWatch.topic, boatName: p.remoteWatch.boatName.slice(0, 40) }
+              : null,
+          lengthUnit: applyLengthUnit(p.lengthUnit, current.lengthUnit),
+          sharpTiles: typeof p.sharpTiles === "boolean" ? p.sharpTiles : current.sharpTiles,
+          depthLayer: p.depthLayer === "depth" || p.depthLayer === "shallow" ? p.depthLayer : "off",
+          wxMapLayer: WX_MAP_LAYERS.some((l) => l.id === p.wxMapLayer) ? (p.wxMapLayer as WxMapLayer) : "off",
+          wxMapStyle: p.wxMapStyle === "arrows" ? "arrows" : "particles",
+          baseMap: p.baseMap === "chart" || p.baseMap === "lines" ? p.baseMap : "photo",
+          wxMapAt: Date.now(),
+          wxMapInfo: null,
+          benthic: p.benthic === true,
+          tideNowMsl: null,
+          textSize: p.textSize === "standard" || p.textSize === "large" || p.textSize === "xl" ? p.textSize : current.textSize,
+          reefClarity: typeof p.reefClarity === "boolean" ? p.reefClarity : current.reefClarity,
           look: isLookMode(p.look)
             ? p.look
             : p.sunlight === true
@@ -1266,6 +1777,7 @@ export const useHelm = create<HelmState & HelmActions>()(
               )
             : current.crumb,
           mob: isMobMark(p.mob) ? p.mob : null,
+          anchor: isAnchorWatch(p.anchor) ? p.anchor : null,
           alarmSound: isAlarmSound(p.alarmSound) ? p.alarmSound : current.alarmSound,
           gpsAlarmOn: typeof p.gpsAlarmOn === "boolean" ? p.gpsAlarmOn : true,
           introOpen: false,
@@ -1295,15 +1807,34 @@ export function passagePoints(
   return p.waypoints.map((w) => ({ lat: w.lat, lng: w.lng }));
 }
 
-/** The saved line only. The live crumb must not add points while you are following it. */
+const guideCache = new WeakMap<
+  Waypoint[],
+  { turn: number | undefined; chord: number | undefined; pts: LatLng[] }
+>();
+
+/**
+ * The saved line only. The live crumb must not add points while you are following it.
+ * Memoised per waypoint array: the map, the anchor watch and the mark tracker all ask
+ * for this every second, and simplifying a long passage each time was wasted work.
+ * Callers must treat the result as read-only.
+ */
 export function guidePoints(
   p: Passage | LocalDraft | { waypoints: Waypoint[] },
   _crumb?: LatLng[],
   clean?: Partial<TrackClean>,
 ): LatLng[] {
-  return simplifyTrack(p.waypoints, clean);
+  const hit = guideCache.get(p.waypoints);
+  if (hit && hit.turn === clean?.turnDeg && hit.chord === clean?.chordM) return hit.pts;
+  const pts = "tapped" in p && p.tapped ? p.waypoints.map((w) => ({ lat: w.lat, lng: w.lng })) : simplifyTrack(p.waypoints, clean);
+  guideCache.set(p.waypoints, { turn: clean?.turnDeg, chord: clean?.chordM, pts });
+  return pts;
 }
 
 export function helmBow(s: { boat: BoatFix | null; hull: BoatSetup }): LatLng | null {
   return bowOf(s.boat, s.hull);
+}
+
+/** Re-render on a units change (the formatters read module state, not React state). */
+export function useUnitsKey(): string {
+  return useHelm((s) => `${s.depthUnit}|${s.lengthUnit}`);
 }

@@ -13,7 +13,7 @@ const t0 = 1_000_000;
 
 describe("watch guard", () => {
   it("does not call GPS lost because the phone slept", () => {
-    let g = freshGuard(t0, true);
+    const g = freshGuard(t0, true);
     let r = stepGuard(g, {
       now: t0,
       visible: true,
@@ -34,7 +34,7 @@ describe("watch guard", () => {
   });
 
   it("waits 60s of no fix while the page is actually running", () => {
-    let g = freshGuard(t0, true);
+    const g = freshGuard(t0, true);
     let r = stepGuard(g, {
       now: t0,
       visible: true,
@@ -64,7 +64,7 @@ describe("watch guard", () => {
   });
 
   it("gives a grace after waking so GPS can reacquire", () => {
-    let g = freshGuard(t0, true);
+    const g = freshGuard(t0, true);
     let r = stepGuard(g, {
       now: t0,
       visible: true,
@@ -102,7 +102,7 @@ describe("watch guard", () => {
   });
 
   it("ignores a short wander outside the circle", () => {
-    let g = freshGuard(t0, true);
+    const g = freshGuard(t0, true);
     let r = stepGuard(g, {
       now: t0,
       visible: true,
@@ -157,7 +157,7 @@ describe("watch guard", () => {
   });
 
   it("starts the 60s clock when armed with no fix yet", () => {
-    let g = freshGuard(t0, true);
+    const g = freshGuard(t0, true);
     let r = stepGuard(g, {
       now: t0,
       visible: true,
@@ -179,7 +179,7 @@ describe("watch guard", () => {
   });
 
   it("alarms a drag from a fresh fix while the screen is off", () => {
-    let g = freshGuard(t0, true);
+    const g = freshGuard(t0, true);
     let r = stepGuard(g, {
       now: t0,
       visible: true,
@@ -221,7 +221,7 @@ describe("watch guard", () => {
   });
 
   it("does not mature a drag from a stale fix while the screen is off", () => {
-    let g = freshGuard(t0, true);
+    const g = freshGuard(t0, true);
     let r = stepGuard(g, {
       now: t0,
       visible: true,

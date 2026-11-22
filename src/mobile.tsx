@@ -14,12 +14,14 @@ import {
 } from "@tanstack/react-router";
 import { HelmApp } from "@/components/helm/helm-app";
 import { Privacy } from "@/routes/privacy";
+import { Terms } from "@/components/legal/terms";
+import { SubscriptionGate } from "@/components/subscription";
 import "./styles.css";
 
 function LoginNote() {
   return (
     <main className="min-h-dvh bg-background px-5 py-8 text-foreground">
-      <p className="text-[10px] tracking-[0.18em] text-muted-foreground uppercase">Anchor Mate</p>
+      <p className="text-t12 text-muted-foreground">Anchor Mate</p>
       <h1 className="font-display mt-1 text-4xl font-semibold">On this phone</h1>
       <p className="mt-4 text-sm leading-relaxed text-muted-foreground">
         Tracks and the anchor watch stay on this phone. Cloud sign-in is not part of the store app.
@@ -48,7 +50,17 @@ const rootRoute = createRootRoute({
 const indexRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/",
-  component: HelmApp,
+  component: () => (
+    <SubscriptionGate>
+      <HelmApp />
+    </SubscriptionGate>
+  ),
+});
+
+const termsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/terms",
+  component: Terms,
 });
 
 const privacyRoute = createRoute({
@@ -63,7 +75,7 @@ const loginRoute = createRoute({
   component: LoginNote,
 });
 
-const routeTree = rootRoute.addChildren([indexRoute, privacyRoute, loginRoute]);
+const routeTree = rootRoute.addChildren([indexRoute, privacyRoute, termsRoute, loginRoute]);
 const queryClient = new QueryClient({
   defaultOptions: { queries: { staleTime: 30_000, retry: 1, refetchOnWindowFocus: false } },
 });

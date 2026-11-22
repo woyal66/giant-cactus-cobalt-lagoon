@@ -1,0 +1,64 @@
+# Publishes the website to GitHub Pages: the privacy policy and terms (site/, for the Google Play
+# listing) and the GBR 30 m depth tiles the app reads (depth/{z}/{x}/{y}.png).
+# One-time setup: Settings → Pages → Source: "GitHub Actions". Then run this workflow (or push a
+# change to site/ or the tile script). The address is shown in the run, e.g.
+# https://<user>.github.io/<repo>/privacy.html
+#
+# The depth tiles are built from Geoscience Australia's "Great Barrier Reef bathymetry 2020 30 m"
+# (CC BY 4.0) by scripts/build-depth-tiles.py: a 3.8 GB download and about half an hour the
+# first time, then kept in the Actions cache until the script changes.
+name: Publish website and depth tiles
+
+on:
+  workflow_dispatch:
+  push:
+    paths: ["site/**", "scripts/build-depth-tiles.py", ".github/workflows/legal-pages.yml"]
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Depth tiles from cache
+        id: tiles
+        uses: actions/cache@v4
+        with:
+          path: out/depth
+          key: depth-tiles-${{ hashFiles('scripts/build-depth-tiles.py') }}
+
+      - name: Build depth tiles
+        if: steps.tiles.outputs.cache-hit != 'true'
+        run: |
+          pip install rasterio numpy pillow
+          curl -sSL -o gbr30.zip "https://files.ausseabed.gov.au/survey/Great%20Barrier%20Reef%20Bathymetry%202020%2030m.zip"
+          unzip -q gbr30.zip -d gbr30 && rm gbr30.zip
+          python3 scripts/build-depth-tiles.py gbr30 out/depth
+          rm -rf gbr30
+
+      - name: Assemble site
+        run: |
+          mkdir -p public_site
+          cp -r site/. public_site/
+          cp -r out/depth public_site/depth
+          du -sh public_site
+
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: public_site
+      - id: deployment
+        uses: actions/deploy-pages@v4
