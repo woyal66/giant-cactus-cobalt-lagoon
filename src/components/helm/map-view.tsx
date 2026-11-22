@@ -37,10 +37,8 @@ import {
   SENTINEL_URL,
   STUB_TILE_BYTES,
   ATTR_MAPTILER,
-  ATTR_REEFS,
   ATTR_ZONING,
   ZONING_WMS_LAYERS,
-  REEF_WMS_LAYERS,
   REEF_WMS_URL,
   autoSatOrder,
   satTileUrl,
@@ -53,6 +51,7 @@ import { measure } from "@/lib/measure";
 import { createRadar } from "@/components/helm/radar-layer";
 import { radarAvailable } from "@/lib/radar";
 import { createDepthLayer, type DepthLook } from "@/components/helm/depth-layer";
+import { createHazardLayer } from "@/components/helm/hazard-layer";
 import { createWxLayer } from "@/components/helm/wx-layer";
 import { createChartLayer } from "@/components/helm/chart-layer";
 import { loadViewField } from "@/lib/wx-map-data";
@@ -641,16 +640,8 @@ export function MapView() {
           attribution: ATTR_OPENSEAMAP,
         });
 
-        const reefs: TileLayer = L.tileLayer.wms(REEF_WMS_URL, {
-          layers: REEF_WMS_LAYERS,
-          format: "image/png",
-          transparent: true,
-          version: "1.1.1",
-          maxZoom: MAX_ZOOM,
-          opacity: 0.75,
-          pane: "chartOverlay",
-          attribution: ATTR_REEFS,
-        });
+        // Reefs, drying reef, rocks and cays from the bundled GBRMPA file (works offline).
+        const reefs = createHazardLayer(L, MAX_ZOOM);
         let reefsOn = false;
         // Under the reef outlines and seamarks, translucent so the satellite still reads.
         const zones: TileLayer = L.tileLayer.wms(REEF_WMS_URL, {

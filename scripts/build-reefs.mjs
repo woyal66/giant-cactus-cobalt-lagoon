@@ -1,10 +1,13 @@
 #!/usr/bin/env node
 /**
- * Build public/reefs/gbr.json (the planner's reef obstacles) from the GBRMPA
- * "Great Barrier Reef Features" GeoJSON (CC BY 4.0, GBRMPA). Download it from the
- * GBRMPA GeoHub / eAtlas as GeoJSON in WGS84, then:
+ * Build public/reefs/gbr.json (the planner's reef obstacles) and public/reefs/gbr-hazards.json
+ * (reefs, drying reef, rocks, cays and islands drawn on the chart, offline) from the GBRMPA
+ * "Great Barrier Reef Features" (CC BY 4.0, GBRMPA). Download both layers as GeoJSON from
+ * the eAtlas map server:
  *
- *   node scripts/build-reefs.mjs path/to/gbr-features.geojson
+ *   curl -o feat.json "https://maps.eatlas.org.au/maps/ows?service=WFS&version=1.0.0&request=GetFeature&typeName=ea:GBR_GBRMPA_GBR-features&outputFormat=application/json&srsName=EPSG:4326"
+ *   curl -o dry.json  "https://maps.eatlas.org.au/maps/ows?service=WFS&version=1.0.0&request=GetFeature&typeName=ea:GBR_GBRMPA_GBR-dry-reef&outputFormat=application/json&srsName=EPSG:4326"
+ *   node scripts/build-reefs.mjs feat.json dry.json
  *
  * Keeps reefs, rocks, cays and islands (not the mainland), simplifies each outline to
  * about 30 m and stores coordinates at 1e-5°. Credit "GBRMPA" in the app's attributions.
@@ -89,15 +92,82 @@ export function buildReefFile(geo, source = "GBRMPA Great Barrier Reef Features 
   return { v: 1, source, polys };
 }
 
+/** Hazard kind from a GBR Features class name. */
+export function hazardKind(type) {
+  const t = String(type).toLowerCase();
+  if (t.includes("rock")) return "rock";
+  if (t.includes("cay")) return "cay";
+  if (t.includes("island")) return "island";
+  if (t.includes("sand")) return "cay";
+  if (t.includes("mainland")) return null;
+  return "reef";
+}
+
+/**
+ * GBR Features (+ optional dry reef layer) → the chart's hazard file
+ * (public/reefs/gbr-hazards.json):
+ *   { v: 1, source, items: [{ k: "reef"|"dry"|"rock"|"cay"|"island", n?: name, c: [lng, lat], b: [w, s, e, n], r: [ring, ...] }] }
+ * Coordinates in 1e-5° integers; each ring is delta-encoded [x0, y0, dx1, dy1, ...].
+ * Outlines are simplified to about 8 m.
+ */
+export function buildHazardFile(features, dryReef, source = "© Great Barrier Reef Marine Park Authority (GBR Features, CC BY 4.0)", tolDeg = 0.00008) {
+  const items = [];
+  const add = (kind, name, geometry) => {
+    const list = geometry?.type === "Polygon" ? [geometry.coordinates] : geometry?.type === "MultiPolygon" ? geometry.coordinates : [];
+    const rings = [];
+    let w = Infinity, s = Infinity, e = -Infinity, n = -Infinity, sx = 0, sy = 0, cnt = 0;
+    for (const poly of list) {
+      const outer = poly[0];
+      if (!outer || outer.length < 4) continue;
+      const ring = simplifyRing(outer, tolDeg);
+      for (const [x, y] of ring) {
+        w = Math.min(w, x); e = Math.max(e, x); s = Math.min(s, y); n = Math.max(n, y);
+        sx += x; sy += y; cnt += 1;
+      }
+      // Delta-encoded: first point absolute, then steps from the previous point (small numbers).
+      const flat = [];
+      let px = 0;
+      let py = 0;
+      for (const [x, y] of ring) {
+        const ix = Math.round(x * SCALE);
+        const iy = Math.round(y * SCALE);
+        flat.push(ix - px, iy - py);
+        px = ix;
+        py = iy;
+      }
+      rings.push(flat);
+    }
+    if (!rings.length) return;
+    const r5 = (v) => Math.round(v * SCALE);
+    const item = { k: kind, c: [r5(sx / cnt), r5(sy / cnt)], b: [r5(w), r5(s), r5(e), r5(n)], r: rings };
+    if (name && !/^u\/n\b/i.test(name)) item.n = name;
+    items.push(item);
+  };
+  for (const f of features.features ?? []) {
+    const kind = hazardKind(featureType(f.properties));
+    if (!kind) continue;
+    const p = f.properties ?? {};
+    add(kind, p.GBR_NAME || p.QLD_NAME || null, f.geometry);
+  }
+  for (const f of dryReef?.features ?? []) add("dry", null, f.geometry);
+  return { v: 1, source, items };
+}
+
 if (import.meta.url === `file://${process.argv[1]}`) {
+  // node scripts/build-reefs.mjs <gbr-features.geojson> [dry-reef.geojson]
+  // Writes public/reefs/gbr.json (router obstacles) and public/reefs/gbr-hazards.json (chart).
   const input = process.argv[2];
-  const output = process.argv[3] ?? "public/reefs/gbr.json";
   if (!input) {
-    console.error("Usage: node scripts/build-reefs.mjs <features.geojson> [output.json]");
+    console.error("Usage: node scripts/build-reefs.mjs <gbr-features.geojson> [dry-reef.geojson]");
     process.exit(1);
   }
-  const file = buildReefFile(JSON.parse(readFileSync(input, "utf8")));
-  mkdirSync(dirname(output), { recursive: true });
-  writeFileSync(output, JSON.stringify(file));
-  console.log(`${file.polys.length} outlines → ${output}`);
+  const features = JSON.parse(readFileSync(input, "utf8"));
+  const dry = process.argv[3] ? JSON.parse(readFileSync(process.argv[3], "utf8")) : null;
+  const file = buildReefFile(features);
+  mkdirSync("public/reefs", { recursive: true });
+  writeFileSync("public/reefs/gbr.json", JSON.stringify(file));
+  console.log(`${file.polys.length} router outlines → public/reefs/gbr.json`);
+  const hz = buildHazardFile(features, dry);
+  writeFileSync("public/reefs/gbr-hazards.json", JSON.stringify(hz));
+  console.log(`${hz.items.length} hazards → public/reefs/gbr-hazards.json`);
 }

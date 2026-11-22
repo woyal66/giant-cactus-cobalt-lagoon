@@ -1,3 +1,4 @@
+import { HazardCheck } from "@/components/helm/hazard-check";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
@@ -594,7 +595,7 @@ export function LayersPanel() {
         <ToggleRow label="Lat / long lines" on={graticule} onChange={setGraticule} />
         <ToggleRow label="Seamarks" on={seamarks} onChange={setSeamarks} />
         <ToggleRow label="Depth contours" on={depths} onChange={setDepths} />
-        <ToggleRow label="Reef outlines (GBR)" on={reefOutlines} onChange={setReefOutlines} />
+        <ToggleRow label="Reefs, rocks and cays (GBR, offline)" on={reefOutlines} onChange={setReefOutlines} />
         <ToggleRow label="Marine park zones (GBR)" on={parkZones} onChange={setParkZones} />
         {parkZones ? <ZoneLegend /> : null}
         {radarAvailable() ? <ToggleRow label="Rain radar (needs signal)" on={radar} onChange={setRadar} /> : null}
@@ -1040,6 +1041,7 @@ export function SavePanel() {
   return (
     <Sheet id="save" title="Save track" kicker={`${draft.length} marks · ${formatMeters(len)}`}>
       <RouteCard distM={card.distM} hours={card.hours} litres={card.litres} kn={prefs.motorKn} />
+      {draft.length >= 2 ? <HazardCheck points={draft} /> : null}
       <div className="grid gap-3">
         <label className="grid gap-1">
           <span className="text-t12 text-muted-foreground">Title</span>

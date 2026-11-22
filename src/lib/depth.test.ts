@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { depthColor, sampleTile, shallowColor, terrariumHeight, waterDepthM } from "./depth.ts";
+import { depthColor, inFineArea, mergeHeights, NO_DATA_M, sampleTile, shallowColor, terrariumHeight, waterDepthM } from "./depth.ts";
 
 test("terrarium decoding", () => {
   assert.equal(terrariumHeight(128, 0, 0), 0);
@@ -26,4 +26,26 @@ test("bilinear sampling", () => {
   assert.equal(sampleTile(t, 0.5, 0.5), 0);
   assert.equal(sampleTile(t, 1, 1), -15);
   assert.equal(sampleTile(t, 1.5, 1.5), -30);
+});
+
+test("fine model area: tiles over the reef yes, Sydney and Perth no", () => {
+  const tile = (lat: number, lng: number, z: number) => {
+    const n = 2 ** z;
+    const s = Math.sin((lat * Math.PI) / 180);
+    return [Math.floor(((lng + 180) / 360) * n), Math.floor((0.5 - Math.log((1 + s) / (1 - s)) / (4 * Math.PI)) * n)] as const;
+  };
+  const [x, y] = tile(-19.15, 146.83, 12);
+  assert.equal(inFineArea(12, x, y), true);
+  const [sx, sy] = tile(-33.86, 151.2, 12);
+  assert.equal(inFineArea(12, sx, sy), false);
+  const [px, py] = tile(-31.95, 115.86, 10);
+  assert.equal(inFineArea(10, px, py), false);
+});
+
+test("no-data pixels in the fine tile are filled from the base tile", () => {
+  const fine = new Float32Array([-5, -32768, -12, -32768]);
+  const base = new Float32Array([-50, -60, -70, -80]);
+  assert.equal(mergeHeights(fine, base), 2);
+  assert.deepEqual([...fine], [-5, -60, -12, -80]);
+  assert.ok(terrariumHeight(0, 0, 0) <= NO_DATA_M);
 });

@@ -264,16 +264,32 @@ add at least `VITE_MAPTILER_KEY`.
 
 ## 9b. Seabed depth (3D view, depth shading, shallow-water warnings)
 
-The app uses AWS Terrain Tiles by default (open data; credit is shown). Around reefs they
-show the reef and its drop-off at a few hundred metres. For sharper Great Barrier Reef depth,
-convert the free GBR depth models (James Cook University "gbr100", 100 m, or Geoscience
-Australia "AusBathyTopo GBR 30 m", both CC BY) into terrarium-encoded PNG tiles
-(height = R x 256 + G + B / 256 - 32768 m), host them, and build with:
+Two depth sources, merged tile by tile (`src/lib/depth.ts`):
 
-    VITE_DEPTH_TILES=https://your-host/gbr100/{z}/{x}/{y}.png  VITE_DEPTH_MAX_Z=14
+- **GBR 30 m** (Geoscience Australia, "Great Barrier Reef bathymetry 2020 30 m", Beaman, CC BY 4.0,
+  heights to mean sea level) for 142–156° E, 10–29° S: Torres Strait, the whole reef, the Coral
+  Sea and the coast south to about the NSW border. `scripts/build-depth-tiles.py` turns the four
+  GeoTIFFs into terrarium tiles (zoom 7–12, about 6,100 tiles and 305 MB, only where there is
+  water shallower than 200 m). The "Publish website and depth tiles" workflow
+  (`.github/workflows/legal-pages.yml`) downloads the data, builds the tiles (about half an hour
+  the first time, then cached) and publishes them on GitHub Pages next to the privacy page.
+  The Android release build points `VITE_DEPTH_TILES` at
+  `https://<owner>.github.io/<repo>/depth/{z}/{x}/{y}.png` unless you set the repository variable
+  `VITE_DEPTH_TILES` to another host (Cloudflare R2, for example).
+- **AWS Terrain Tiles** (ETOPO1 offshore, about 1.8 km) everywhere else and to fill gaps.
 
-GDAL (gdalwarp to EPSG:3857) plus a terrarium tile encoder does the conversion. Credit the
-dataset in the store listing. The sand/coral layer appears only when you set
+GitHub Pages needs a public repository (or a paid plan). If yours is private, host the
+`depth/` folder elsewhere with CORS allowed and set the variable.
+
+Reefs, drying reef, rocks, cays and islands come from GBRMPA "Great Barrier Reef Features"
+(CC BY 4.0), bundled in the app (`public/reefs/gbr-hazards.json`, about 2 MB compressed) by
+`node scripts/build-reefs.mjs feat.json dry.json` (download commands in that script). They draw
+on the chart offline, show on the press-and-hold card, are checked along planned and drawn
+routes, and are obstacles for the passage planner (`public/reefs/gbr.json`).
+
+Credit both datasets in the store listing. Before release, confirm the GBR Features licence
+version with GBRMPA (catalogues say CC BY 4.0 or 3.0 AU) and the exact attribution wording
+for the 30 m model with Geoscience Australia. The sand/coral layer appears only when you set
 `VITE_BENTHIC_WMS` and `VITE_BENTHIC_LAYERS` to an Allen Coral Atlas map service you have
 confirmed you may use.
 

@@ -8,7 +8,9 @@
 #   ANDROID_KEYSTORE_PASSWORD keystore password
 #   ANDROID_KEY_ALIAS         key alias (e.g. "upload")
 #   ANDROID_KEY_PASSWORD      key password
-# Optional build settings (secrets or variables): VITE_MAPTILER_KEY, VITE_ESRI_KEY.
+# Optional build settings (secrets or variables): VITE_MAPTILER_KEY, VITE_ESRI_KEY,
+# VITE_DEPTH_TILES (default: the depth tiles on this repository's GitHub Pages site; run
+# "Publish website and depth tiles" first).
 name: Android release build
 
 on:
@@ -48,6 +50,8 @@ jobs:
           VITE_LICENSED_IMAGERY_ONLY: "1"
           VITE_MAPTILER_KEY: ${{ secrets.VITE_MAPTILER_KEY || vars.VITE_MAPTILER_KEY }}
           VITE_ESRI_KEY: ${{ secrets.VITE_ESRI_KEY || vars.VITE_ESRI_KEY }}
+          # GBR 30 m depth tiles, published to GitHub Pages by legal-pages.yml (override with a variable).
+          VITE_DEPTH_TILES: ${{ vars.VITE_DEPTH_TILES || format('https://{0}.github.io/{1}/depth/{{z}}/{{x}}/{{y}}.png', github.repository_owner, github.event.repository.name) }}
         run: |
           npx vite build --config vite.mobile.config.ts
           npx cap sync android

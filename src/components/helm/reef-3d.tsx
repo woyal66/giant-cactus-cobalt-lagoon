@@ -3,7 +3,9 @@ import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { Button } from "@/components/ui/button";
 import { getChartBounds } from "@/components/helm/map-view";
-import { ATTR_DEPTH, DEPTH_MAX_Z, DEPTH_TILES } from "@/lib/depth";
+import { ATTR_DEPTH, DEPTH_MAX_Z, DEPTH_TILES, registerDepthProtocol } from "@/lib/depth";
+
+let depthProtocol = false;
 import { autoSatOrder, imageryShort, satTileTemplate, type SatSource } from "@/lib/imagery";
 import { useHelm } from "@/store/helm";
 
@@ -34,6 +36,10 @@ export function Reef3D({ onClose }: { onClose: () => void }) {
       : boat
         ? [boat.lng, boat.lat]
         : [152.3955, -23.9045];
+    if (!depthProtocol) {
+      registerDepthProtocol(maplibregl as unknown as Parameters<typeof registerDepthProtocol>[0]);
+      depthProtocol = true;
+    }
     const map = new maplibregl.Map({
       container: box.current,
       // MapLibre zoom levels are one less than the chart's for the same scale.

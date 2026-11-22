@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Sheet } from "@/components/helm/panels";
 import { RouteSettings, SettingsSummary } from "@/components/helm/route-settings";
+import { HazardCheck } from "@/components/helm/hazard-check";
 import { RouteTimeline } from "@/components/helm/route-timeline";
 import { ArrivalCard } from "@/components/helm/arrival-card";
 import { forecastAge, saveActivePassage } from "@/lib/routing/passage-store";
@@ -513,6 +514,7 @@ function PickedActions({ picked, ctx, shelter }: { picked: Choice; ctx: PlanCont
       ) : null}
       <div className="mt-2" />
       <ShallowCheck points={r.points} />
+      <HazardCheck points={r.points} />
       {r.warnings.length ? (
         <ul className="mb-2 list-disc space-y-0.5 pl-4 text-t14 leading-snug text-amber-300">
           {r.warnings.map((w) => (

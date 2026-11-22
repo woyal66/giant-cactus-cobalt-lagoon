@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button";
 import { useWx } from "@/hooks/weather";
 import { bearingDegrees, formatHeading, formatLat, formatLng, formatMeters, haversineMeters } from "@/lib/geo";
 import { seabedAt, waterDepthM } from "@/lib/depth";
+import { hazardName, hazardsNear, loadHazards, type Hazard } from "@/lib/hazards";
 import { formatDepth } from "@/lib/units";
 import { formatKn, windCardinal } from "@/lib/weather";
 import { useHelm, useUnitsKey, type LocalDraft } from "@/store/helm";
@@ -20,13 +21,19 @@ export function PinCard() {
   const panel = useHelm((s) => s.panel);
   const wx = useWx();
   const [seabed, setSeabed] = useState<number | null | undefined>(undefined);
+  const [hazard, setHazard] = useState<{ hazard: Hazard; distM: number } | null>(null);
 
   useEffect(() => {
     if (!pin || !card) return;
     let live = true;
     setSeabed(undefined);
+    setHazard(null);
     void seabedAt(pin.lat, pin.lng).then((h) => {
       if (live) setSeabed(h);
+    });
+    // Nearest mapped reef, rock or cay within 500 m.
+    void loadHazards().then((idx) => {
+      if (live && idx) setHazard(hazardsNear(idx, pin.lat, pin.lng, 500)[0] ?? null);
     });
     return () => {
       live = false;
@@ -72,6 +79,11 @@ export function PinCard() {
           {now ? `${formatKn(now.windKn)} kn ${windCardinal(now.dirDeg)}` : "—"}
         </p>
       </div>
+      {hazard ? (
+        <p className={`mt-1 text-t14 font-semibold ${hazard.distM < 100 ? "text-destructive" : "text-amber-300"}`}>
+          {hazard.distM === 0 ? `On ${hazardName(hazard.hazard)}` : `${hazardName(hazard.hazard)} ${formatMeters(hazard.distM)} away`}
+        </p>
+      ) : null}
       <p className="text-t12 text-muted-foreground">Depth is approximate (model, at today's tide): check the sounder.</p>
       <div className="mt-2 grid grid-cols-2 gap-1.5">
         <Button

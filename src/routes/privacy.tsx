@@ -21,7 +21,7 @@ export function Privacy() {
             Wind, waves, currents and tides are requested from Open-Meteo and the Bureau of
             Meteorology for the place you are looking at or planning a passage to. Maps come from the
             providers named in the chart menu (satellite photos), OpenFreeMap (the Chart map), AWS
-            Terrain Tiles (seabed depth) and, if you turn it on, RainViewer (rain radar). These requests
+            Terrain Tiles and this app&apos;s own website (seabed depth) and, if you turn it on, RainViewer (rain radar). These requests
             carry the area being shown, not who you are, and are not used to build a profile.
           </p>
           <p>
