@@ -279,9 +279,9 @@ export function parseBomPrint(html: string): TideTurn[] {
 }
 
 export async function fetchTideRise(lat: number, lng: number): Promise<TideRise> {
-  const { fetchBomStationTide } = await import("./tide-station.ts");
+  const { fetchBestTide } = await import("./tide-station.ts");
   try {
-    const station = await fetchBomStationTide(lat, lng);
+    const station = await fetchBestTide(lat, lng);
     if (station) {
       const now = Date.now();
       const r = tideRiseAt(station.turns, station.hours, now);
@@ -300,7 +300,7 @@ export async function fetchTideRise(lat: number, lng: number): Promise<TideRise>
       }
     }
   } catch {
-    /* fall through to the marine model */
+    /* fall through to the online marine model */
   }
   const url = openMeteoUrl("https://marine-api.open-meteo.com/v1/marine");
   url.searchParams.set("latitude", lat.toFixed(4));

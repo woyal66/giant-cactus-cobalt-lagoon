@@ -1,5 +1,6 @@
 # Publishes the website to GitHub Pages: the privacy policy and terms (site/, for the Google Play
-# listing) and the GBR 30 m depth tiles the app reads (depth/{z}/{x}/{y}.png).
+# listing), the GBR 30 m depth tiles the app reads (depth/{z}/{x}/{y}.png) and the EOT20 global
+# tide files (tides/eot20/{i}_{j}.png, 46 MB, from DGFI-TUM's EOT20, CC BY 4.0).
 # One-time setup: Settings → Pages → Source: "GitHub Actions". Then run this workflow (or push a
 # change to site/ or the tile script). The address is shown in the run, e.g.
 # https://<user>.github.io/<repo>/privacy.html
@@ -12,7 +13,8 @@ name: Publish website and depth tiles
 on:
   workflow_dispatch:
   push:
-    paths: ["site/**", "scripts/build-depth-tiles.py", ".github/workflows/legal-pages.yml"]
+    branches: [main]
+    paths: ["site/**", "scripts/build-depth-tiles.py", "scripts/build-tide-chunks.py", ".github/workflows/legal-pages.yml"]
 
 permissions:
   contents: read
@@ -49,11 +51,29 @@ jobs:
           python3 scripts/build-depth-tiles.py gbr30 out/depth
           rm -rf gbr30
 
+      - name: Tide files from cache
+        id: tides
+        uses: actions/cache@v4
+        with:
+          path: out/tides
+          key: tide-chunks-${{ hashFiles('scripts/build-tide-chunks.py') }}
+
+      - name: Build tide files
+        if: steps.tides.outputs.cache-hit != 'true'
+        run: |
+          pip install netCDF4 numpy pillow
+          curl -sSL -o eot20.zip "https://www.seanoe.org/data/00683/79489/data/85762.zip"
+          unzip -q eot20.zip ocean_tides.zip && rm eot20.zip
+          unzip -q ocean_tides.zip -d eot20 && rm ocean_tides.zip
+          python3 scripts/build-tide-chunks.py eot20/ocean_tides out/tides/eot20
+          rm -rf eot20
+
       - name: Assemble site
         run: |
           mkdir -p public_site
           cp -r site/. public_site/
           cp -r out/depth public_site/depth
+          cp -r out/tides public_site/tides
           du -sh public_site
 
       - uses: actions/configure-pages@v5
