@@ -18,6 +18,7 @@ export const BACKUP_SETTING_KEYS = [
   "seamarks",
   "depths",
   "reefOutlines",
+  "officialCharts",
   "parkZones",
   "look",
   "autoNight",

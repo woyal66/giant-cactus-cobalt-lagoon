@@ -2,12 +2,14 @@
  * Seabed depth from elevation tiles in "terrarium" PNG format (height = R·256 + G + B/256 − 32768 m,
  * relative to mean sea level; negative under water).
  *
- * Two sources, merged tile by tile:
+ * Sources merged tile by tile (DEPTH_SOURCES, then the base):
  *  - Fine: VITE_DEPTH_TILES, terrarium tiles built by scripts/build-depth-tiles.py from the
  *    Geoscience Australia "Great Barrier Reef bathymetry 2020 30 m" grids (CC BY 4.0, MSL).
  *    Covers 142–156° E, 10–29° S to zoom 12 (about 35 m a pixel). Deep-ocean and inland tiles are
  *    left out (404) and pixels with no data are 0,0,0.
- *  - Base: AWS Terrain Tiles (ETOPO1 offshore, about 1.8 km): everywhere else, and to fill gaps.
+ *  - Global: VITE_DEPTH_GLOBAL_TILES, GEBCO_2026 (public domain, about 450 m) to zoom 8 where
+ *    there is water shallower than 200 m (scripts/build-gebco-tiles.py), enlarged beyond that.
+ *  - Base: AWS Terrain Tiles (ETOPO1 offshore, about 1.8 km): deep ocean, inland, and gaps.
  *
  * Approximate. Never a substitute for the sounder, the chart or your eyes.
  */
@@ -19,13 +21,28 @@ export const FINE_DEPTH_TILES = ENV.VITE_DEPTH_TILES || "";
 export const FINE_MAX_Z = Number(ENV.VITE_DEPTH_FINE_MAX_Z) || 12;
 /** [west, south, east, north] of the fine model. */
 export const FINE_BOUNDS: [number, number, number, number] = [142, -29, 156, -10];
+/** Worldwide shelf tiles from GEBCO (about 450 m), or "" when this build has none. */
+export const GLOBAL_DEPTH_TILES = ENV.VITE_DEPTH_GLOBAL_TILES || "";
+export const GLOBAL_MAX_Z = Number(ENV.VITE_DEPTH_GLOBAL_MAX_Z) || 8;
 /** Deepest zoom fetched; beyond it tiles are enlarged (the models are no finer). */
-export const DEPTH_MAX_Z = Number(ENV.VITE_DEPTH_MAX_Z) || (FINE_DEPTH_TILES ? FINE_MAX_Z : 14);
+export const DEPTH_MAX_Z = Number(ENV.VITE_DEPTH_MAX_Z) || (FINE_DEPTH_TILES || GLOBAL_DEPTH_TILES ? 12 : 14);
 /** For MapLibre (3D view): served from loadDemTile through the depthdem:// protocol. */
 export const DEPTH_TILES = "depthdem://{z}/{x}/{y}";
-export const ATTR_DEPTH = FINE_DEPTH_TILES
-  ? "Depth: GBR 30 m bathymetry 2020 (Beaman, Geoscience Australia, CC BY 4.0); elsewhere AWS Terrain Tiles"
-  : "Seabed: AWS Terrain Tiles (GEBCO, ETOPO, GMRT and others)";
+export const ATTR_DEPTH = [
+  FINE_DEPTH_TILES ? "Depth: GBR 30 m bathymetry 2020 (Beaman, Geoscience Australia, CC BY 4.0)" : null,
+  GLOBAL_DEPTH_TILES ? "GEBCO_2026 Grid (GEBCO Compilation Group)" : null,
+  FINE_DEPTH_TILES || GLOBAL_DEPTH_TILES ? "elsewhere AWS Terrain Tiles" : "Seabed: AWS Terrain Tiles (GEBCO, ETOPO, GMRT and others)",
+]
+  .filter(Boolean)
+  .join("; ");
+
+/** A depth tile source, most detailed first; each fills the gaps of the one before. */
+export type DepthSource = { template: string; maxZ: number; bounds?: [number, number, number, number] };
+
+export const DEPTH_SOURCES: DepthSource[] = [
+  ...(FINE_DEPTH_TILES ? [{ template: FINE_DEPTH_TILES, maxZ: FINE_MAX_Z, bounds: FINE_BOUNDS }] : []),
+  ...(GLOBAL_DEPTH_TILES ? [{ template: GLOBAL_DEPTH_TILES, maxZ: GLOBAL_MAX_Z }] : []),
+];
 
 export function terrariumHeight(r: number, g: number, b: number): number {
   return r * 256 + g + b / 256 - 32768;
@@ -52,11 +69,13 @@ export function inFineArea(z: number, x: number, y: number, bounds = FINE_BOUNDS
 }
 
 /** Fill no-data heights in `fine` from `base` (same size). Returns how many were filled. */
-export function mergeHeights(fine: Float32Array, base: Float32Array | null): number {
+export function mergeHeights(fine: Float32Array, base: Float32Array | null, keepGaps = false): number {
   let n = 0;
   for (let i = 0; i < fine.length; i++) {
     if (fine[i]! <= NO_DATA_M) {
-      fine[i] = base ? base[i]! : 0;
+      if (base) fine[i] = base[i]!;
+      else if (!keepGaps) fine[i] = 0;
+      else continue;
       n += 1;
     }
   }
@@ -146,38 +165,97 @@ async function get(url: string): Promise<Blob | null> {
 }
 
 /**
- * One depth tile as a terrarium PNG: the fine model where it has data, the base source elsewhere.
- * Saved in the offline tile store (key depth/z/x/y) once fetched, so offline packs and the 3D view
- * read the same merged tile.
+ * Enlarge part of a parent tile: the sub-square for tile (x, y) at `scale` times the zoom,
+ * bilinear, as a full-size tile.
+ */
+export function cropParent(h: Float32Array, size: number, scale: number, qx: number, qy: number): Float32Array {
+  const out = new Float32Array(size * size);
+  const span = size / scale;
+  for (let j = 0; j < size; j++) {
+    const sy = qy * span + ((j + 0.5) / size) * span - 0.5;
+    const y0 = Math.max(0, Math.min(size - 1, Math.floor(sy)));
+    const y1 = Math.min(size - 1, y0 + 1);
+    const fy = Math.max(0, Math.min(1, sy - y0));
+    for (let i = 0; i < size; i++) {
+      const sx = qx * span + ((i + 0.5) / size) * span - 0.5;
+      const x0 = Math.max(0, Math.min(size - 1, Math.floor(sx)));
+      const x1 = Math.min(size - 1, x0 + 1);
+      const fx = Math.max(0, Math.min(1, sx - x0));
+      const a = h[y0 * size + x0]!;
+      const b = h[y0 * size + x1]!;
+      const c = h[y1 * size + x0]!;
+      const d = h[y1 * size + x1]!;
+      // Don't blend real heights with "no data".
+      out[j * size + i] =
+        a <= NO_DATA_M || b <= NO_DATA_M || c <= NO_DATA_M || d <= NO_DATA_M
+          ? [a, b, c, d][(fy < 0.5 ? 0 : 2) + (fx < 0.5 ? 0 : 1)]!
+          : a * (1 - fx) * (1 - fy) + b * fx * (1 - fy) + c * (1 - fx) * fy + d * fx * fy;
+    }
+  }
+  return out;
+}
+
+const parents = new Map<string, Promise<{ size: number; h: Float32Array } | null>>();
+
+/** One source's heights for a tile (enlarged from its deepest zoom when needed), or null. */
+async function sourceHeights(src: DepthSource, z: number, x: number, y: number): Promise<{ size: number; h: Float32Array; blob?: Blob } | null> {
+  if (src.bounds && !inFineArea(z, x, y, src.bounds)) return null;
+  if (z <= src.maxZ) {
+    const blob = await get(fill(src.template, z, x, y));
+    return blob ? { ...(await decode(blob)), blob } : null;
+  }
+  const scale = 2 ** (z - src.maxZ);
+  const px = Math.floor(x / scale);
+  const py = Math.floor(y / scale);
+  const key = `${src.template}|${px}/${py}`;
+  let p = parents.get(key);
+  if (!p) {
+    p = get(fill(src.template, src.maxZ, px, py)).then((b) => (b ? decode(b) : null));
+    parents.set(key, p);
+    if (parents.size > 40) parents.delete(parents.keys().next().value!);
+  }
+  const parent = await p;
+  if (!parent) return null;
+  return { size: parent.size, h: cropParent(parent.h, parent.size, scale, x - px * scale, y - py * scale) };
+}
+
+/**
+ * One depth tile as a terrarium PNG: each source in DEPTH_SOURCES fills what the ones before
+ * left as no data, then the base source fills the rest. Saved in the offline tile store (key
+ * depth/z/x/y) once fetched, so offline packs and the 3D view read the same merged tile.
  */
 async function loadDepthTile(z: number, x: number, y: number): Promise<{ blob: Blob; size: number; h: Float32Array } | null> {
   const cacheKey = `depth/${z}/${x}/${y}`;
   const tiles = typeof indexedDB !== "undefined" ? await import("./offline-tiles.ts") : null;
   const saved = tiles ? await tiles.readTile(cacheKey) : null;
   if (saved) return { blob: saved, ...(await decode(saved)) };
-  let blob: Blob | null = null;
-  let out: { size: number; h: Float32Array } | null = null;
-  if (FINE_DEPTH_TILES && z <= FINE_MAX_Z && inFineArea(z, x, y)) {
-    const fine = await get(fill(FINE_DEPTH_TILES, z, x, y));
-    if (fine) {
-      out = await decode(fine);
-      blob = fine;
-      if (out.h.some((v) => v <= NO_DATA_M)) {
-        const base = await get(depthTileUrl(z, x, y));
-        const b = base ? await decode(base) : null;
-        mergeHeights(out.h, b && b.size === out.size ? b.h : null);
-        blob = await encode(out.size, out.h);
-      }
+  let out: { size: number; h: Float32Array; blob?: Blob } | null = null;
+  let merged = false;
+  for (const src of DEPTH_SOURCES) {
+    if (out && !out.h.some((v) => v <= NO_DATA_M)) break;
+    const t = await sourceHeights(src, z, x, y).catch(() => null);
+    if (!t) continue;
+    if (!out) out = t;
+    else if (t.size === out.size) {
+      mergeHeights(out.h, t.h, true);
+      merged = true;
     }
   }
-  if (!out) {
-    blob = await get(depthTileUrl(z, x, y));
-    if (!blob) return null;
-    out = await decode(blob);
+  if (!out || out.h.some((v) => v <= NO_DATA_M)) {
+    const base = await get(depthTileUrl(z, x, y));
+    const b = base ? await decode(base) : null;
+    if (!out) {
+      if (!base || !b) return null;
+      out = { ...b, blob: base };
+    } else {
+      mergeHeights(out.h, b && b.size === out.size ? b.h : null);
+      merged = true;
+    }
   }
+  const blob = !merged && out.blob ? out.blob : await encode(out.size, out.h);
   if (!blob) return null;
   if (tiles) void tiles.putTile(cacheKey, blob).catch(() => undefined);
-  return { blob, ...out };
+  return { blob, size: out.size, h: out.h };
 }
 
 const cache = new Map<string, Promise<{ blob: Blob; size: number; h: Float32Array } | null>>();

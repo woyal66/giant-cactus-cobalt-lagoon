@@ -10,6 +10,14 @@ Coral Sea and the coast south to about the NSW border.
   unzip "Great Barrier Reef Bathymetry 2020 30m.zip" -d gbr30
   python3 scripts/build-depth-tiles.py gbr30 out/depth
 
+The same script builds the worldwide shelf tiles from GEBCO_2026 (public domain, 15 arc-second,
+about 450 m), zoom 3–8:
+
+  curl -L -o gebco.zip "https://dap.ceda.ac.uk/bodc/gebco/global/gebco_2026/ice_surface_elevation/geotiff/gebco_2026_geotiff.zip"
+  unzip gebco.zip -d gebco
+  python3 scripts/build-depth-tiles.py gebco out/depth-world --zmin 3 --zmax 8 --land-cap 5 \
+      --source "GEBCO_2026 Grid (GEBCO Compilation Group 2026), public domain"
+
 Writes out/depth/{z}/{x}/{y}.png for zoom 7–12 (z12 ≈ 35 m a pixel, close to the 30 m grid)
 plus out/depth/meta.json. Only tiles with water shallower than DEEP_M are written: deep
 ocean and inland tiles are left out and the app falls back to its global depth source
@@ -19,10 +27,10 @@ treats as "no data" and fills from the fallback.
 Terrarium: height = R*256 + G + B/256 - 32768. Heights are rounded to 0.1 m to keep the
 PNGs small.
 """
+import argparse
 import json
 import math
 import os
-import sys
 from concurrent.futures import ProcessPoolExecutor
 
 import numpy as np
@@ -40,6 +48,7 @@ NODATA = -9999.0
 
 SRC_DIR = None
 SOURCES = []
+ZMAX_RUN = Z_MAX
 
 
 def tile_bounds_3857(z, x, y):
@@ -58,8 +67,10 @@ def lnglat_to_tile(lng, lat, z):
     return x, y
 
 
-def init(src_dir):
-    global SRC_DIR, SOURCES
+def init(src_dir, zmax=Z_MAX, land_cap=None):
+    global SRC_DIR, SOURCES, ZMAX_RUN, LAND_CAP
+    ZMAX_RUN = zmax
+    LAND_CAP = land_cap
     SRC_DIR = src_dir
     SOURCES = []
     for name in sorted(os.listdir(src_dir)):
@@ -89,7 +100,7 @@ def render(z, x, y):
             dst_crs="EPSG:3857",
             src_nodata=NODATA,
             dst_nodata=NODATA,
-            resampling=Resampling.bilinear if z >= 12 else Resampling.average,
+            resampling=Resampling.bilinear if z >= ZMAX_RUN else Resampling.average,
         )
         fill = np.isnan(out) & (buf != NODATA)
         out[fill] = buf[fill]
@@ -116,11 +127,16 @@ def keep(h):
     return water.size > 0 and water.max() > -DEEP_M
 
 
+LAND_CAP = None
+
+
 def job(args):
     z, x, y, out_dir = args
     h = render(z, x, y)
     if not keep(h):
         return 0
+    if LAND_CAP is not None:
+        h = np.where(h > LAND_CAP, LAND_CAP, h)
     path = os.path.join(out_dir, str(z), str(x))
     os.makedirs(path, exist_ok=True)
     f = os.path.join(path, f"{y}.png")
@@ -129,32 +145,37 @@ def job(args):
 
 
 def main():
-    if len(sys.argv) < 3:
-        print(__doc__)
-        sys.exit(1)
-    src_dir, out_dir = sys.argv[1], sys.argv[2]
-    init(src_dir)
-    west = min(d.bounds.left for d in SOURCES)
-    east = max(d.bounds.right for d in SOURCES)
-    south = min(d.bounds.bottom for d in SOURCES)
-    north = max(d.bounds.top for d in SOURCES)
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("src_dir")
+    ap.add_argument("out_dir")
+    ap.add_argument("--zmin", type=int, default=Z_MIN)
+    ap.add_argument("--zmax", type=int, default=Z_MAX)
+    ap.add_argument("--land-cap", type=float, default=None, help="cap land heights (m) to keep tiles small")
+    ap.add_argument("--source", default="Great Barrier Reef bathymetry 2020 30 m (Beaman, Geoscience Australia), CC BY 4.0")
+    args = ap.parse_args()
+    src_dir, out_dir = args.src_dir, args.out_dir
+    init(src_dir, args.zmax, args.land_cap)
+    west = max(-180.0, min(d.bounds.left for d in SOURCES))
+    east = min(180.0, max(d.bounds.right for d in SOURCES))
+    south = max(-85.0, min(d.bounds.bottom for d in SOURCES))
+    north = min(85.0, max(d.bounds.top for d in SOURCES))
     total = 0
     count = 0
-    with ProcessPoolExecutor(initializer=init, initargs=(src_dir,)) as pool:
-        for z in range(Z_MIN, Z_MAX + 1):
+    with ProcessPoolExecutor(initializer=init, initargs=(src_dir, args.zmax, args.land_cap)) as pool:
+        for z in range(args.zmin, args.zmax + 1):
             x0, y0 = lnglat_to_tile(west, north, z)
             x1, y1 = lnglat_to_tile(east - 1e-9, south + 1e-9, z)
             jobs = [(z, x, y, out_dir) for x in range(x0, x1 + 1) for y in range(y0, y1 + 1)]
-            sizes = list(pool.map(job, jobs, chunksize=8))
+            sizes = list(pool.map(job, jobs, chunksize=16))
             n = sum(1 for s in sizes if s)
             total += sum(sizes)
             count += n
             print(f"z{z}: {n} of {len(jobs)} tiles, {sum(sizes) / 1e6:.1f} MB", flush=True)
     meta = {
-        "source": "Great Barrier Reef bathymetry 2020 30 m (Beaman, Geoscience Australia), CC BY 4.0",
+        "source": args.source,
         "datum": "MSL",
-        "minzoom": Z_MIN,
-        "maxzoom": Z_MAX,
+        "minzoom": args.zmin,
+        "maxzoom": args.zmax,
         "bounds": [west, south, east, north],
         "tiles": count,
     }

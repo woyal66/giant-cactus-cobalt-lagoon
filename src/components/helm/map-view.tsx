@@ -52,6 +52,7 @@ import { createRadar } from "@/components/helm/radar-layer";
 import { radarAvailable } from "@/lib/radar";
 import { createDepthLayer, type DepthLook } from "@/components/helm/depth-layer";
 import { createHazardLayer } from "@/components/helm/hazard-layer";
+import { OFFICIAL_CHARTS } from "@/lib/official-charts";
 import { createWxLayer } from "@/components/helm/wx-layer";
 import { createChartLayer } from "@/components/helm/chart-layer";
 import { loadViewField } from "@/lib/wx-map-data";
@@ -642,6 +643,27 @@ export function MapView() {
 
         // Reefs, drying reef, rocks and cays from the bundled GBRMPA file (works offline).
         const reefs = createHazardLayer(L, MAX_ZOOM);
+        // Free official charts (NOAA in the USA): one WMS layer per covered area, so nothing
+        // is requested outside it. Under the reef outlines and seamarks.
+        const official = L.layerGroup(
+          OFFICIAL_CHARTS.flatMap((c) =>
+            c.boxes.map(([w, s, e, n]) =>
+              L.tileLayer.wms(c.url, {
+                layers: c.layers,
+                format: "image/png",
+                transparent: true,
+                version: c.version,
+                maxZoom: MAX_ZOOM,
+                minZoom: c.minZoom,
+                bounds: L.latLngBounds([s, w], [n, e]),
+                pane: "chartOverlay",
+                attribution: c.attribution,
+                zIndex: 0,
+              }),
+            ),
+          ),
+        );
+        let officialOn = false;
         let reefsOn = false;
         // Under the reef outlines and seamarks, translucent so the satellite still reads.
         const zones: TileLayer = L.tileLayer.wms(REEF_WMS_URL, {
@@ -1414,6 +1436,11 @@ export function MapView() {
           if (benthic) {
             if (s.benthic && !map.hasLayer(benthic)) benthic.addTo(map);
             else if (!s.benthic && map.hasLayer(benthic)) map.removeLayer(benthic);
+          }
+          if (s.officialCharts !== officialOn) {
+            officialOn = s.officialCharts;
+            if (officialOn) official.addTo(map);
+            else map.removeLayer(official);
           }
           if (s.reefOutlines || s.baseMap === "chart") {
             if (!reefsOn) {
