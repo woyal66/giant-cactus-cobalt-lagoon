@@ -13,6 +13,7 @@ name: Publish website and depth tiles
 on:
   workflow_dispatch:
   push:
+    branches: [main]
     paths: ["site/**", "scripts/build-depth-tiles.py", "scripts/build-tide-chunks.py", ".github/workflows/legal-pages.yml"]
 
 permissions:
