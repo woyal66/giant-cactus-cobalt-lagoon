@@ -51,7 +51,7 @@ subscriptions (App Store Connect → Business; Play Console → Payments profile
 
 ## 2. App ID
 
-The app ID is `com.anchormate.app` (in `capacitor.config.ts`, the Android
+The app ID is `au.com.anchormate` (in `capacitor.config.ts`, the Android
 `build.gradle` and the Xcode project). It must be unique in each store and
 **can't be changed after the first upload**. If you'd rather use your own domain
 (e.g. `au.com.yourbusiness.anchormate`), ask Claude to change it *before*
@@ -62,7 +62,7 @@ creating the store listings.
 Use the **same names everywhere** so RevenueCat can match them.
 
 ### App Store Connect
-1. **Apps → + → New App**: name "Anchor Mate", bundle ID `com.anchormate.app`.
+1. **Apps → + → New App**: name "Anchor Mate", bundle ID `au.com.anchormate`.
 2. **Monetization → Subscriptions → Create subscription group** named `Anchor Mate Pro`.
 3. Add a subscription: reference name `Pro Annual`, product ID
    **`anchormate_pro_annual`**, duration **1 year**, set the price.
@@ -88,8 +88,8 @@ If the Subscriptions page is locked, upload a build to Internal testing first, t
 ## 4. Set up RevenueCat
 
 1. Create a project called **Anchor Mate**.
-2. Add an **App Store app** (bundle ID `com.anchormate.app`, upload the `.p8` key)
-   and a **Play Store app** (package `com.anchormate.app`, upload the service-account JSON).
+2. Add an **App Store app** (bundle ID `au.com.anchormate`, upload the `.p8` key)
+   and a **Play Store app** (package `au.com.anchormate`, upload the service-account JSON).
 3. **Product catalog → Entitlements**: create an entitlement with identifier **`pro`**.
 4. **Products**: import `anchormate_pro_annual` (Apple) and
    `anchormate_pro:annual` (Google), and attach both to the `pro` entitlement.
@@ -200,7 +200,7 @@ To turn on Critical Alerts:
 
 1. Request the entitlement from Apple. On developer.apple.com, find the
    **Critical Alerts entitlement request** form (search "Critical Alerts" in the
-   developer account's Contact pages). Choose app ID `com.anchormate.app` and explain:
+   developer account's Contact pages). Choose app ID `au.com.anchormate` and explain:
    > Anchor Mate is an anchor drag alarm for boats. It wakes the crew at night if
    > the anchor drags or GPS is lost, when the boat may be about to go aground.
    > The alarm must sound even if the phone is on silent or in Do Not Disturb.

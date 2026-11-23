@@ -1,4 +1,4 @@
-package com.anchormate.app;
+package au.com.anchormate;
 
 import com.getcapacitor.BridgeActivity;
 
