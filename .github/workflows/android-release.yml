@@ -56,7 +56,8 @@ jobs:
           # EOT20 global tide files, published by the same workflow.
           VITE_TIDE_MODEL: ${{ vars.VITE_TIDE_MODEL || format('https://{0}.github.io/{1}/tides/eot20/', github.repository_owner, github.event.repository.name) }}
         run: |
-          npx vite build --config vite.mobile.config.ts
+          # build:mobile also copies mobile.html to index.html, which Capacitor needs.
+          npm run build:mobile
           npx cap sync android
 
       - name: Signing key
