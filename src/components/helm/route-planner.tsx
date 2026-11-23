@@ -191,8 +191,9 @@ function PlannerSheet() {
   return (
     <Sheet id="route" title="Plan a passage" kicker={`${formatMeters(distM)} · ${formatHeading(bearingDegrees(start, finish))} direct`}>
       <p className="mb-2 text-t13 leading-snug text-amber-300">
-        Planning aid only. Routes avoid land on a simplified coastline but do not know about reefs,
-        shoals or bommies. Check every leg against a chart and keep a lookout.
+        Planning aid only. Routes avoid the coastline, mapped GBR reefs and water the depth model shows as
+        too shallow, but the data is approximate (hundreds of metres in places) and has no bommies. Check
+        every leg against a chart and keep a lookout.
       </p>
 
       {view === "settings" ? (
