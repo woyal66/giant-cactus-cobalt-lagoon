@@ -269,7 +269,7 @@ Two depth sources, merged tile by tile (`src/lib/depth.ts`):
 - **GBR 30 m** (Geoscience Australia, "Great Barrier Reef bathymetry 2020 30 m", Beaman, CC BY 4.0,
   heights to mean sea level) for 142–156° E, 10–29° S: Torres Strait, the whole reef, the Coral
   Sea and the coast south to about the NSW border. `scripts/build-depth-tiles.py` turns the four
-  GeoTIFFs into terrarium tiles (zoom 7–12, about 6,100 tiles and 305 MB, only where there is
+  GeoTIFFs into terrarium tiles (zoom 7–12, about 6,100 tiles and about 190 MB, only where there is
   water shallower than 200 m). The "Publish website and depth tiles" workflow
   (`.github/workflows/legal-pages.yml`) downloads the data, builds the tiles (about half an hour
   the first time, then cached) and publishes them on GitHub Pages next to the privacy page.

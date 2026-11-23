@@ -517,23 +517,116 @@ export function route(input: RouteInput): RouteResult {
         : "No route inside the safety margins in this forecast.",
     );
   }
-  const points = toPoints(trace(best));
+  const nodes = straighten(trace(best), { field, boat, mode, limits, rules, obstacle, end });
+  const points = toPoints(nodes);
   const metrics = metricsOf(points, isDay);
   return {
     ok: true,
     mode,
     model: field.model,
     departAt,
-    arriveAt: best.at,
+    arriveAt: nodes[nodes.length - 1]!.at,
     points,
     metrics,
     warnings: warningsFor(metrics, limits, rules),
   };
 }
 
+type StraightenCtx = {
+  field: WeatherField;
+  boat: BoatPerf;
+  mode: RouteMode;
+  limits: Limits;
+  rules: RouteRules;
+  obstacle?: Obstacle;
+  end: number;
+};
+
+/**
+ * Sail straight from `a` (at its time) to `b`, re-aiming every sub-step, in the same forecast and
+ * rules as the router. Null if any step is outside the limits, too slow, or the leg is blocked.
+ */
+function sailStraight(ctx: StraightenCtx, a: Node, b: LatLng): Node[] | null {
+  if (ctx.obstacle?.(a, b)) return null;
+  const out: Node[] = [];
+  let cur: Node = a;
+  const total = haversineMeters(a, b);
+  const subH = Math.min(1, Math.max(0.15, total / NM / 6 / 8));
+  for (let k = 0; k < 400; k++) {
+    const remain = haversineMeters(cur, b);
+    if (remain < 5) return out;
+    if (cur.at > ctx.end) return null;
+    const c = conditionsAt(ctx.field, cur.lat, cur.lng, cur.at);
+    const brg = bearingDegrees(cur, b);
+    const st = stepOn(ctx.boat, c, brg, ctx.mode, ctx.limits, ctx.rules);
+    if (!Number.isFinite(st.penalty) || st.sogKn < 0.5) return null;
+    // Ground speed toward the target (current can set the boat off the line a little).
+    const made = st.sogKn * Math.cos(((st.cogDeg - brg) * Math.PI) / 180);
+    if (made < 0.3) return null;
+    const hours = Math.min(subH, remain / NM / made);
+    const last = hours < subH || remain / NM / made <= subH;
+    const p = last ? { lat: b.lat, lng: b.lng } : destPoint(cur, brg, made * hours * NM);
+    if (ctx.obstacle?.(cur, p)) return null;
+    const side = sideOf(c.windDir, brg, st.motoring);
+    const turn = manoeuvre(cur.side, side);
+    const node: Node = {
+      ...p,
+      at: cur.at + (hours + turn) * H,
+      cost: cur.cost + hours * st.penalty + turn,
+      fromStart: 0,
+      parent: cur,
+      leg: legOf(c, st),
+      side,
+    };
+    out.push(node);
+    cur = node;
+    if (last) return out;
+  }
+  return null;
+}
+
+/**
+ * Take out zigzags: from each point, the furthest later point that can be reached on one straight,
+ * clear leg for no more cost (time, or the plan's comfort/safety cost) replaces the steps between.
+ * The isochrone method snaps to its step grid, which leaves small doglegs along coasts.
+ */
+function straighten(nodes: Node[], ctx: StraightenCtx): Node[] {
+  if (nodes.length < 3) return nodes;
+  const out: Node[] = [nodes[0]!];
+  let i = 0;
+  let head: Node = nodes[0]!;
+  while (i < nodes.length - 1) {
+    let taken = false;
+    for (let j = Math.min(nodes.length - 1, i + 16); j > i + 1; j--) {
+      const target = nodes[j]!;
+      const leg = sailStraight(ctx, head, target);
+      if (!leg?.length) continue;
+      const end = leg[leg.length - 1]!;
+      // Same or better than the original plan, allowing for any time already gained or lost.
+      const drift = head.cost - nodes[i]!.cost;
+      if (end.cost <= target.cost + drift + 0.01) {
+        out.push(...leg);
+        head = end;
+        i = j;
+        taken = true;
+        break;
+      }
+    }
+    if (!taken) {
+      const nx = nodes[i + 1]!;
+      const shift = head.at - nodes[i]!.at;
+      const costShift = head.cost - nodes[i]!.cost;
+      head = { ...nx, at: nx.at + shift, cost: nx.cost + costShift, parent: head };
+      out.push(head);
+      i += 1;
+    }
+  }
+  return out;
+}
+
 /** Headings to try for the final hop: straight at it, and both close-hauled tacks. */
 function finishHeadings(boat: BoatPerf, c: Conditions, toFinish: number): number[] {
-  const ng = noGoDeg(boat.type) + 2;
+  const ng = noGoDeg(boat) + 2;
   return [toFinish, (c.windDir + ng) % 360, (c.windDir - ng + 360) % 360];
 }
 

@@ -35,6 +35,8 @@ import {
 
 export function BottomDock() {
   const panel = useHelm((s) => s.panel);
+  // The weather map's own bar takes the bottom of the screen while it is open.
+  const wxOn = useHelm((s) => s.wxMapLayer !== "off");
   const drawMode = useHelm((s) => s.drawMode);
   const draft = useHelm((s) => s.draft);
   const crumb = useHelm((s) => s.crumb);
@@ -128,6 +130,7 @@ export function BottomDock() {
     );
   }
 
+  if (wxOn) return null;
   return (
     <nav className="pointer-events-none absolute inset-x-0 bottom-0 z-20 p-2 pb-[max(0.5rem,var(--safe-area-inset-bottom,env(safe-area-inset-bottom)))]">
       <div className="pointer-events-auto mx-auto grid max-w-lg grid-cols-6 gap-0.5 rounded-xl border border-border bg-card p-1 shadow-[var(--shadow-border)]">

@@ -1,12 +1,12 @@
 import { Button } from "@/components/ui/button";
 import { formatDepth } from "@/lib/units";
-import { BOAT_TYPES } from "@/lib/routing/polar";
+import { BOAT_TYPES, defaultTune, type PolarTune } from "@/lib/routing/polar";
 import { BoatTypePicker } from "@/components/helm/boat-type";
 import { ROUTE_MODELS } from "@/lib/routing/fetch-field";
 import { TREAT_LABEL, type Treat } from "@/lib/routing/storm";
 import type { RouteRules } from "@/lib/routing/router";
 import type { SailDef } from "@/lib/routing/sails";
-import { ROUTE_PRESETS, useHelm, type RoutePreset } from "@/store/helm";
+import { ROUTE_PRESETS, boatPerfOf, useHelm, type RoutePreset } from "@/store/helm";
 import { EMPTY_LEARNED, MIN_SAMPLES, polarInsight } from "@/lib/routing/learned";
 
 const label = "mb-1 text-t12 text-muted-foreground";
@@ -209,6 +209,8 @@ export function RouteSettings({ onDone }: { onDone: () => void }) {
       </div>
       )}
 
+      {motorBoat ? null : <PolarTuneSettings />}
+
       {motorBoat ? null : <LearnedPolarSettings />}
 
       <div>
@@ -249,7 +251,7 @@ export function MotorSettings() {
   const fuel = (
     <div className="grid grid-cols-[1fr_8rem] items-center gap-2">
       <span className="text-sm">Fuel at cruise (0 = hide)</span>
-      <Stepper label="L/h" value={prefs.fuelLph} step={1} onChange={(v) => setPrefs({ fuelLph: Math.max(0, v) })} />
+      <Stepper label="L/h" value={prefs.fuelLph} step={0.1} show={(v) => v.toFixed(1)} onChange={(v) => setPrefs({ fuelLph: Math.max(0, Math.round(v * 10) / 10) })} />
     </div>
   );
   if (prefs.boatType === "motor") {
@@ -310,6 +312,58 @@ export function MotorSettings() {
         ) : null}
       </div>
       {fuel}
+    </div>
+  );
+}
+
+/** The skipper's own speeds in 15 kn of true wind and how close the boat points. */
+function PolarTuneSettings() {
+  const p = useHelm((s) => s.routePrefs);
+  const set = useHelm((s) => s.setRoutePrefs);
+  const loa = useHelm((s) => s.hull.loaM);
+  const t = p.tune;
+  const base = defaultTune(boatPerfOf({ ...p, tune: null, useLearned: false }, loa));
+  const edit = (k: keyof PolarTune) => (v: number) =>
+    set({ tune: { ...(t ?? base), [k]: k === "pointingDeg" ? Math.round(Math.max(20, Math.min(60, v))) : Math.max(0.5, Math.round(v * 10) / 10) } });
+  const kn = (v: number) => v.toFixed(1);
+  return (
+    <div>
+      <p className={label}>Your boat&apos;s speeds (in 15 kn of true wind)</p>
+      <div className="rounded-md border border-border bg-background px-3 py-2">
+        <button
+          type="button"
+          role="switch"
+          aria-checked={Boolean(t)}
+          className="flex min-h-11 w-full items-center justify-between gap-2 text-left text-sm"
+          onClick={() => set({ tune: t ? null : base })}
+        >
+          <span>Use my numbers instead of the built-in polar</span>
+          <span className={`text-t13 font-semibold ${t ? "text-primary" : "text-muted-foreground"}`}>{t ? "On" : "Off"}</span>
+        </button>
+        {t ? (
+          <>
+            <div className="mt-1.5 grid grid-cols-2 gap-1.5">
+              <Stepper label="Pointing °" value={t.pointingDeg} step={1} show={(v) => `${v}°`} onChange={edit("pointingDeg")} />
+              <Stepper label={`Close-hauled (${t.pointingDeg}°)`} value={t.closeHauledKn} step={0.1} show={kn} onChange={edit("closeHauledKn")} />
+              <Stepper label="Close reach (60°)" value={t.closeReachKn} step={0.1} show={kn} onChange={edit("closeReachKn")} />
+              <Stepper label="Beam reach (90°)" value={t.beamKn} step={0.1} show={kn} onChange={edit("beamKn")} />
+              <Stepper label="Run (180°)" value={t.runKn} step={0.1} show={kn} onChange={edit("runKn")} />
+              <Button variant="outline" className="h-auto min-h-11 text-t13" onClick={() => set({ tune: base })}>
+                Back to built-in values
+              </Button>
+            </div>
+            <p className="mt-1.5 text-t13 leading-snug text-muted-foreground">
+              Knots through the water, flat sea. Other wind speeds and angles follow the built-in shape, scaled to
+              match. The router won&apos;t sail closer than {t.pointingDeg}° to the true wind.
+            </p>
+          </>
+        ) : (
+          <p className="mt-0.5 text-t13 leading-snug text-muted-foreground">
+            Built-in for a {loa.toFixed(1)} m {p.boatType === "catamaran" ? "catamaran" : "monohull"}: close-hauled {kn(base.closeHauledKn)},
+            close reach {kn(base.closeReachKn)}, beam {kn(base.beamKn)}, run {kn(base.runKn)} kn, pointing {base.pointingDeg}°.
+          </p>
+        )}
+      </div>
     </div>
   );
 }

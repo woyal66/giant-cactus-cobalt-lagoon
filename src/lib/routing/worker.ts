@@ -6,6 +6,7 @@
 import { isDaylight } from "../sun.ts";
 import { clearAround, landObstacle, loadLandPolygons, rasterize, shelterAround, type BBox, type Polygon } from "./land.ts";
 import { loadReefPolygons, markReefs } from "./reefs.ts";
+import { markShallow } from "./shallow-mask.ts";
 import { findWindows, planPassage, type PlanInput, type PlanOutput, type WindowScan } from "./plan.ts";
 
 export type PlanRequest = Omit<PlanInput, "obstacle" | "isDay"> & {
@@ -14,6 +15,8 @@ export type PlanRequest = Omit<PlanInput, "obstacle" | "isDay"> & {
   /** "windows" scans the whole forecast for the best weather windows. */
   kind?: "plan" | "windows";
   marineUntil?: number;
+  /** Keep out of water shallower than this (m below mean sea level) by the depth model. */
+  minDepthM?: number;
 };
 export type PlanReply =
   | { id: number; ok: true; out: PlanOutput; scan?: undefined }
@@ -35,6 +38,13 @@ self.onmessage = async (e: MessageEvent<PlanRequest>) => {
     const base = self.location.pathname.includes("/assets/") ? new URL("../", self.location.href).href.replace(/\/$/, "") : self.location.origin;
     const reefs = await loadReefPolygons(base);
     if (reefs) markReefs(mask, reefs, rasterize);
+    // A copy without the depth check, in case it closes every route (narrow channels).
+    const coastOnly = { ...mask, cells: mask.cells.slice() };
+    clearAround(coastOnly, [req.start, req.finish], 2500);
+    if (req.minDepthM && req.minDepthM > 0) {
+      const { loadDemTile } = await import("../depth.ts");
+      await markShallow(mask, req.minDepthM, (z, x, y) => loadDemTile(z, x, y)).catch(() => 0);
+    }
     clearAround(mask, [req.start, req.finish], 2500);
     if (req.kind === "windows") {
       const scan = findWindows({
@@ -47,10 +57,19 @@ self.onmessage = async (e: MessageEvent<PlanRequest>) => {
       (self as unknown as Worker).postMessage({ id: req.id, ok: true, scan } satisfies PlanReply);
       return;
     }
+    const depthOn = Boolean(req.minDepthM && req.minDepthM > 0);
+    let planned = planPassage({ ...req, obstacle: landObstacle(mask), isDay: isDaylight });
+    let depthCheck: "used" | "relaxed" | "off" = depthOn ? "used" : "off";
+    if (depthOn && !Object.values(planned.best).some(Boolean)) {
+      // The depth model (hundreds of metres in places) can close narrow channels: try the coastline only.
+      planned = planPassage({ ...req, obstacle: landObstacle(coastOnly), isDay: isDaylight });
+      depthCheck = "relaxed";
+    }
     const out = {
-      ...planPassage({ ...req, obstacle: landObstacle(mask), isDay: isDaylight }),
+      ...planned,
       shelter,
       reefData: reefs ? ("used" as const) : ("missing" as const),
+      depthCheck,
     };
     (self as unknown as Worker).postMessage({ id: req.id, ok: true, out } satisfies PlanReply);
   } catch (err) {

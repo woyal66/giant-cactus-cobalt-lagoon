@@ -11,6 +11,7 @@ const KEY = "anchormate-web-notice";
 export function WebNotice() {
   const watching = useHelm((s) => Boolean(s.anchor?.radiusLocked && !s.anchor.demo));
   const panel = useHelm((s) => s.panel);
+  const guideDone = useHelm((s) => s.guideDone);
   const [closed, setClosed] = useState(() => {
     try {
       return localStorage.getItem(KEY) === "1";
@@ -18,7 +19,7 @@ export function WebNotice() {
       return false;
     }
   });
-  if (isNativeApp() || panel) return null;
+  if (isNativeApp() || panel || !guideDone) return null;
   if (watching) {
     return (
       <div className="pointer-events-auto absolute inset-x-2 top-[calc(max(0.4rem,var(--safe-area-inset-top,env(safe-area-inset-top)))+3.4rem)] z-40 mx-auto max-w-md rounded-lg border border-amber-400/60 bg-card/95 px-3 py-2 text-t14 leading-snug shadow-[var(--shadow-border)]">

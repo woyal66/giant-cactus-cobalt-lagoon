@@ -66,7 +66,7 @@ jobs:
           pip install rasterio numpy pillow
           curl -sSL --retry 8 --retry-delay 15 --retry-all-errors -C - -o gebco.zip "https://dap.ceda.ac.uk/bodc/gebco/global/gebco_2026/ice_surface_elevation/geotiff/gebco_2026_geotiff.zip"
           unzip -q gebco.zip -d gebco && rm gebco.zip
-          python3 scripts/build-depth-tiles.py gebco out/depth-world --zmin 3 --zmax 8 --land-cap 5 --source "GEBCO_2026 Grid (GEBCO Compilation Group 2026), public domain"
+          python3 scripts/build-depth-tiles.py gebco out/depth-world --zmin 3 --zmax 8 --land-cap 5 --steps 20:0.25,100:1,inf:2 --source "GEBCO_2026 Grid (GEBCO Compilation Group 2026), public domain"
           rm -rf gebco
 
       - name: Tide files from cache

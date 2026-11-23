@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { boatSpeed, readBoatType, sailSpeed, waveFactor, type BoatPerf } from "./polar.ts";
+import { boatSpeed, defaultTune, noGoDeg, readBoatType, sailSpeed, waveFactor, type BoatPerf } from "./polar.ts";
 
 const cruiser: BoatPerf = { type: "mono", loaM: 12, motorBelowKn: 0, motorKn: 6 };
 
@@ -55,4 +55,19 @@ test("a fast motor boat slows more than a yacht in a head sea, little in a follo
   assert.ok(fast >= 0.3);
   assert.ok(waveFactor(2, 180, 8, 22) > fast);
   assert.equal(waveFactor(0.2, 0, 8, 22), 1);
+});
+
+test("the skipper's own numbers set speeds at 15 kn and the pointing angle", () => {
+  const base: BoatPerf = { type: "mono", loaM: 12, motorBelowKn: 0, motorKn: 6 };
+  const d = defaultTune(base);
+  const tuned: BoatPerf = { ...base, tune: { pointingDeg: 30, closeHauledKn: 5.5, closeReachKn: 7.2, beamKn: 8, runKn: 6.4 } };
+  assert.equal(noGoDeg(tuned), 30);
+  assert.equal(sailSpeed(base, 15, 33), 0); // built-in can't point at 33°
+  assert.ok(sailSpeed(tuned, 15, 33) > 4);
+  assert.ok(Math.abs(sailSpeed(tuned, 15, 90) - 8) < 0.05);
+  assert.ok(Math.abs(sailSpeed(tuned, 15, 60) - 7.2) < 0.05);
+  assert.ok(Math.abs(sailSpeed(tuned, 15, 180) - 6.4) < 0.05);
+  // Same shape at other wind speeds, scaled.
+  const k = 8 / d.beamKn;
+  assert.ok(Math.abs(sailSpeed(tuned, 10, 90) - sailSpeed(base, 10, 90) * k) < 0.05);
 });

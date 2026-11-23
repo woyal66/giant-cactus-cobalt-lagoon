@@ -28,6 +28,8 @@ export type PlanRun = {
   rules?: RouteRules;
   /** Model ids from ROUTE_MODELS, main first. */
   models?: string[];
+  /** Keep out of water shallower than this (m, mean sea level), by the depth model. */
+  minDepthM?: number;
   onStatus?: (s: string) => void;
 };
 
@@ -49,6 +51,7 @@ export function planOnFields(run: PlanRun & { fields: WeatherField[]; box: PlanR
     limits: run.limits,
     rules: run.rules,
     box: run.box,
+    minDepthM: run.minDepthM,
   });
 }
 
@@ -101,6 +104,7 @@ export async function runPlan(run: PlanRun): Promise<PlanRunResult> {
     limits: run.limits,
     rules: run.rules,
     box: grid,
+    minDepthM: run.minDepthM,
   };
   const out = await sendToWorker(req);
   return { out, fields: fields.fields, box: grid, forecastAt: fields.at };
@@ -125,6 +129,7 @@ export async function findWeatherWindows(run: Omit<PlanRun, "windowStart" | "win
   const res = await post({
     id: (seq += 1),
     kind: "windows",
+    minDepthM: run.minDepthM,
     start: run.start,
     finish: run.finish,
     windowStart: from,

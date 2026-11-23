@@ -22,7 +22,7 @@ import { FirstRunGuide } from "@/components/helm/first-run-guide";
 import { PassageHud } from "@/components/helm/passage-hud";
 import { RadarChip } from "@/components/helm/radar-chip";
 import { DepthChip } from "@/components/helm/depth-chip";
-import { WxMapBar } from "@/components/helm/wx-map-bar";
+import { WxMapBar, WxProbeCard } from "@/components/helm/wx-map-bar";
 import { PinCard } from "@/components/helm/pin-card";
 import { PerfChip } from "@/components/helm/perf-chip";
 import { WebNotice } from "@/components/helm/web-notice";
@@ -130,6 +130,7 @@ export function HelmApp() {
       ) : null}
       <DepthChip />
       <WxMapBar />
+      <WxProbeCard />
       <PinCard />
       <PerfChip />
       <WebNotice />

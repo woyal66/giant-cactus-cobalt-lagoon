@@ -50,18 +50,34 @@ export function layerIndex(f: { times: number[] }, at: number): number {
   return best;
 }
 
-/** Bilinear value of one layer at a point (NaN outside the grid or where data is missing). */
+/**
+ * Bilinear value of one layer at a point. Corners with no data (e.g. waves over land) are left
+ * out and the rest re-weighted, so shading reaches the coast; NaN outside the grid or when less
+ * than a quarter of the weight has data.
+ */
 export function valueAt(f: WeatherField, layer: Float32Array, lat: number, lng: number): number {
   const fy = (lat - f.lat0) / f.dLat;
   const fx = (lng - f.lng0) / f.dLng;
   if (fx < 0 || fy < 0 || fx > f.nx - 1 || fy > f.ny - 1) return NaN;
+  if (f.nx < 2 || f.ny < 2) return layer[0]!;
   const x0 = Math.min(f.nx - 2, Math.floor(fx));
   const y0 = Math.min(f.ny - 2, Math.floor(fy));
   const tx = fx - x0;
   const ty = fy - y0;
-  const v = (x: number, y: number) => layer[y * f.nx + x]!;
-  if (f.nx < 2 || f.ny < 2) return layer[0]!;
-  return v(x0, y0) * (1 - tx) * (1 - ty) + v(x0 + 1, y0) * tx * (1 - ty) + v(x0, y0 + 1) * (1 - tx) * ty + v(x0 + 1, y0 + 1) * tx * ty;
+  let sum = 0;
+  let w = 0;
+  for (const [x, y, wt] of [
+    [x0, y0, (1 - tx) * (1 - ty)],
+    [x0 + 1, y0, tx * (1 - ty)],
+    [x0, y0 + 1, (1 - tx) * ty],
+    [x0 + 1, y0 + 1, tx * ty],
+  ] as const) {
+    const v = layer[y * f.nx + x]!;
+    if (!Number.isFinite(v)) continue;
+    sum += v * wt;
+    w += wt;
+  }
+  return w >= 0.25 ? sum / w : NaN;
 }
 
 /** East/north components (knots) of a speed and a direction. `toward` false = direction it comes FROM. */
@@ -183,6 +199,7 @@ export function vectorAt(
   const ty = fy - y0;
   let u = 0;
   let v = 0;
+  let wsum = 0;
   for (const [x, y, wgt] of [
     [x0, y0, (1 - tx) * (1 - ty)],
     [x0 + 1, y0, tx * (1 - ty)],
@@ -191,11 +208,15 @@ export function vectorAt(
   ] as const) {
     const s = kn[y * f.nx + x]!;
     const d = dir[y * f.nx + x]!;
-    if (!Number.isFinite(s) || !Number.isFinite(d)) return null;
+    if (!Number.isFinite(s) || !Number.isFinite(d)) continue;
     const c = components(s, d, toward);
     u += c.u * wgt;
     v += c.v * wgt;
+    wsum += wgt;
   }
+  if (wsum < 0.25) return null;
+  u /= wsum;
+  v /= wsum;
   return { kn: Math.hypot(u, v), u, v };
 }
 
@@ -222,4 +243,132 @@ export function upsample(
     }
   }
   return { grid: { lat0: g.lat0, lng0: g.lng0, dLat: g.dLat / k, dLng: g.dLng / k, nx, ny }, values: out };
+}
+
+/** A colour scale: value stops with RGB colours, blended smoothly between stops (like Windy). */
+export type Ramp = Array<[number, [number, number, number]]>;
+
+/** Wind and gust, knots: calm blue → green → yellow → orange → red → purple. */
+export const WIND_RAMP: Ramp = [
+  [0, [40, 80, 160]],
+  [6, [30, 140, 200]],
+  [11, [40, 180, 120]],
+  [16, [200, 200, 60]],
+  [21, [240, 150, 40]],
+  [27, [225, 60, 50]],
+  [34, [190, 40, 140]],
+  [45, [110, 40, 180]],
+];
+/** Significant wave height, metres. */
+export const WAVE_RAMP: Ramp = [
+  [0, [40, 110, 190]],
+  [0.5, [40, 160, 200]],
+  [1, [60, 190, 150]],
+  [1.5, [200, 200, 70]],
+  [2.5, [240, 140, 40]],
+  [4, [220, 50, 60]],
+  [6, [160, 40, 150]],
+];
+/** Rain, mm per hour. */
+export const RAIN_RAMP: Ramp = [
+  [0.1, [120, 190, 250]],
+  [1, [50, 140, 240]],
+  [3, [40, 80, 220]],
+  [6, [150, 60, 220]],
+  [12, [230, 50, 120]],
+];
+/** Current, knots. */
+export const CURRENT_RAMP: Ramp = [
+  [0, [60, 70, 150]],
+  [0.5, [80, 120, 200]],
+  [1, [120, 170, 230]],
+  [2, [200, 160, 240]],
+  [3, [240, 120, 200]],
+];
+/** Thunderstorm risk from CAPE, J/kg (shown only where rain or instability makes storms possible). */
+export const CAPE_RAMP: Ramp = [
+  [300, [250, 220, 80]],
+  [1000, [245, 160, 40]],
+  [2000, [230, 80, 40]],
+  [3500, [200, 30, 90]],
+];
+
+export function rampColor(r: Ramp, v: number): [number, number, number] {
+  if (!(v > r[0]![0])) return r[0]![1];
+  for (let i = 1; i < r.length; i++) {
+    const [b, cb] = r[i]!;
+    if (v <= b) {
+      const [a, ca] = r[i - 1]!;
+      const t = (v - a) / (b - a);
+      return [0, 1, 2].map((k) => Math.round(ca[k]! + (cb[k]! - ca[k]!) * t)) as [number, number, number];
+    }
+  }
+  return r[r.length - 1]![1];
+}
+
+/** CSS linear-gradient for a ramp's legend bar. */
+export function rampGradient(r: Ramp): string {
+  const lo = r[0]![0];
+  const hi = r[r.length - 1]![0];
+  return `linear-gradient(to right, ${r.map(([v, c]) => `rgb(${c.join(",")}) ${(((v - lo) / (hi - lo)) * 100).toFixed(1)}%`).join(", ")})`;
+}
+
+export type WxProbe = {
+  windKn: number | null;
+  windFrom: number | null;
+  gustKn: number | null;
+  waveM: number | null;
+  waveFrom: number | null;
+  periodS: number | null;
+  curKn: number | null;
+  curToward: number | null;
+  rainMm: number | null;
+  pressureHpa: number | null;
+  capeJkg: number | null;
+};
+
+const fin = (v: number) => (Number.isFinite(v) ? v : null);
+
+/** Everything the grid knows at a point and hour (for the tap-anywhere readout). */
+export function probeAt(f: WeatherField, at: number, lat: number, lng: number): WxProbe {
+  const t = layerIndex(f, at);
+  const wind = vectorAt(f, f.windKn[t]!, f.windDir[t]!, lat, lng, false);
+  const cur = vectorAt(f, f.curKn[t]!, f.curDir[t]!, lat, lng, true);
+  const wave = vectorAt(f, f.waveM[t]!, f.waveDir[t]!, lat, lng, false);
+  const dirOf = (u: number, v: number, from: boolean) => (((Math.atan2(u, v) * 180) / Math.PI + (from ? 180 : 0) + 360) % 360);
+  return {
+    windKn: wind ? wind.kn : null,
+    windFrom: wind ? dirOf(wind.u, wind.v, true) : null,
+    gustKn: fin(valueAt(f, f.gustKn[t]!, lat, lng)),
+    waveM: fin(valueAt(f, f.waveM[t]!, lat, lng)),
+    waveFrom: wave ? dirOf(wave.u, wave.v, true) : null,
+    periodS: f.wavePer ? fin(valueAt(f, f.wavePer[t]!, lat, lng)) : null,
+    curKn: cur ? cur.kn : null,
+    curToward: cur ? dirOf(cur.u, cur.v, false) : null,
+    rainMm: f.precipMm ? fin(valueAt(f, f.precipMm[t]!, lat, lng)) : null,
+    pressureHpa: f.pressureHpa ? fin(valueAt(f, f.pressureHpa[t]!, lat, lng)) : null,
+    capeJkg: f.capeJkg ? fin(valueAt(f, f.capeJkg[t]!, lat, lng)) : null,
+  };
+}
+
+/** Largest value of a layer at an hour (NaN-safe), e.g. to say "no rain in view". */
+export function layerMax(layer: Float32Array | undefined): number {
+  if (!layer) return NaN;
+  let m = -Infinity;
+  for (const v of layer) if (Number.isFinite(v) && v > m) m = v;
+  return m === -Infinity ? NaN : m;
+}
+
+/** Isobar spacing that gives a few lines whatever the view: 1, 2 or 4 hPa. */
+export function isobarStep(values: ArrayLike<number>): number {
+  let lo = Infinity;
+  let hi = -Infinity;
+  for (let i = 0; i < values.length; i++) {
+    const v = values[i]!;
+    if (!Number.isFinite(v)) continue;
+    lo = Math.min(lo, v);
+    hi = Math.max(hi, v);
+  }
+  const range = hi - lo;
+  return range < 5 ? 1 : range < 16 ? 2 : 4;
 }

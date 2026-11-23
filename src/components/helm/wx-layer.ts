@@ -1,8 +1,24 @@
 import type { Map as LeafletMap, Point } from "leaflet";
 import type { WeatherField } from "@/lib/routing/field";
 import { thunderRisk } from "@/lib/routing/storm";
-import { windColor } from "@/lib/weather";
-import { contourSegments, extremes, isobarLevels, layerIndex, upsample, valueAt, vectorAt, type WxMapLayer } from "@/lib/wx-map";
+import {
+  CAPE_RAMP,
+  CURRENT_RAMP,
+  RAIN_RAMP,
+  WAVE_RAMP,
+  WIND_RAMP,
+  contourSegments,
+  extremes,
+  isobarLevels,
+  isobarStep,
+  layerIndex,
+  rampColor,
+  upsample,
+  valueAt,
+  vectorAt,
+  type Ramp,
+  type WxMapLayer,
+} from "@/lib/wx-map";
 
 type LeafletNS = typeof import("leaflet");
 
@@ -14,18 +30,6 @@ export type WxLayerState = {
 };
 
 const PAD = 0.3; // extra canvas around the view so heading-up rotation never shows bare corners
-
-function rgba(hex: string, a: number): string {
-  const n = parseInt(hex.slice(1), 16);
-  return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`;
-}
-
-function waveColor(m: number): string {
-  const t = Math.min(1, m / 4);
-  return `rgba(${Math.round(40 + 200 * t)},${Math.round(150 - 90 * t)},${Math.round(230 - 150 * t)},0.45)`;
-}
-
-const STORM = ["", "rgba(250,200,40,0.55)", "rgba(245,120,30,0.6)", "rgba(225,35,35,0.65)"];
 
 /**
  * Weather drawn over the chart: shading, isobars and arrows on one canvas, moving particles on
@@ -93,8 +97,8 @@ export function createWxLayer(L: LeafletNS, map: LeafletMap) {
     const f = state.field;
     if (state.layer === "off" || !f) return;
     const t = layerIndex(f, state.at);
-    // Shade at low resolution, then scale up with smoothing so the colours blend.
-    const shade = (step: number, color: (lat: number, lng: number) => string | null) => {
+    // Smooth colour fill: sample on a coarse pixel grid, then scale up with smoothing.
+    const shade = (step: number, color: (lat: number, lng: number) => [number, number, number, number] | null) => {
       const cw = Math.ceil(w / step);
       const ch = Math.ceil(h / step);
       const off = document.createElement("canvas");
@@ -102,39 +106,44 @@ export function createWxLayer(L: LeafletNS, map: LeafletMap) {
       off.height = ch;
       const o = off.getContext("2d");
       if (!o) return;
+      const img = o.createImageData(cw, ch);
       for (let y = 0; y < ch; y++) {
         for (let x = 0; x < cw; x++) {
           const ll = toLatLng((x + 0.5) * step, (y + 0.5) * step);
           const c = color(ll.lat, ll.lng);
           if (!c) continue;
-          o.fillStyle = c;
-          o.fillRect(x, y, 1, 1);
+          const k = (y * cw + x) * 4;
+          img.data[k] = c[0];
+          img.data[k + 1] = c[1];
+          img.data[k + 2] = c[2];
+          img.data[k + 3] = c[3];
         }
       }
+      o.putImageData(img, 0, 0);
       g.imageSmoothingEnabled = true;
       g.imageSmoothingQuality = "high";
       g.drawImage(off, 0, 0, cw * step, ch * step);
     };
+    const fill = (layer: Float32Array | undefined, ramp: Ramp, alpha: number, min = -Infinity) => {
+      if (!layer) return;
+      shade(6, (la, lo) => {
+        const v = valueAt(f, layer, la, lo);
+        if (!Number.isFinite(v) || v < min) return null;
+        const c = rampColor(ramp, v);
+        return [c[0], c[1], c[2], alpha];
+      });
+    };
     const L1 = state.layer;
-    if (L1 === "gust") {
-      shade(10, (la, lo) => {
-        const v = valueAt(f, f.gustKn[t]!, la, lo);
-        return Number.isFinite(v) ? rgba(windColor(v).bg, 0.45) : null;
-      });
-    } else if (L1 === "waves") {
-      shade(10, (la, lo) => {
-        const v = valueAt(f, f.waveM[t]!, la, lo);
-        return Number.isFinite(v) ? waveColor(v) : null;
-      });
-    } else if (L1 === "rain" && f.precipMm) {
-      shade(10, (la, lo) => {
-        const v = valueAt(f, f.precipMm![t]!, la, lo);
-        return v >= 0.1 ? `rgba(56,152,236,${Math.min(0.75, 0.15 + v / 6)})` : null;
-      });
-    } else if (L1 === "storm" && f.capeJkg) {
-      shade(10, (la, lo) => {
+    if (L1 === "wind") fill(f.windKn[t], WIND_RAMP, 110);
+    else if (L1 === "gust") fill(f.gustKn[t], WIND_RAMP, 130);
+    else if (L1 === "current") fill(f.curKn[t], CURRENT_RAMP, 95);
+    else if (L1 === "waves") fill(f.waveM[t], WAVE_RAMP, 125);
+    else if (L1 === "rain") fill(f.precipMm?.[t], RAIN_RAMP, 150, 0.1);
+    else if (L1 === "storm" && f.capeJkg) {
+      shade(6, (la, lo) => {
+        const cape = valueAt(f, f.capeJkg![t]!, la, lo);
         const r = thunderRisk({
-          capeJkg: valueAt(f, f.capeJkg![t]!, la, lo),
+          capeJkg: cape,
           liftedIndex: f.liftedIndex ? valueAt(f, f.liftedIndex[t]!, la, lo) : NaN,
           cinJkg: f.cinJkg ? valueAt(f, f.cinJkg[t]!, la, lo) : NaN,
           precipMm: f.precipMm ? valueAt(f, f.precipMm[t]!, la, lo) : 0,
@@ -142,98 +151,89 @@ export function createWxLayer(L: LeafletNS, map: LeafletMap) {
           gustKn: valueAt(f, f.gustKn[t]!, la, lo),
           tempC: f.tempC ? valueAt(f, f.tempC[t]!, la, lo) : 25,
         });
-        return STORM[r] || null;
+        if (!r) return null;
+        const c = rampColor(CAPE_RAMP, Math.max(cape, [0, 600, 1500, 2800][r]!));
+        return [c[0], c[1], c[2], 90 + 35 * r];
       });
     } else if (L1 === "pressure" && f.pressureHpa) {
       const raw = f.pressureHpa[t]!;
-      // Smooth the coarse grid so isobars are curves, not polygons.
+      // Smooth the coarse grid so isobars are curves, not polygons; spacing adapts to the view.
       const up = upsample(f, raw, 4);
       const pg = up.grid;
       const p = up.values;
-      g.lineWidth = 1.6;
-      g.strokeStyle = "rgba(255,255,255,0.85)";
-      g.font = "600 12px system-ui";
+      const stepHpa = isobarStep(raw);
+      g.font = "600 13px system-ui";
       g.textAlign = "center";
       g.textBaseline = "middle";
-      for (const level of isobarLevels(p, 2)) {
+      for (const level of isobarLevels(p, stepHpa)) {
         const segs = contourSegments(pg, p, level);
-        g.beginPath();
+        const path = new Path2D();
         for (const [a, b] of segs) {
           const pa = toPx(a.lat, a.lng);
           const pb = toPx(b.lat, b.lng);
-          g.moveTo(pa.x, pa.y);
-          g.lineTo(pb.x, pb.y);
+          path.moveTo(pa.x, pa.y);
+          path.lineTo(pb.x, pb.y);
         }
-        g.stroke();
+        const major = level % (stepHpa * 2) === 0;
+        g.lineWidth = major ? 4.5 : 3.5;
+        g.strokeStyle = "rgba(0,0,0,0.55)";
+        g.stroke(path);
+        g.lineWidth = major ? 2.2 : 1.4;
+        g.strokeStyle = "rgba(255,255,255,0.95)";
+        g.stroke(path);
         // Spread labels: each level labels a different part of its line.
-        const mid = segs[Math.floor(segs.length * (((level / 2) % 5) + 0.5) / 5.5)];
+        const mid = segs[Math.floor((segs.length * (((level / stepHpa) % 5) + 0.5)) / 5.5)];
         if (mid) {
           const pm = toPx(mid[0].lat, mid[0].lng);
-          g.lineWidth = 3;
-          g.strokeStyle = "rgba(0,0,0,0.7)";
+          g.lineWidth = 3.5;
+          g.strokeStyle = "rgba(0,0,0,0.8)";
           g.strokeText(String(level), pm.x, pm.y);
           g.fillStyle = "#fff";
           g.fillText(String(level), pm.x, pm.y);
-          g.lineWidth = 1.6;
-          g.strokeStyle = "rgba(255,255,255,0.85)";
         }
       }
-      g.font = "700 26px system-ui";
+      g.font = "700 28px system-ui";
       for (const e of extremes(f, raw)) {
         const pe = toPx(e.lat, e.lng);
         g.lineWidth = 4;
-        g.strokeStyle = "rgba(0,0,0,0.7)";
+        g.strokeStyle = "rgba(0,0,0,0.75)";
         g.strokeText(e.kind, pe.x, pe.y);
         g.fillStyle = e.kind === "H" ? "#7dd3fc" : "#fca5a5";
         g.fillText(e.kind, pe.x, pe.y);
       }
     }
-    if (L1 === "wind" || L1 === "current") {
-      const knL = (L1 === "wind" ? f.windKn : f.curKn)[t]!;
-      const dirL = (L1 === "wind" ? f.windDir : f.curDir)[t]!;
-      const vec = (la: number, lo: number) => vectorAt(f, knL, dirL, la, lo, L1 === "current");
+    // Waves: direction arrows on top of the fill.
+    if (L1 === "waves") {
+      const step = 72;
+      for (let y = step / 2; y < h; y += step) {
+        for (let x = step / 2; x < w; x += step) {
+          const ll = toLatLng(x, y);
+          const v = vectorAt(f, f.waveM[t]!, f.waveDir[t]!, ll.lat, ll.lng, false);
+          if (!v) continue;
+          arrow(g, x, y, Math.atan2(v.u, v.v), 12, "#ffffff", `${v.kn.toFixed(1)}`);
+        }
+      }
+    }
+    if (L1 === "wind" || L1 === "gust" || L1 === "current") {
+      // Gusts move with the wind but are coloured and sized by gust strength.
+      const knL = (L1 === "current" ? f.curKn : L1 === "gust" ? f.gustKn : f.windKn)[t]!;
+      const dirL = (L1 === "current" ? f.curDir : f.windDir)[t]!;
+      const vec = (la: number, lo: number) => {
+        if (L1 !== "gust") return vectorAt(f, knL, dirL, la, lo, L1 === "current");
+        const wv = vectorAt(f, f.windKn[t]!, dirL, la, lo, false);
+        const gk = valueAt(f, knL, la, lo);
+        if (!wv || !Number.isFinite(gk) || wv.kn <= 0) return null;
+        const k = gk / wv.kn;
+        return { kn: gk, u: wv.u * k, v: wv.v * k };
+      };
       if (state.style === "arrows") {
         const step = 64;
-        g.textAlign = "center";
-        g.textBaseline = "middle";
-        g.font = "600 12px system-ui";
         for (let y = step / 2; y < h; y += step) {
           for (let x = step / 2; x < w; x += step) {
             const ll = toLatLng(x, y);
             const v = vec(ll.lat, ll.lng);
             if (!v) continue;
-            const ang = Math.atan2(v.u, v.v); // clockwise from north, direction of travel
-            const len = 16;
-            const col = L1 === "wind" ? windColor(v.kn).bg : "#c4b5fd";
-            g.save();
-            g.translate(x, y);
-            g.rotate(ang);
-            g.strokeStyle = "rgba(0,0,0,0.6)";
-            g.lineWidth = 5;
-            g.beginPath();
-            g.moveTo(0, len);
-            g.lineTo(0, -len);
-            g.stroke();
-            g.strokeStyle = col;
-            g.fillStyle = col;
-            g.lineWidth = 2.5;
-            g.beginPath();
-            g.moveTo(0, len);
-            g.lineTo(0, -len + 6);
-            g.stroke();
-            g.beginPath();
-            g.moveTo(0, -len - 2);
-            g.lineTo(-6, -len + 8);
-            g.lineTo(6, -len + 8);
-            g.closePath();
-            g.fill();
-            g.restore();
-            const label = L1 === "wind" ? String(Math.round(v.kn)) : v.kn.toFixed(1);
-            g.lineWidth = 3;
-            g.strokeStyle = "rgba(0,0,0,0.75)";
-            g.strokeText(label, x + 18, y + 14);
-            g.fillStyle = "#fff";
-            g.fillText(label, x + 18, y + 14);
+            arrow(g, x, y, Math.atan2(v.u, v.v), 16, "#ffffff", L1 === "current" ? v.kn.toFixed(1) : String(Math.round(v.kn)));
           }
         }
         return;
@@ -260,10 +260,45 @@ export function createWxLayer(L: LeafletNS, map: LeafletMap) {
         }
       }
       flowGrid = { step, cols, rows, u, v, kn };
-      const n = Math.min(1400, Math.round((w * h) / 2200));
+      const n = Math.min(1600, Math.round((w * h) / 1900));
       particles = Array.from({ length: n }, () => ({ x: Math.random() * w, y: Math.random() * h, age: Math.floor(Math.random() * 80) }));
       animate(w, h, dpr, L1 === "current" ? 1.4 : 0.22);
     }
+  }
+
+  /** An arrow pointing along `ang` (radians clockwise from north) with an outlined label. */
+  function arrow(g: CanvasRenderingContext2D, x: number, y: number, ang: number, len: number, col: string, label: string) {
+    g.save();
+    g.translate(x, y);
+    g.rotate(ang);
+    g.strokeStyle = "rgba(0,0,0,0.65)";
+    g.lineWidth = 5;
+    g.beginPath();
+    g.moveTo(0, len);
+    g.lineTo(0, -len);
+    g.stroke();
+    g.strokeStyle = col;
+    g.fillStyle = col;
+    g.lineWidth = 2.5;
+    g.beginPath();
+    g.moveTo(0, len);
+    g.lineTo(0, -len + 6);
+    g.stroke();
+    g.beginPath();
+    g.moveTo(0, -len - 2);
+    g.lineTo(-6, -len + 8);
+    g.lineTo(6, -len + 8);
+    g.closePath();
+    g.fill();
+    g.restore();
+    g.font = "600 13px system-ui";
+    g.textAlign = "center";
+    g.textBaseline = "middle";
+    g.lineWidth = 3.5;
+    g.strokeStyle = "rgba(0,0,0,0.8)";
+    g.strokeText(label, x + 20, y + 14);
+    g.fillStyle = "#fff";
+    g.fillText(label, x + 20, y + 14);
   }
 
   function animate(w: number, h: number, dpr: number, pxPerKn: number) {
@@ -293,7 +328,7 @@ export function createWxLayer(L: LeafletNS, map: LeafletMap) {
         }
         const nx = p.x + s.u * pxPerKn;
         const ny = p.y - s.v * pxPerKn;
-        g.strokeStyle = state.layer === "wind" ? windColor(s.kn).bg : "#c4b5fd";
+        g.strokeStyle = state.layer === "current" ? "rgba(235,225,255,0.9)" : "rgba(255,255,255,0.88)";
         g.beginPath();
         g.moveTo(p.x, p.y);
         g.lineTo(nx, ny);

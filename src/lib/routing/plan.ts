@@ -36,6 +36,8 @@ export type PlanOutput = {
   shelter?: boolean[];
   /** Whether reef outlines were in this build and avoided. */
   reefData?: "used" | "missing";
+  /** Depth model check: "used" kept routes out of shallow water; "relaxed" found no route that way. */
+  depthCheck?: "used" | "relaxed" | "off";
 };
 
 export type PlanInput = {

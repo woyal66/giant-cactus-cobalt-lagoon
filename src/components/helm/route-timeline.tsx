@@ -91,9 +91,18 @@ export function RouteTimeline({
 
   return (
     <div className="mt-2">
-      <Readout cur={cur} sails={segAt ? describe(segAt) : null} motorBoat={motorBoat} />
-      <p className="mb-1 text-t13 text-muted-foreground">Drag along the graph to read any moment of the trip.</p>
-
+      <p className="mb-6 text-t13 text-muted-foreground">Drag along the graph: the numbers follow your finger and the boat moves on the chart.</p>
+      <div className="relative">
+      {/* Bubble that follows the finger, so the reading stays in view while dragging. */}
+      <div
+        className="pointer-events-none absolute top-0 z-10 rounded-md bg-card/95 px-2 py-1 text-t13 leading-tight font-semibold tabular-nums shadow-[var(--shadow-border)]"
+        style={{ left: `${Math.max(14, Math.min(86, (x(cur.at) / W) * 100))}%`, transform: "translate(-50%, -100%)" }}
+      >
+        <span className="block text-center">{clock(cur.at, true)}</span>
+        <span className="block text-center font-normal">
+          {Math.round(cur.twsKn)} kn {compassPoint(cur.windDir)} · boat {(cur.sogKn ?? cur.stwKn).toFixed(1)} kn
+        </span>
+      </div>
       <svg
         viewBox={`0 0 ${W} ${height}`}
         className="w-full touch-none select-none"
@@ -190,6 +199,8 @@ export function RouteTimeline({
         ))}
         <line x1={x(cur.at)} x2={x(cur.at)} y1={0} y2={bottom} className="stroke-amber-300" strokeWidth={1} />
       </svg>
+      </div>
+      <Readout cur={cur} sails={segAt ? describe(segAt) : null} motorBoat={motorBoat} />
       <p className="mt-1 text-t12 text-muted-foreground">
         {motorBoat ? "Line: wind" : "Solid: true wind · dashed: apparent wind"} · red bars: seas raised by wind over tide · green line: tide (+ fair) · shaded: night
       </p>
@@ -215,13 +226,13 @@ export function RouteTimeline({
   );
 }
 
-function Row({ label, value, note }: { label: string; value: ReactNode; note?: string }) {
+function Row({ label, value, note, full = false }: { label: string; value: ReactNode; note?: string; full?: boolean }) {
   return (
     <div className="grid grid-cols-[6.5rem_1fr] gap-x-2 py-0.5">
       <p className="text-t13 text-muted-foreground">{label}</p>
       <div>
         <p className="text-t15 leading-snug">{value}</p>
-        {note ? <p className="text-t13 leading-snug text-muted-foreground">{note}</p> : null}
+        {note && full ? <p className="text-t13 leading-snug text-muted-foreground">{note}</p> : null}
       </div>
     </div>
   );
@@ -238,17 +249,18 @@ function Readout({ cur, sails, motorBoat }: { cur: Sample; sails: string | null;
   const cruiseKn = useHelm((s) => s.routePrefs.motorKn);
   const slowed = motorBoat && cur.stwKn < cruiseKn * 0.92 ? ` Slowed from your ${cruiseKn} kn cruise by the sea.` : "";
   return (
-    <div className="mb-2 tabular-nums">
+    <div className="mt-2 mb-2 tabular-nums">
       <div className="flex items-baseline justify-between gap-2">
         <p className="text-t16 font-semibold">
           {clock(cur.at, true)}
           {cur.day ? "" : " · night"}
         </p>
         <button type="button" onClick={() => setHelp((h) => !h)} className="text-t13 text-primary underline" aria-expanded={help}>
-          {help ? "Hide help" : "What do these mean?"}
+          {help ? "Less detail" : "More detail"}
         </button>
       </div>
       <Row
+        full={help}
         label="Wind"
         value={
           <>
@@ -257,10 +269,11 @@ function Readout({ cur, sails, motorBoat }: { cur: Sample; sails: string | null;
         }
       />
       {motorBoat ? (
-        <Row label="Wind angle" value={`${pos.name}, ${Math.round(cur.twa)}° off the bow`} note={pos.feel} />
+        <Row full={help} label="Wind angle" value={`${pos.name}, ${Math.round(cur.twa)}° off the bow`} note={pos.feel} />
       ) : (
         <>
           <Row
+        full={help}
             label="On the boat"
             value={
               <>
@@ -269,10 +282,11 @@ function Readout({ cur, sails, motorBoat }: { cur: Sample; sails: string | null;
             }
             note="Apparent wind: what you feel and set the sails to."
           />
-          <Row label="Point of sail" value={pos.name} note={pos.feel} />
+          <Row full={help} label="Point of sail" value={pos.name} note={pos.feel} />
         </>
       )}
       <Row
+        full={help}
         label="Boat speed"
         value={
           <>
@@ -286,6 +300,7 @@ function Readout({ cur, sails, motorBoat }: { cur: Sample; sails: string | null;
         }
       />
       <Row
+        full={help}
         label="Seas"
         value={
           <>
@@ -295,11 +310,12 @@ function Readout({ cur, sails, motorBoat }: { cur: Sample; sails: string | null;
         note={`${sea.feel}${cur.waveAmp >= 1.15 ? `. Wind over tide makes them about ${Math.round((cur.waveAmp - 1) * 100)}% higher and steeper here.` : "."}`}
       />
       <Row
+        full={help}
         label="Storms"
         value={`${RISK_LABEL[cur.thunder]}${cur.squall ? ", squalls likely" : ""}`}
         note={cur.thunder >= 2 || cur.squall ? (motorBoat ? "Watch the sky; head for shelter early." : "Reef early and watch the sky.") : undefined}
       />
-      {sails && !motorBoat ? <Row label="Sails" value={sails} /> : null}
+      {sails && !motorBoat ? <Row full={help} label="Sails" value={sails} /> : null}
       {help ? (
         <dl className="mt-2 grid gap-1 border-t border-border pt-2">
           {GLOSSARY.filter(([k]) => !motorBoat || k !== "Apparent wind").map(([k, v]) => (

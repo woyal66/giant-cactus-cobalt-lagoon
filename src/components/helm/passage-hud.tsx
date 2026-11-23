@@ -196,6 +196,7 @@ export function PassageHud() {
         limits: saved.limits,
         rules: saved.rules,
         models: saved.models,
+        minDepthM: useHelm.getState().hull.draftM + 1,
       };
       let out: PlanOutput;
       let fields = saved.fields;

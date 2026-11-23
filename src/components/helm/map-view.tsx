@@ -54,6 +54,7 @@ import { createDepthLayer, type DepthLook } from "@/components/helm/depth-layer"
 import { createHazardLayer } from "@/components/helm/hazard-layer";
 import { OFFICIAL_CHARTS } from "@/lib/official-charts";
 import { createWxLayer } from "@/components/helm/wx-layer";
+import { setViewField } from "@/lib/wx-view";
 import { createChartLayer } from "@/components/helm/chart-layer";
 import { loadViewField } from "@/lib/wx-map-data";
 import type { WeatherField } from "@/lib/routing/field";
@@ -703,6 +704,7 @@ export function MapView() {
         const wxLayer = createWxLayer(L, map);
         let wxField: WeatherField | null = null;
         let wxLoading = false;
+        let wxProbeMarker: import("leaflet").Marker | null = null;
         const wxCovers = (f: WeatherField | null) => {
           if (!f || !map) return false;
           const b = map.getBounds();
@@ -722,6 +724,7 @@ export function MapView() {
           void loadViewField({ south: b.getSouth(), west: b.getWest(), north: b.getNorth(), east: b.getEast() })
             .then((r) => {
               wxField = r?.field ?? wxField;
+              setViewField(wxField);
               useHelm.getState().setWxMap({
                 wxMapInfo: r
                   ? { source: r.source, fetchedAt: r.field.fetchedAt ?? null, times: r.field.times }
@@ -1431,6 +1434,33 @@ export function MapView() {
           radar.set(s.radar && radarAvailable());
           if (s.wxMapLayer !== "off") wxLoad();
           wxLayer.set({ layer: s.wxMapLayer, style: s.wxMapStyle, at: s.wxMapAt, field: wxField });
+          // The tapped weather spot: a draggable pin, only while the weather map is on.
+          const probe = s.wxMapLayer !== "off" ? s.wxProbe : null;
+          if (!probe) {
+            if (wxProbeMarker) {
+              wxProbeMarker.remove();
+              wxProbeMarker = null;
+            }
+          } else if (!wxProbeMarker) {
+            wxProbeMarker = L.marker([probe.lat, probe.lng], {
+              draggable: true,
+              keyboard: false,
+              zIndexOffset: 1200,
+              icon: L.divIcon({
+                className: "rp-divicon",
+                html: '<div style="width:44px;height:44px;display:grid;place-items:center"><div style="width:18px;height:18px;border-radius:50%;background:#fff;border:4px solid #111;box-shadow:0 0 0 3px rgba(255,255,255,.7)"></div></div>',
+                iconSize: [44, 44],
+                iconAnchor: [22, 22],
+              }),
+            }).addTo(map);
+            wxProbeMarker.on("drag", () => {
+              const ll = wxProbeMarker!.getLatLng();
+              useHelm.getState().setWxMap({ wxProbe: { lat: ll.lat, lng: ll.lng } });
+            });
+          } else {
+            const cur = wxProbeMarker.getLatLng();
+            if (Math.abs(cur.lat - probe.lat) > 1e-9 || Math.abs(cur.lng - probe.lng) > 1e-9) wxProbeMarker.setLatLng([probe.lat, probe.lng]);
+          }
           const dStamp =
             s.depthLayer === "off" ? "off" : `${s.depthLayer}|${(s.tideNowMsl ?? 0).toFixed(1)}|${s.hull.draftM.toFixed(1)}`;
           if (dStamp !== depthStamp) {
@@ -2107,6 +2137,10 @@ export function MapView() {
           }
           if (s.tapMode === "resize-swing") {
             return;
+          }
+          // Weather map: a tap reads the forecast at that spot (drag the pin to move it).
+          if (s.wxMapLayer !== "off" && s.tapMode === "none") {
+            s.setWxMap({ wxProbe: wp });
           }
         });
 
