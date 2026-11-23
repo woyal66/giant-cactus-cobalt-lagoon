@@ -56,7 +56,8 @@ jobs:
           # EOT20 global tide files, published by the same workflow.
           VITE_TIDE_MODEL: ${{ vars.VITE_TIDE_MODEL || format('https://{0}.github.io/{1}/tides/eot20/', github.repository_owner, github.event.repository.name) }}
         run: |
-          npx vite build --config vite.mobile.config.ts
+          # build:mobile also copies mobile.html to index.html, which Capacitor needs.
+          npm run build:mobile
           npx cap sync android
 
       - name: Signing key
@@ -67,7 +68,17 @@ jobs:
           KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
           if [ -z "$KEYSTORE_BASE64" ]; then echo "::error::Add the ANDROID_KEYSTORE_BASE64 secret first (see STORE-RELEASE.md)."; exit 1; fi
-          echo "$KEYSTORE_BASE64" | base64 --decode > android/upload.keystore
+          # Clean up what Windows tools add: spaces, CRLF, UTF-16 zero bytes, a BOM, certutil headers.
+          clean=$(printf '%s' "$KEYSTORE_BASE64" | tr -d '\000' | sed 's/^\xEF\xBB\xBF//; /^-----/d' | tr -d ' \r\n\t')
+          # Safe diagnostics (never prints the key): length, start pattern, any characters base64 can't contain.
+          bad=$(printf '%s' "$clean" | tr -d 'A-Za-z0-9+/=' | wc -c)
+          echo "Secret length after clean-up: ${#clean}; starts like a keystore (MII…): $([ "${clean:0:3}" = "MII" ] && echo yes || echo no); non-base64 characters: $bad"
+          if [ "$bad" -gt 0 ] || [ "${#clean}" -lt 1000 ]; then
+            echo "::error::ANDROID_KEYSTORE_BASE64 isn't the base64 text of the .jks file. Make anchormate-upload.txt with the PowerShell command in STORE-RELEASE.md, open THAT .txt in Notepad, select all, copy, and paste it as the secret."
+            exit 1
+          fi
+          printf '%s' "$clean" | base64 --decode > android/upload.keystore
+          if [ ! -s android/upload.keystore ]; then echo "::error::ANDROID_KEYSTORE_BASE64 decoded to an empty file. Re-create it from the .jks file."; exit 1; fi
           {
             echo "storeFile=upload.keystore"
             echo "storePassword=$KEYSTORE_PASSWORD"
