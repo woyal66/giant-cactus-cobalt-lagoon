@@ -3,7 +3,7 @@ import type { CapacitorConfig } from "@capacitor/cli";
 const config: CapacitorConfig = {
   // Must match the App Store bundle ID and the Google Play package name.
   // Changing it after the first store upload creates a different app.
-  appId: "com.anchormate.app",
+  appId: "au.com.anchormate",
   appName: "Anchor Mate",
   webDir: "dist-mobile",
   android: {
