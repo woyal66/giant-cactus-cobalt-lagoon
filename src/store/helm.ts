@@ -15,7 +15,7 @@ import { isTopic } from "@/lib/remote-watch";
 import type { DriftPoint } from "@/lib/mob";
 import type { CellTrend } from "@/lib/radar";
 import { WX_MAP_LAYERS, type WxMapLayer } from "@/lib/wx-map";
-import { readBoatType, type BoatPerf, type BoatType } from "@/lib/routing/polar";
+import { readBoatType, type BoatPerf, type BoatType, type PolarTune } from "@/lib/routing/polar";
 import { EMPTY_LEARNED, readLearned, type LearnedPolar, type PerfLive } from "@/lib/routing/learned";
 import { DEFAULT_LIMITS, DEFAULT_RULES, type Limits, type RouteRules } from "@/lib/routing/router";
 import { isTreat } from "@/lib/routing/storm";
@@ -667,6 +667,8 @@ export type RoutePrefs = {
   engineOn: boolean;
   /** Fuel burn at cruising speed, litres per hour (0 = don't show fuel). */
   fuelLph: number;
+  /** The skipper's own polar numbers (15 kn true wind) and pointing angle; null = built-in. */
+  tune: PolarTune | null;
 };
 
 /** Boat profile for the router from the route settings. */
@@ -679,6 +681,7 @@ export function boatPerfOf(prefs: RoutePrefs, loaM: number): BoatPerf {
     motorOnNose: prefs.motorOnNose,
     motorKn: prefs.motorKn,
     ...(prefs.useLearned ? { learned: prefs.learned } : {}),
+    ...(prefs.tune && prefs.boatType !== "motor" ? { tune: prefs.tune } : {}),
   };
 }
 
@@ -736,7 +739,20 @@ export const DEFAULT_ROUTE_PREFS: RoutePrefs = {
   useLearned: false,
   engineOn: false,
   fuelLph: 0,
+  tune: null,
 };
+
+function readTune(v: unknown, num: (x: unknown, d: number, lo: number, hi: number) => number): PolarTune | null {
+  if (!v || typeof v !== "object") return null;
+  const t = v as Partial<PolarTune>;
+  return {
+    pointingDeg: Math.round(num(t.pointingDeg, 40, 20, 60)),
+    closeHauledKn: num(t.closeHauledKn, 5.5, 0.5, 40),
+    closeReachKn: num(t.closeReachKn, 6.5, 0.5, 40),
+    beamKn: num(t.beamKn, 7, 0.5, 40),
+    runKn: num(t.runKn, 6, 0.5, 40),
+  };
+}
 
 function readRoutePrefs(v: unknown): RoutePrefs {
   const p = (v ?? {}) as Partial<RoutePrefs>;
@@ -763,7 +779,8 @@ function readRoutePrefs(v: unknown): RoutePrefs {
     learned: readLearned(p.learned),
     useLearned: p.useLearned === true,
     engineOn: p.engineOn === true,
-    fuelLph: num(p.fuelLph, 0, 0, 500),
+    fuelLph: Math.round(num(p.fuelLph, 0, 0, 500) * 10) / 10,
+    tune: readTune(p.tune, num),
   };
 }
 
@@ -1433,7 +1450,7 @@ export const useHelm = create<HelmState & HelmActions>()(
             limits: { ...cur.limits, ...(p.limits ?? {}) },
             rules: { ...cur.rules, ...(p.rules ?? {}) },
             // Hand-edits turn a preset into Custom; choosing a preset sets it explicitly.
-            preset: p.preset ?? (Object.keys(p).some((k) => !["sails", "boatType", "models", "learned", "useLearned", "engineOn", "fuelLph"].includes(k)) ? "custom" : cur.preset),
+            preset: p.preset ?? (Object.keys(p).some((k) => !["sails", "boatType", "models", "learned", "useLearned", "engineOn", "fuelLph", "tune"].includes(k)) ? "custom" : cur.preset),
           },
         });
       },

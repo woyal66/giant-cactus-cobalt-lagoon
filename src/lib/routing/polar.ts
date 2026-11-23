@@ -24,7 +24,22 @@ export type BoatPerf = {
   motorKn: number;
   /** This boat's learned speed ratios; applied when present. */
   learned?: LearnedPolar;
+  /** The skipper's own numbers: best speeds in 15 kn of true wind, and how close it points. */
+  tune?: PolarTune;
 };
+
+/** Boat speed (kn) through the water in 15 kn of true wind at four points of sail, and pointing. */
+export type PolarTune = {
+  /** Closest useful angle to the true wind, degrees (the no-go edge). */
+  pointingDeg: number;
+  closeHauledKn: number;
+  closeReachKn: number;
+  beamKn: number;
+  runKn: number;
+};
+
+/** Angles the tune numbers are for (close-hauled is at the pointing angle). */
+export const TUNE_ANGLES = { closeReach: 60, beam: 90, run: 180 } as const;
 
 export const BOAT_TYPES: { id: BoatType; label: string }[] = [
   { id: "mono", label: "Monohull" },
@@ -59,7 +74,8 @@ const CRUISER: number[][] = [
 const REF_LWL = 10.5;
 
 /** Closest a type can sail to the true wind, degrees. */
-export function noGoDeg(type: BoatType): number {
+export function noGoDeg(type: BoatType | BoatPerf): number {
+  if (typeof type !== "string") return type.tune ? Math.max(20, Math.min(60, type.tune.pointingDeg)) : noGoDeg(type.type);
   return type === "catamaran" ? 45 : 40;
 }
 
@@ -92,14 +108,50 @@ function table(tws: number, twa: number): number {
   return tws < TWS[0]! ? base * (tws / TWS[0]!) : base;
 }
 
+/** Built-in speed for the hull type and length (no tune, no learning), before gale reefing. */
+function baseSpeed(p: BoatPerf, twsKn: number, twa: number): number {
+  const scale = Math.sqrt(lwl(p) / REF_LWL);
+  let v = table(twsKn, Math.max(40, twa)) * scale;
+  if (p.type === "catamaran") v *= twa < 70 ? 0.92 : 1.15;
+  return v;
+}
+
+/** What the built-in polar gives in 15 kn of wind at the tune angles (defaults for the settings). */
+export function defaultTune(p: BoatPerf): PolarTune {
+  const r = (twa: number) => Math.round(baseSpeed(p, 15, twa) * 10) / 10;
+  const pointing = noGoDeg(p.type);
+  return { pointingDeg: pointing, closeHauledKn: r(pointing + 5), closeReachKn: r(60), beamKn: r(90), runKn: r(180) };
+}
+
+/**
+ * Scale the built-in shape so it matches the skipper's numbers at 15 kn: the ratio user ÷ built-in
+ * at each tune angle, blended linearly between angles, applied at every wind speed.
+ */
+export function tuneFactor(p: BoatPerf, twa: number): number {
+  const t = p.tune!;
+  const pts: Array<[number, number]> = [
+    [t.pointingDeg, t.closeHauledKn / Math.max(0.1, baseSpeed(p, 15, t.pointingDeg + 5))],
+    [TUNE_ANGLES.closeReach, t.closeReachKn / Math.max(0.1, baseSpeed(p, 15, 60))],
+    [TUNE_ANGLES.beam, t.beamKn / Math.max(0.1, baseSpeed(p, 15, 90))],
+    [TUNE_ANGLES.run, t.runKn / Math.max(0.1, baseSpeed(p, 15, 180))],
+  ];
+  pts.sort((a, b) => a[0] - b[0]);
+  if (twa <= pts[0]![0]) return pts[0]![1];
+  for (let i = 1; i < pts.length; i++) {
+    const [a, fa] = pts[i - 1]!;
+    const [b, fb] = pts[i]!;
+    if (twa <= b) return fa + ((fb - fa) * (twa - a)) / Math.max(1, b - a);
+  }
+  return pts[pts.length - 1]![1];
+}
+
 /** Sailing speed through the water (knots). 0 inside the no-go zone. */
 export function sailSpeed(p: BoatPerf, twsKn: number, twaDeg: number): number {
   if (p.type === "motor") return 0;
   const twa = Math.abs(((twaDeg + 540) % 360) - 180);
-  if (twa < noGoDeg(p.type)) return 0;
-  const scale = Math.sqrt(lwl(p) / REF_LWL);
-  let v = table(twsKn, Math.max(40, twa)) * scale;
-  if (p.type === "catamaran") v *= twa < 70 ? 0.92 : 1.15;
+  if (twa < noGoDeg(p)) return 0;
+  let v = baseSpeed(p, twsKn, twa);
+  if (p.tune) v *= tuneFactor(p, twa);
   // Reefed hard in a gale.
   if (twsKn > 30) v *= Math.max(0.6, 1 - (twsKn - 30) * 0.03);
   return p.learned ? v * learnedFactor(p.learned, twsKn, twa) : v;
@@ -119,7 +171,7 @@ export function boatSpeed(p: BoatPerf, twsKn: number, twaDeg: number): Speed {
   if (p.type === "motor") return { stwKn: p.motorKn, motoring: true };
   const sail = sailSpeed(p, twsKn, twaDeg);
   const twa = Math.abs(((twaDeg + 540) % 360) - 180);
-  const onNose = twa < noGoDeg(p.type);
+  const onNose = twa < noGoDeg(p);
   const motor = { stwKn: Math.max(sail, p.motorKn), motoring: true };
   if ((p.motorWindBelowKn ?? 0) > 0 && twsKn < p.motorWindBelowKn!) return motor;
   if (p.motorBelowKn > 0 && sail < p.motorBelowKn) {

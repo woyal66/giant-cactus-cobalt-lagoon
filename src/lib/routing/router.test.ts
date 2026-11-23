@@ -177,3 +177,12 @@ test("storm rules: avoid refuses, warn flags, a storm cell to one side is routed
   const meanLat = pen.points.reduce((a, p) => a + p.lat, 0) / pen.points.length;
   assert.ok(meanLat >= -23.42, `route should keep north of the storm, mean lat ${meanLat}`);
 });
+
+test("zigzags are straightened into one clear leg when it is no slower", () => {
+  const field = uniformField({ windKn: 15, windDir: 0 }, box, t0, 48);
+  const r = route({ start: A, finish: EAST, departAt: t0, field, boat, mode: "fastest", limits: DEFAULT_LIMITS });
+  ok(r);
+  // A beam reach in steady wind: every point should lie close to the straight line.
+  const off = Math.max(...r.points.map((p) => Math.abs(p.lat - A.lat)));
+  assert.ok(off < 0.01, `max ${off}° off the line`);
+});

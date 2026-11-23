@@ -36,6 +36,9 @@ type PlanContext = {
   models: string[];
 };
 
+/** Under the keel at mean sea level, on top of the draft: the depth model is approximate and tides fall below MSL. */
+const SHALLOW_MARGIN_M = 1;
+
 function when(at: number): string {
   const d = new Date(at);
   const day = d.toLocaleDateString([], { weekday: "short" });
@@ -152,6 +155,7 @@ function PlannerSheet() {
       limits: prefs.limits,
       rules: prefs.rules,
       models: prefs.models,
+      minDepthM: hull.draftM + SHALLOW_MARGIN_M,
       onStatus: setBusy,
     })
       .then(({ out: o, fields, box, forecastAt }) => {
@@ -262,6 +266,7 @@ function PlannerSheet() {
                 limits: prefs.limits,
                 rules: prefs.rules,
                 models: prefs.models,
+                minDepthM: hull.draftM + SHALLOW_MARGIN_M,
                 onStatus: setBusy,
               })
                 .then((sc) => {
@@ -363,6 +368,15 @@ function Results({
         })}
       </div>
 
+      {out.depthCheck === "used" ? (
+        <p className="mb-2 text-t13 text-muted-foreground">
+          Routes keep to water at least {formatDepth(useHelm.getState().hull.draftM + SHALLOW_MARGIN_M)} deep at mean sea level (depth model), and off mapped land and reefs.
+        </p>
+      ) : out.depthCheck === "relaxed" ? (
+        <p className="mb-2 rounded-md border border-amber-400/50 bg-amber-400/10 px-2.5 py-2 text-t14 text-amber-200">
+          No route stays in deep enough water by the depth model, so these routes avoid only the coastline and reefs. Check the shallow spots below and the chart before you go.
+        </p>
+      ) : null}
       {out.reefData !== "used" ? (
         <p className="mt-2 rounded-md border border-amber-500/50 bg-amber-500/10 px-2.5 py-1.5 text-t14 leading-snug text-amber-200">
           Routes avoid the coastline but not reefs (reef data isn&apos;t installed). Check every leg on the chart
