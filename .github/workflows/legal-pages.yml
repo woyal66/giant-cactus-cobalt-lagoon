@@ -28,12 +28,11 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  deploy:
+  # Build everything and upload it. Kept separate from publishing so the tile caches are saved
+  # even if GitHub's publish step has a hiccup, and only "deploy" needs re-running then.
+  build:
     runs-on: ubuntu-latest
     timeout-minutes: 180
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
 
@@ -119,5 +118,13 @@ jobs:
       - uses: actions/upload-pages-artifact@v3
         with:
           path: public_site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
       - id: deployment
         uses: actions/deploy-pages@v4
