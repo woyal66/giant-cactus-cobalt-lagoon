@@ -261,6 +261,8 @@ export type HelmState = {
   wxMapAt: number;
   wxMapPlaying: boolean;
   wxMapInfo: { source: "live" | "saved" | "passage" | "none" | "loading"; fetchedAt: number | null; times: number[] } | null;
+  /** Weather map: the point tapped for a readout (Windy-style), not saved. */
+  wxProbe: LatLng | null;
   /** Base map: satellite photo, vector chart, or chart lines over the photo. */
   baseMap: "photo" | "chart" | "lines";
   /** 3D reef view open (not saved). */
@@ -387,7 +389,7 @@ type HelmActions = {
   setSunPunch: (n: 1 | 2 | 3) => void;
   setSharpTiles: (v: boolean) => void;
   setDepthLayer: (v: "off" | "depth" | "shallow") => void;
-  setWxMap: (p: Partial<Pick<HelmState, "wxMapLayer" | "wxMapStyle" | "wxMapAt" | "wxMapInfo" | "wxMapPlaying">>) => void;
+  setWxMap: (p: Partial<Pick<HelmState, "wxMapLayer" | "wxMapStyle" | "wxMapAt" | "wxMapInfo" | "wxMapPlaying" | "wxProbe">>) => void;
   setTideNowMsl: (v: number | null) => void;
   setBenthic: (v: boolean) => void;
   /** Put the two measuring pins on the chart (default: across the middle of the view). */
@@ -854,6 +856,7 @@ export const useHelm = create<HelmState & HelmActions>()(
       wxMapAt: Date.now(),
       wxMapPlaying: false,
       wxMapInfo: null,
+      wxProbe: null,
       reef3d: false,
       tideNowMsl: null,
       benthic: false,
@@ -1728,6 +1731,7 @@ export const useHelm = create<HelmState & HelmActions>()(
           baseMap: p.baseMap === "chart" || p.baseMap === "lines" ? p.baseMap : "photo",
           wxMapAt: Date.now(),
           wxMapInfo: null,
+          wxProbe: null,
           benthic: p.benthic === true,
           tideNowMsl: null,
           textSize: p.textSize === "standard" || p.textSize === "large" || p.textSize === "xl" ? p.textSize : current.textSize,

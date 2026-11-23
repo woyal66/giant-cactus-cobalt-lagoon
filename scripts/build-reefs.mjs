@@ -13,7 +13,6 @@
  * about 30 m and stores coordinates at 1e-5°. Credit "GBRMPA" in the app's attributions.
  */
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname } from "node:path";
 
 export const KEEP = /reef|rock|cay|island|shoal|bank/i;
 const SCALE = 1e5;

@@ -68,8 +68,9 @@ function WindArrow({ deg, className }: { deg: number; className?: string }) {
 export function WxStrip() {
   const panel = useHelm((s) => s.panel);
   const setPanel = useHelm((s) => s.setPanel);
+  const wxOn = useHelm((s) => s.wxMapLayer !== "off");
   const wx = useWx();
-  if (panel) return null;
+  if (panel || wxOn) return null;
   const data = wx.data;
   if (!data && !wx.isLoading && !wx.isError) return null;
 

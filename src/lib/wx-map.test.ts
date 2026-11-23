@@ -1,6 +1,19 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { components, contourSegments, extremes, isobarLevels, layerIndex, valueAt, viewGrid } from "./wx-map.ts";
+import {
+  WIND_RAMP,
+  components,
+  contourSegments,
+  extremes,
+  isobarLevels,
+  isobarStep,
+  layerIndex,
+  layerMax,
+  probeAt,
+  rampColor,
+  valueAt,
+  viewGrid,
+} from "./wx-map.ts";
 
 test("view grid covers the view, stays under 100 points, and snaps", () => {
   const g = viewGrid({ south: -24.2, west: 152.1, north: -23.6, east: 152.7 });
@@ -58,4 +71,36 @@ test("upsampling keeps the corners and interpolates between", async () => {
   assert.equal(u.values[0], 0);
   assert.equal(u.values[24], 12);
   assert.equal(u.values[2], 2); // halfway along the bottom edge
+});
+
+test("colour ramp blends between stops and clamps at the ends", () => {
+  assert.deepEqual(rampColor(WIND_RAMP, -5), WIND_RAMP[0]![1]);
+  assert.deepEqual(rampColor(WIND_RAMP, 99), WIND_RAMP[WIND_RAMP.length - 1]![1]);
+  const mid = rampColor([[0, [0, 0, 0]], [10, [100, 200, 50]]], 5);
+  assert.deepEqual(mid, [50, 100, 25]);
+});
+
+test("isobar spacing adapts to the pressure range; layer max ignores missing data", () => {
+  assert.equal(isobarStep([1012, 1013, 1014]), 1);
+  assert.equal(isobarStep([1000, 1010]), 2);
+  assert.equal(isobarStep([990, 1020]), 4);
+  assert.equal(layerMax(new Float32Array([NaN, 2, 5, NaN])), 5);
+  assert.ok(Number.isNaN(layerMax(new Float32Array([NaN]))));
+});
+
+test("probe reads wind from, gusts and waves at a point; waves reach the coast", () => {
+  const n = 4;
+  const L = (v: number) => [new Float32Array(n).fill(v)];
+  const f = {
+    model: "t", lat0: -20, lng0: 150, dLat: 0.1, dLng: 0.1, nx: 2, ny: 2, times: [0],
+    windKn: L(15), windDir: L(135), gustKn: L(22),
+    waveM: [new Float32Array([1.5, NaN, 1.5, NaN])], waveDir: [new Float32Array([90, NaN, 90, NaN])], wavePer: L(8),
+    curKn: L(NaN), curDir: L(NaN),
+  } as unknown as Parameters<typeof probeAt>[0];
+  const p = probeAt(f, 0, -19.95, 150.05);
+  assert.ok(Math.abs(p.windKn! - 15) < 1e-6);
+  assert.ok(Math.abs(p.windFrom! - 135) < 1e-6);
+  assert.equal(p.gustKn, 22);
+  assert.ok(Math.abs(p.waveM! - 1.5) < 1e-6); // half the corners are land: still 1.5 m
+  assert.equal(p.curKn, null);
 });
