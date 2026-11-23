@@ -68,7 +68,9 @@ jobs:
           KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
           if [ -z "$KEYSTORE_BASE64" ]; then echo "::error::Add the ANDROID_KEYSTORE_BASE64 secret first (see STORE-RELEASE.md)."; exit 1; fi
-          echo "$KEYSTORE_BASE64" | base64 --decode > android/upload.keystore
+          # Strip spaces and Windows line endings (PowerShell's Out-File adds CRLF), then decode.
+          printf '%s' "$KEYSTORE_BASE64" | tr -d ' \r\n\t' | base64 --decode > android/upload.keystore
+          if [ ! -s android/upload.keystore ]; then echo "::error::ANDROID_KEYSTORE_BASE64 decoded to an empty file. Re-create it from the .jks file."; exit 1; fi
           {
             echo "storeFile=upload.keystore"
             echo "storePassword=$KEYSTORE_PASSWORD"
