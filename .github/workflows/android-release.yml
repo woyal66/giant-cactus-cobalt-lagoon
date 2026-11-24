@@ -90,7 +90,8 @@ jobs:
         working-directory: android
         run: |
           chmod +x gradlew
-          ./gradlew bundleRelease -PversionCode=${{ github.run_number }} -PversionName="${{ inputs.version_name }}"
+          # .aab for Google Play, plus a signed .apk to install straight onto a phone for testing.
+          ./gradlew bundleRelease assembleRelease -PversionCode=${{ github.run_number }} -PversionName="${{ inputs.version_name }}"
 
       - name: Remove the key from the runner
         if: always()
@@ -100,4 +101,10 @@ jobs:
         with:
           name: anchor-mate-${{ inputs.version_name }}-${{ github.run_number }}
           path: android/app/build/outputs/bundle/release/app-release.aab
+          if-no-files-found: error
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: anchor-mate-${{ inputs.version_name }}-${{ github.run_number }}-phone-install-apk
+          path: android/app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error
