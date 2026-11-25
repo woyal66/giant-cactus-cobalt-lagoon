@@ -225,6 +225,28 @@ export function SteerOverlay() {
   if (!boat || tapMode !== "none" || panel === "weather") return null;
 
   const pts = passage ? guidePoints(passage, undefined, { turnDeg, chordM }) : [];
+  // Not following a track: just speed and heading, in a slim chip (no empty XTE / CTS boxes).
+  if (pts.length < 2) {
+    const kn = msToKnots(boat.speedMs);
+    const sogText = Number.isFinite(kn) ? kn.toFixed(1) : "—";
+    return (
+      <div
+        ref={publishSteerBottom}
+        className="pointer-events-none absolute inset-x-0 top-0 z-30 flex justify-center px-2 pt-[max(0.35rem,var(--safe-area-inset-top,env(safe-area-inset-top)))] md:hidden"
+      >
+        <div
+          className="rp-glass flex items-baseline gap-3 rounded-full border border-border bg-card/95 px-4 py-1.5 shadow-[var(--shadow-border)]"
+          aria-label={`Speed ${sogText} knots, heading ${formatHeading(boat.heading)}`}
+        >
+          <span className="font-display text-t16 leading-none font-semibold tabular-nums">
+            {sogText}
+            <span className="ml-0.5 text-t12 font-medium text-muted-foreground">kn</span>
+          </span>
+          <span className="font-display text-t16 leading-none font-semibold tabular-nums">{formatHeading(boat.heading)}</span>
+        </div>
+      </div>
+    );
+  }
   const nav = boat && pts.length ? markNav(boat, pts, pinned, courseMark) : null;
   const turn = nav && pts.length >= 2 ? nextTurn(boat, pts, nav.index) : null;
   // A turn at the mark just counted as made is still to be steered (see steerLegIndex).

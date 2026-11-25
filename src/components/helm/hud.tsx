@@ -1,17 +1,19 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { Link } from "@tanstack/react-router";
 import { toast } from "sonner";
 import {
   LocateFixed,
+  Navigation2,
   Ruler,
   Wind as WindIcon,
   Satellite,
+  Settings,
 } from "lucide-react";
 import { SignedIn, SignedOut, UserButton } from "@/lib/auth/gates";
 import { useCurrentUserState } from "@/lib/auth/use-current-user";
 import {
   bearingDegrees,
-  formatGroundScale,
+  scaleBar,
   formatHeading,
   formatLat,
   formatLng,
@@ -31,6 +33,7 @@ import { MobGuide } from "@/components/helm/mob-guide";
 import { Button } from "@/components/ui/button";
 import { centreTileSource, closeInOnBoat, getChartBounds } from "@/components/helm/map-view";
 import { WindInstrument } from "@/components/helm/weather";
+import { StatusChips } from "@/components/helm/status-chips";
 import { windCardinal } from "@/lib/weather";
 import { unlockAlarmAudio } from "@/hooks/helm-runtime";
 import { useWx } from "@/hooks/weather";
@@ -130,12 +133,12 @@ export function TopHud() {
           : boat?.source === "placed"
             ? "PLOT"
             : "NO FIX";
-  const scale = formatGroundScale(boat?.lat ?? -23.9, chartZoom);
+  const bar = scaleBar(boat?.lat ?? -23.9, chartZoom);
   const tapeUp = Boolean(boat) && tapMode === "none" && panel !== "weather";
 
   return (
     <header className="pointer-events-none absolute inset-x-0 top-0 z-20 p-2 pt-[max(0.5rem,var(--safe-area-inset-top,env(safe-area-inset-top)))]">
-      {tapeUp ? <div className="h-[4.1rem] md:hidden" aria-hidden /> : null}
+      {tapeUp ? <div className={`${tracking ? "h-[4.1rem]" : "h-[2.6rem]"} md:hidden`} aria-hidden /> : null}
       <div className="pointer-events-auto mx-auto hidden max-w-6xl items-center gap-2 md:flex">
         <div className="flex min-w-0 items-center gap-3 rounded-xl border border-border bg-card/95 px-3 py-2 shadow-[var(--shadow-border)] rp-glass">
           <div className="min-w-0">
@@ -172,11 +175,10 @@ export function TopHud() {
       <div ref={clearSteerBar} className="mx-auto mt-1.5 flex max-w-6xl justify-between gap-2">
         <div className="pointer-events-auto flex w-[4.75rem] flex-col gap-1.5">
           {/* Chart */}
-          <Button
-            variant={following || follow ? "default" : "helm"}
-            size="icon"
-            className="h-10 w-full"
-            aria-label={tracking ? (following ? "Release the chart" : "Follow the track") : !follow ? "Centre on boat" : chartUp === "heading" ? "North up" : "Heading up"}
+          <RailBtn
+            on={following || follow}
+            label={tracking ? (following ? "Following" : "Follow") : !follow ? "Centre" : chartUp === "heading" ? "Head up" : "North up"}
+            aria={tracking ? (following ? "Release the chart" : "Follow the track") : !follow ? "Centre on boat" : chartUp === "heading" ? "Heading up. Tap for north up" : "North up. Tap for heading up"}
             onClick={() => {
               if (tracking) {
                 unlockAlarmAudio();
@@ -187,59 +189,75 @@ export function TopHud() {
             }}
           >
             {tracking ? (
-              <span className="font-display text-t12 font-semibold leading-none">
-                {following ? "ON" : "GO"}
-              </span>
+              <Navigation2 className="size-5" aria-hidden />
             ) : !follow ? (
-              <LocateFixed />
+              <LocateFixed className="size-5" aria-hidden />
             ) : chartUp === "heading" ? (
-              <span className="font-display text-lg font-semibold leading-none">↑</span>
+              <span className="font-display text-xl font-semibold leading-none">↑</span>
             ) : (
-              <span className="font-display text-sm font-semibold leading-none">N</span>
+              <span className="font-display text-lg font-semibold leading-none">N</span>
             )}
-          </Button>
+          </RailBtn>
+          {/* Scale: a plain distance bar. Tap to close in on the boat. */}
           <button
             type="button"
             onClick={closeInOnBoat}
-            aria-label="Helm scale"
-            className="w-full rounded-md border border-border bg-card/95 px-1 py-1 text-center shadow-[var(--shadow-border)] rp-glass"
+            aria-label={`Scale bar ${formatMeters(bar.metres)}. ${imageryShort(imagery)} photo. Tap to zoom in on the boat`}
+            className="w-full rounded-md border border-border bg-card/95 px-1 py-1.5 text-center shadow-[var(--shadow-border)] rp-glass"
           >
-            <p className="font-display text-t13 leading-none font-semibold tabular-nums">
-              {scale}
-            </p>
-            <p className="mt-0.5 text-t11 leading-none text-muted-foreground">
-              {imageryShort(imagery)}
-            </p>
+            <span className="mx-auto block h-1.5 rounded-sm border-x-2 border-b-2 border-foreground" style={{ width: `${Math.min(64, bar.px)}px` }} aria-hidden />
+            <span className="mt-0.5 block font-display text-t13 leading-none font-semibold tabular-nums">{formatMeters(bar.metres)}</span>
+            <span className="mt-0.5 block text-t11 leading-none text-muted-foreground">{imageryShort(imagery)}</span>
           </button>
           {availableImagery().length > 2 ? (
-            <button
-              type="button"
-              aria-label="Compare: flip to the other satellite photo"
+            <RailBtn
+              label="Compare"
+              aria="Compare: flip to the other satellite photo"
               onClick={() => {
                 const next = useHelm.getState().flipImagery(centreTileSource());
-                toast(`Showing ${imageryShort(next)}. Tap ⇄ to flip back.`, { duration: 2500 });
+                toast(`Showing ${imageryShort(next)}. Tap Compare to flip back.`, { duration: 2500 });
               }}
-              className="h-10 w-full rounded-md border border-border bg-card/95 py-1 text-center text-t15 leading-none font-semibold shadow-[var(--shadow-border)] rp-glass"
             >
-              ⇄
-            </button>
+              <span className="text-t16 leading-none font-semibold" aria-hidden>⇄</span>
+            </RailBtn>
           ) : null}
-          <div className="h-1.5" aria-hidden />
-          {/* Tools */}
-          <button
-            type="button"
-            aria-label={wxLayerOn ? "Hide weather on the chart" : "Show weather on the chart"}
+          <div className="h-1" aria-hidden />
+          {/* Weather: one button for the forecast and the weather map. */}
+          <RailBtn
+            on={wxLayerOn || panel === "weather"}
+            danger={gust >= 25 && !wxLayerOn}
+            label="Weather"
+            aria={
+              wx.data
+                ? `Weather. Wind ${Math.round(wx.data.now.windKn)} knots ${windCardinal(wx.data.now.dirDeg)}${gust >= 25 ? `, gusts ${Math.round(gust)}` : ""}`
+                : "Weather"
+            }
             onClick={() => {
               const st = useHelm.getState();
-              st.setWxMap(st.wxMapLayer === "off" ? { wxMapLayer: "wind", wxMapAt: Date.now() } : { wxMapLayer: "off", wxMapPlaying: false });
+              if (st.wxMapLayer !== "off") {
+                st.setWxMap({ wxMapLayer: "off", wxMapPlaying: false, wxProbe: null });
+                return;
+              }
+              setPanel(panel === "weather" ? null : "weather");
             }}
-            className={`flex h-10 w-full items-center justify-center rounded-md border shadow-[var(--shadow-border)] ${wxLayerOn ? "border-primary bg-primary text-primary-foreground" : "border-border bg-card/95 rp-glass"}`}
           >
-            <WindIcon className="size-5" aria-hidden />
-          </button>
-          <button
-            type="button"
-            aria-label={measuring ? "Remove the measuring pins" : "Measure distance on the chart"}
+            {wx.data ? (
+              <span className="flex items-center gap-0.5">
+                <span aria-hidden className="text-t13 leading-none" style={{ display: "inline-block", transform: `rotate(${wx.data.now.dirDeg + 180}deg)` }}>
+                  ↑
+                </span>
+                <span className="font-display text-t15 leading-none font-semibold tabular-nums">
+                  {Math.round(gust >= 25 ? gust : wx.data.now.windKn)}
+                </span>
+              </span>
+            ) : (
+              <WindIcon className="size-5" aria-hidden />
+            )}
+          </RailBtn>
+          <RailBtn
+            on={measuring}
+            label="Measure"
+            aria={measuring ? "Remove the measuring pins" : "Measure distance on the chart"}
             onClick={() => {
               const st = useHelm.getState();
               if (st.measurePts.length) {
@@ -256,44 +274,10 @@ export function TopHud() {
               st.setPanel(null);
               st.startMeasure({ lat: lat + dLat, lng: mid - dLng }, { lat: lat - dLat, lng: mid + dLng });
             }}
-            className={`flex h-10 w-full items-center justify-center rounded-md border py-1.5 shadow-[var(--shadow-border)] ${measuring ? "border-primary bg-primary text-primary-foreground" : "border-border bg-card/95 rp-glass"}`}
           >
-            <Ruler className="size-4" aria-hidden />
-          </button>
-          {/* Always here (the top bar's wind reading is hidden under the steering bar on phones). */}
-          <button
-            type="button"
-            onClick={() => setPanel("weather")}
-            aria-label={
-              wx.data
-                ? `Forecast. Wind ${Math.round(wx.data.now.windKn)} knots ${windCardinal(wx.data.now.dirDeg)}${gust >= 25 ? `, gusts ${Math.round(gust)}` : ""}`
-                : "Forecast"
-            }
-            className={`w-full rounded-md border px-0.5 py-1 text-center shadow-[var(--shadow-border)] ${
-              gust >= 25 ? "border-destructive bg-destructive text-white" : "border-border bg-card/95 rp-glass"
-            }`}
-          >
-            {wx.data ? (
-              <>
-                <span
-                  aria-hidden
-                  className="block text-t13 leading-none"
-                  style={{ transform: `rotate(${wx.data.now.dirDeg + 180}deg)` }}
-                >
-                  ↑
-                </span>
-                <span className="font-display block text-t15 leading-none font-semibold tabular-nums">
-                  {Math.round(gust >= 25 ? gust : wx.data.now.windKn)}
-                </span>
-                <span className="block text-t11 leading-none opacity-80">
-                  {gust >= 25 ? "gust" : windCardinal(wx.data.now.dirDeg)}
-                </span>
-              </>
-            ) : (
-              <span className="text-t11 font-semibold">Wx</span>
-            )}
-          </button>
-          <div className="h-1.5" aria-hidden />
+            <Ruler className="size-5" aria-hidden />
+          </RailBtn>
+          <div className="h-1" aria-hidden />
           {/* Emergency, on its own */}
           <Button
             variant={mob ? "danger" : "helm"}
@@ -309,16 +293,16 @@ export function TopHud() {
             <span className="font-display text-t13 font-semibold leading-none">MOB</span>
           </Button>
         </div>
-        <div className="pointer-events-auto flex flex-col gap-1.5">
-          <Button
-            variant={panel === "layers" ? "default" : "helm"}
-            size="icon"
-            className="size-10"
-            aria-label="Map, boat, and look"
-            onClick={() => setPanel(panel === "layers" ? null : "layers")}
-          >
-            <Satellite />
-          </Button>
+        <div className="pointer-events-auto flex flex-col items-end gap-1.5">
+          <div className="flex w-[4.25rem] flex-col gap-1.5">
+            <RailBtn on={panel === "layers"} label="Chart" aria="Chart: base map, photos, overlays and offline packs" onClick={() => setPanel(panel === "layers" ? null : "layers")}>
+              <Satellite className="size-5" aria-hidden />
+            </RailBtn>
+            <RailBtn on={panel === "settings"} label="Settings" aria="Settings: look, text size, units, steering and help" onClick={() => setPanel(panel === "settings" ? null : "settings")}>
+              <Settings className="size-5" aria-hidden />
+            </RailBtn>
+          </div>
+          <StatusChips />
         </div>
       </div>
 
@@ -345,7 +329,7 @@ export function TopHud() {
             <Button
               variant="outline"
               size="sm"
-              className="h-8 shrink-0"
+              className="h-10 shrink-0"
               disabled={packDraft.length === 0}
               onClick={popPackCorner}
             >
@@ -357,7 +341,7 @@ export function TopHud() {
               <Button
                 variant="outline"
                 size="sm"
-                className="h-8 shrink-0"
+                className="h-10 shrink-0"
                 disabled={fenceDraft.length === 0}
                 onClick={popFencePoint}
               >
@@ -366,7 +350,7 @@ export function TopHud() {
               <Button
                 variant="default"
                 size="sm"
-                className="h-8 shrink-0"
+                className="h-10 shrink-0"
                 disabled={fenceDraft.length < 3}
                 onClick={commitFence}
               >
@@ -377,7 +361,7 @@ export function TopHud() {
           <Button
             variant="outline"
             size="sm"
-            className="h-8 shrink-0"
+            className="h-10 shrink-0"
             onClick={() => cancelPlaceHook()}
           >
             Cancel
@@ -393,10 +377,46 @@ export function TopHud() {
 
       {!boat && gpsDenied ? (
         <p className="pointer-events-none mx-auto mt-1.5 max-w-6xl text-center text-t13 text-muted-foreground">
-          GPS off — Layers → Place boat.
+          GPS is off. Settings → Place boat by hand.
         </p>
       ) : null}
     </header>
+  );
+}
+
+/** A left-rail button: an icon over a one-word label, big enough for a wet thumb. */
+function RailBtn({
+  children,
+  label,
+  aria,
+  on,
+  danger,
+  onClick,
+}: {
+  children: ReactNode;
+  label: string;
+  aria: string;
+  on?: boolean;
+  danger?: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      aria-label={aria}
+      aria-pressed={on}
+      onClick={onClick}
+      className={`flex min-h-12 w-full flex-col items-center justify-center gap-0.5 rounded-md border px-0.5 py-1 shadow-[var(--shadow-border)] ${
+        danger
+          ? "border-destructive bg-destructive text-white"
+          : on
+            ? "border-primary bg-primary text-primary-foreground"
+            : "border-border bg-card/95 text-foreground rp-glass"
+      }`}
+    >
+      {children}
+      <span className="text-t11 leading-none font-semibold">{label}</span>
+    </button>
   );
 }
 
@@ -537,6 +557,8 @@ export function NavRibbon() {
 
   if (useHelm((s) => s.mob)) return null;
   if (!passage && !anchor) return null;
+  // On watch with no track, the anchor card at the bottom (AnchorStatusCard) says it all.
+  if (!passage && anchor?.radiusLocked) return null;
   if (panel || tapMode !== "none") return null;
 
   const pts = passage ? guidePoints(passage, crumb, { turnDeg, chordM }) : [];

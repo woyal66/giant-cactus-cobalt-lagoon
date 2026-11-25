@@ -56,6 +56,7 @@ export type PanelId =
   | "save"
   | "rename"
   | "layers"
+  | "settings"
   | "weather"
   | "boat";
 export type DrawMode = "idle" | "record" | "draw";

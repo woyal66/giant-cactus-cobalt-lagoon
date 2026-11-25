@@ -14,10 +14,12 @@ import { rodeMath, formatTideClock } from "@/lib/anchor";
 import { gpsReachM } from "@/lib/boat";
 import { unlockAlarmAudio } from "@/hooks/helm-runtime";
 import { armWatchAlerts } from "@/lib/watch-notify";
+import { tapFeel } from "@/lib/haptics";
 import { useWx } from "@/hooks/weather";
 import { fetchTideRise, latDatumM, tideRiseAt, toLatM } from "@/lib/tides";
 import type { SeaState } from "@/lib/weather";
 import { AnchorWxCard } from "@/components/helm/weather";
+import { NightCheckCard } from "@/components/helm/night-check-card";
 import { useHelm } from "@/store/helm";
 import {
   depthSuffix,
@@ -225,6 +227,7 @@ function AnchorSetBar() {
   const swingShape = useHelm((s) => s.swingShape);
   const setSwingShape = useHelm((s) => s.setSwingShape);
   const fenceDraft = useHelm((s) => s.fenceDraft);
+  const circleRadius = useHelm((s) => s.circleDraft?.radiusM ?? s.anchor?.radiusM ?? 40);
   const math = rodeMath(rode, gpsReachM(hull));
   const astern =
     boat?.heading != null ? Math.round((boat.heading + 180) % 360) : null;
@@ -328,6 +331,7 @@ function AnchorSetBar() {
         ) : null}
         {step === "watch" ? (
           <div className="max-h-[46dvh] overflow-y-auto">
+            <NightCheckCard radiusM={circleRadius} />
             <p className="mb-2 text-t12 text-muted-foreground">
               Next 24 h
             </p>
@@ -342,6 +346,7 @@ function AnchorSetBar() {
               onOk={() => {
                 void armWatchAlerts();
                 confirm();
+                tapFeel();
               }}
             />
           </div>

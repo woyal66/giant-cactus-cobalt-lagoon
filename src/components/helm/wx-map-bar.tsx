@@ -146,9 +146,17 @@ export function WxMapBar() {
             );
           })}
         </div>
-        <Button variant="outline" className="h-12 shrink-0 px-3" aria-label="Close the weather map" onClick={() => set({ wxMapLayer: "off", wxMapPlaying: false, wxProbe: null })}>
-          Done
-        </Button>
+        <div className="flex shrink-0 gap-1">
+          <Button variant="outline" className="h-12 px-2" aria-label="Forecast here, as a graph" onClick={() => {
+            set({ wxMapLayer: "off", wxMapPlaying: false, wxProbe: null });
+            useHelm.getState().setPanel("weather");
+          }}>
+            Forecast
+          </Button>
+          <Button variant="outline" className="h-12 px-2.5" aria-label="Close the weather map" onClick={() => set({ wxMapLayer: "off", wxMapPlaying: false, wxProbe: null })}>
+            Done
+          </Button>
+        </div>
       </div>
 
       <div className="mt-2 flex items-center gap-2">

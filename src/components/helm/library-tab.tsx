@@ -95,7 +95,7 @@ export function LibraryTab() {
     };
     const s = useHelm.getState();
     useHelm.setState({ drafts: [d, ...s.drafts.filter((x) => x.localId !== d.localId)].slice(0, MAX_TRACKS) });
-    toast.success(`Saved "${t.title}" to My tracks. Save the map area offline too (View → Offline packs).`);
+    toast.success(`Saved "${t.title}" to My tracks. Save the map area offline too (Chart → Offline packs).`);
   };
 
   return (

@@ -68,7 +68,7 @@ function TreatRow({ title, detail, value, onChange }: { title: string; detail: s
       <p className="text-t13 leading-snug text-muted-foreground">{detail}</p>
       <div className="mt-1.5 grid grid-cols-4 gap-1">
         {(["avoid", "penalise", "warn", "ignore"] as Treat[]).map((t) => (
-          <Button key={t} size="sm" className="h-8 px-1 text-t13" variant={value === t ? "default" : "outline"} onClick={() => onChange(t)}>
+          <Button key={t} size="sm" className="h-10 px-1 text-t13" variant={value === t ? "default" : "outline"} onClick={() => onChange(t)}>
             {TREAT_LABEL[t]}
           </Button>
         ))}
@@ -152,7 +152,7 @@ export function RouteSettings({ onDone }: { onDone: () => void }) {
         <p className={label}>Speed or comfort</p>
         <div className="grid grid-cols-5 gap-1">
           {[0, 0.25, 0.5, 0.75, 1].map((w, i) => (
-            <Button key={w} size="sm" className="h-8 px-0 text-t13" variant={p.rules.comfortWeight === w ? "default" : "outline"} onClick={() => set({ rules: { ...p.rules, comfortWeight: w } })}>
+            <Button key={w} size="sm" className="h-10 px-0 text-t13" variant={p.rules.comfortWeight === w ? "default" : "outline"} onClick={() => set({ rules: { ...p.rules, comfortWeight: w } })}>
               {["Speed", "", "Balanced", "", "Comfort"][i] || "·"}
             </Button>
           ))}

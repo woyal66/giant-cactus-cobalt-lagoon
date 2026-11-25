@@ -69,8 +69,10 @@ export function WxStrip() {
   const panel = useHelm((s) => s.panel);
   const setPanel = useHelm((s) => s.setPanel);
   const wxOn = useHelm((s) => s.wxMapLayer !== "off");
+  const watching = useHelm((s) => Boolean(s.anchor?.radiusLocked));
   const wx = useWx();
-  if (panel || wxOn) return null;
+  // At anchor the anchor card sits here instead.
+  if (panel || wxOn || watching) return null;
   const data = wx.data;
   if (!data && !wx.isLoading && !wx.isError) return null;
 
@@ -182,6 +184,7 @@ export function WeatherPanel() {
   const boatWx = useWx();
   const spot = useSpotWx(pin?.lat ?? null, pin?.lng ?? null);
   const wx = pin ? spot : boatWx;
+  const [full, setFull] = useState(false);
   if (panel !== "weather") return null;
   const data = wx.data;
   const measureHead = (el: HTMLDivElement | null) => {
@@ -195,12 +198,17 @@ export function WeatherPanel() {
   const brg = pin && boat ? formatHeading(bearingDegrees(boat, pin)) : null;
 
   return (
-    <div className="pointer-events-auto absolute inset-0 z-50 flex flex-col overflow-x-hidden overflow-y-auto bg-card pt-[max(0.4rem,var(--safe-area-inset-top,env(safe-area-inset-top)))] pb-[max(1.5rem,var(--safe-area-inset-bottom,env(safe-area-inset-bottom)))]">
+    <div
+      className={`pointer-events-auto absolute inset-x-0 bottom-0 z-50 flex flex-col overflow-x-hidden overflow-y-auto bg-card pb-[max(1.5rem,var(--safe-area-inset-bottom,env(safe-area-inset-bottom)))] shadow-[var(--shadow-border)] ${
+        full ? "top-0 pt-[max(0.4rem,var(--safe-area-inset-top,env(safe-area-inset-top)))]" : "top-[30dvh] rounded-t-2xl border-t border-border md:top-[22dvh]"
+      }`}
+    >
       <div ref={measureHead} className="sticky top-0 z-10 border-b border-border/60 bg-card/95 px-3 py-1.5 backdrop-blur-md">
         <div className="flex items-center justify-between gap-2">
           <div className="min-w-0">
             <h2 className="font-display text-lg font-semibold tracking-tight">
-              {pin ? "Forecast at pin" : "Forecast"}
+              {pin ? "Weather at pin" : "Weather"}
+              {wx.isFetching && data ? <span className="ml-2 text-t13 font-normal text-muted-foreground">Updating…</span> : null}
             </h2>
             <p className="truncate text-t13 text-muted-foreground">
               {pin
@@ -212,10 +220,13 @@ export function WeatherPanel() {
             </p>
           </div>
           <div className="flex shrink-0 items-center gap-1">
+            <Button variant="outline" size="sm" className="h-10 px-2" aria-label={full ? "Show the chart above" : "Full screen"} onClick={() => setFull(!full)}>
+              {full ? "Half" : "Full"}
+            </Button>
             <Button
               variant="outline"
               size="sm"
-              className="h-8 px-2"
+              className="h-10 px-2"
               onClick={() => {
                 const fix = useHelm.getState().boat;
                 if (!fix || (fix.source !== "gps" && fix.source !== "last" && fix.source !== "demo")) {
@@ -228,7 +239,7 @@ export function WeatherPanel() {
               GPS
             </Button>
             {pin ? (
-              <Button variant="outline" size="sm" className="h-8 px-2" onClick={() => setWxPin(null)}>
+              <Button variant="outline" size="sm" className="h-10 px-2" onClick={() => setWxPin(null)}>
                 Boat
               </Button>
             ) : null}
@@ -237,10 +248,28 @@ export function WeatherPanel() {
             </Button>
           </div>
         </div>
+        <div className="mt-1.5 grid grid-cols-2 gap-1 rounded-lg bg-background p-1" role="tablist" aria-label="Weather view">
+          <button type="button" role="tab" aria-selected className="h-10 rounded-md bg-primary text-t14 font-semibold text-primary-foreground">
+            Forecast here
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={false}
+            className="h-10 rounded-md text-t14 font-semibold text-foreground"
+            onClick={() => {
+              const st = useHelm.getState();
+              st.setPanel(null);
+              st.setWxMap({ wxMapLayer: "wind", wxMapAt: Date.now() });
+            }}
+          >
+            Weather map
+          </button>
+        </div>
       </div>
       <div className="w-full max-w-full px-3 pt-2">
         {wx.isLoading && !data ? (
-          <p className="text-sm text-muted-foreground">Fetching forecast…</p>
+          <p className="text-sm text-muted-foreground">Loading the forecast… It needs signal; a forecast saved here earlier shows offline.</p>
         ) : null}
         {wx.isError && !data ? (
           <div className="grid gap-2">
@@ -389,7 +418,7 @@ function WxBody({
                 key={c.key}
                 variant={c.on ? "default" : "outline"}
                 size="sm"
-                className="h-8 px-2.5 text-xs"
+                className="h-10 px-2.5 text-xs"
                 onClick={() => toggle(c.key)}
               >
                 {c.label}

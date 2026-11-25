@@ -19,6 +19,7 @@ import { nearestPlaceName, searchPlaces, zoomToFit, type Place } from "@/lib/pla
 import { loadHazards } from "@/lib/hazards";
 import { LIMITS, libraryConfig, removeFromLibrary, shareToLibrary } from "@/lib/track-library";
 import { LibraryTab } from "@/components/helm/library-tab";
+import { tapFeel } from "@/lib/haptics";
 import { Radio } from "lucide-react";
 import { formatMeters, haversineMeters, pathLengthMeters, trackInView, TRACK_CHORD_PRESETS, TRACK_TURN_PRESETS } from "@/lib/geo";
 import { BENTHIC_WMS, GARMIN_SDK_URL, PARK_ZONES, availableImagery, imageryShort, isImageryId } from "@/lib/imagery";
@@ -50,6 +51,7 @@ import { mergeTracks } from "@/lib/backup";
 import { UnitStepField } from "@/components/helm/unit-field";
 import { MoonCard } from "@/components/helm/moon-card";
 import { RemoteWatchCard } from "@/components/helm/remote-watch-card";
+import { NightCheckCard } from "@/components/helm/night-check-card";
 import { formatDepth, formatLength } from "@/lib/units";
 import { criticalAlerts, type CriticalStatus } from "@/lib/critical-alert";
 import { openLocationSettings } from "@/lib/background-gps";
@@ -251,6 +253,7 @@ export function AnchorPanel() {
           </Button>
         )
       ) : null}
+      {anchor?.radiusLocked ? <NightCheckCard radiusM={anchor.radiusM} compact /> : null}
       <div className="mb-2 grid grid-cols-2 gap-2">
         <UnitStepField label="Depth" kind="depth" valueM={rode.depthM} steps={{ m: 0.2, ft: 1, fm: 0.5 }} onChange={(n) => setRode({ depthM: n })} />
         <UnitStepField label="Chain out" kind="length" valueM={rode.chainM} steps={{ m: 5, ft: 10 }} onChange={(n) => setRode({ chainM: n })} />
@@ -433,40 +436,12 @@ export function LayersPanel() {
   const reefClarity = useHelm((s) => s.reefClarity);
   const setReefClarity = useHelm((s) => s.setReefClarity);
   const setRadar = useHelm((s) => s.setRadar);
-  const crumbOn = useHelm((s) => s.crumbOn);
-  const setCrumbOn = useHelm((s) => s.setCrumbOn);
-  const crumb = useHelm((s) => s.crumb);
-  const clearCrumb = useHelm((s) => s.clearCrumb);
-  const reverseTrack = useHelm((s) => s.reverseTrack);
-  const look = useHelm((s) => s.look);
-  const setLook = useHelm((s) => s.setLook);
-  const autoNight = useHelm((s) => s.autoNight);
-  const setAutoNight = useHelm((s) => s.setAutoNight);
-  const sunPunch = useHelm((s) => s.sunPunch);
-  const setSunPunch = useHelm((s) => s.setSunPunch);
-  const tapMode = useHelm((s) => s.tapMode);
-  const setTapMode = useHelm((s) => s.setTapMode);
   const setPanel = useHelm((s) => s.setPanel);
 
   return (
-    <Sheet id="layers" title="View" kicker="Map stays up">
-      <div className="mb-2 flex items-center justify-between gap-2">
-        {isNativeApp() || isPreview() ? (
-          isFreeApp() ? null : <SubscriptionRow />
-        ) : (
-          <>
-            <SignedIn>
-              <UserButton />
-            </SignedIn>
-            <SignedOut>
-              <Button asChild variant="outline" size="sm">
-                <Link to="/login">Sign in</Link>
-              </Button>
-            </SignedOut>
-          </>
-        )}
-      </div>
-      <div className="mb-1.5 grid grid-cols-3 gap-1.5" role="radiogroup" aria-label="Base map">
+    <Sheet id="layers" title="Chart" kicker="What the map shows">
+      <p className="mb-1 text-t13 text-muted-foreground">Base map</p>
+      <div className="mb-2 grid grid-cols-3 gap-1.5" role="radiogroup" aria-label="Base map">
         {(
           [
             ["photo", "Photo"],
@@ -486,6 +461,7 @@ export function LayersPanel() {
           </Button>
         ))}
       </div>
+      <p className="mb-1 text-t13 text-muted-foreground">Satellite photo</p>
       {/* Compact picker: tap to flip between photos and compare. */}
       <div className="mb-2 grid grid-cols-3 gap-1.5" role="radiogroup" aria-label="Satellite photo">
         {availableImagery().map((im) => (
@@ -512,115 +488,212 @@ export function LayersPanel() {
         ))}
       </div>
       <OfflinePacks />
-      <TrackSteerSettings />
-      <div className="mb-2 grid grid-cols-2 gap-2">
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => {
-            setTapMode(tapMode === "place-boat" ? "none" : "place-boat");
-            setPanel(null);
-          }}
-        >
-          Place boat
-        </Button>
-        <Button variant="outline" size="sm" onClick={() => setPanel("boat")}>
-          Boat
-        </Button>
-        <Button variant="outline" size="sm" onClick={() => setPanel("legend")}>
-          Colour guide
-        </Button>
-      </div>
+      <p className="mb-1 text-t13 text-muted-foreground">On the chart</p>
       <div className="mb-2 grid gap-1.5">
+        <DepthRow />
+        <ToggleRow label="Reefs, rocks and cays (GBR, offline)" on={reefOutlines} onChange={setReefOutlines} />
+        <ToggleRow label="Marine park zones (GBR)" on={parkZones} onChange={setParkZones} />
+        {parkZones ? <ZoneLegend /> : null}
+        <ToggleRow label="Official charts where free (USA: NOAA)" on={officialCharts} onChange={setOfficialCharts} />
+        <ToggleRow label="Seamarks" on={seamarks} onChange={setSeamarks} />
+        <ToggleRow label="Depth contours" on={depths} onChange={setDepths} />
+        {radarAvailable() ? <ToggleRow label="Rain radar (needs signal)" on={radar} onChange={setRadar} /> : null}
+        <ToggleRow label="Place names" on={labels} onChange={setLabels} />
+        <ToggleRow label="Lat / long lines" on={graticule} onChange={setGraticule} />
+      </div>
+      <p className="mb-1 text-t13 text-muted-foreground">Photo quality</p>
+      <div className="mb-2 grid gap-1.5">
+        <ToggleRow label="Sharp photos (HD, about 4× the data)" on={sharpTiles} onChange={setSharpTiles} />
+        <ToggleRow label="Reef clarity (more contrast to read depth)" on={reefClarity} onChange={setReefClarity} />
+        <PhotoInfoRow />
+      </div>
+      <div className="mb-2 grid grid-cols-2 gap-2">
         <Button variant="outline" className="h-11" onClick={() => useHelm.setState({ reef3d: true, panel: null })}>
           3D reef view
         </Button>
-        <DepthRow />
-        <TextSizeRow />
-        <PhotoInfoRow />
-        <ToggleRow label="Sharp photos (HD, about 4× the data)" on={sharpTiles} onChange={setSharpTiles} />
-        <ToggleRow label="Reef clarity (more contrast to read depth)" on={reefClarity} onChange={setReefClarity} />
-        <ToggleRow label="Place names" on={labels} onChange={setLabels} />
-        <ToggleRow label="Lat / long lines" on={graticule} onChange={setGraticule} />
-        <ToggleRow label="Seamarks" on={seamarks} onChange={setSeamarks} />
-        <ToggleRow label="Depth contours" on={depths} onChange={setDepths} />
-        <ToggleRow label="Reefs, rocks and cays (GBR, offline)" on={reefOutlines} onChange={setReefOutlines} />
-        <ToggleRow label="Official charts where free (USA: NOAA)" on={officialCharts} onChange={setOfficialCharts} />
-        <ToggleRow label="Marine park zones (GBR)" on={parkZones} onChange={setParkZones} />
-        {parkZones ? <ZoneLegend /> : null}
-        {radarAvailable() ? <ToggleRow label="Rain radar (needs signal)" on={radar} onChange={setRadar} /> : null}
-        <ToggleRow label="Yellow line while recording" on={crumbOn} onChange={setCrumbOn} />
-      </div>
-      {crumb.length >= 2 ? (
-        <div className="mb-2 grid grid-cols-2 gap-2">
-          <Button variant="outline" size="sm" onClick={() => reverseTrack()}>
-            Reverse trail
-          </Button>
-          <Button variant="ghost" size="sm" onClick={() => clearCrumb()}>
-            Clear trail
-          </Button>
-        </div>
-      ) : null}
-      <p className="mb-1.5 text-t12 text-muted-foreground">Look</p>
-      <div className="mb-2 grid grid-cols-4 gap-2">
-        <Button
-          variant={autoNight ? "default" : "outline"}
-          size="sm"
-          onClick={() => setAutoNight(!autoNight)}
-          aria-pressed={autoNight}
-        >
-          Auto
+        <Button variant="outline" className="h-11" onClick={() => setPanel("legend")}>
+          Colour guide
         </Button>
-        {([
-          ["normal", "Normal"],
-          ["sunlight", "Sun"],
-          ["night", "Night"],
-        ] as const).map(([id, label]) => (
+      </div>
+      <Button variant="ghost" className="w-full" onClick={() => setPanel("settings")}>
+        Settings: look, text size, units, steering…
+      </Button>
+    </Sheet>
+  );
+}
+
+const SETTINGS_SECTIONS = [
+  { id: "display", title: "Look and text", words: "look night red dark sun sunlight bright contrast punch text size font bigger larger auto" },
+  { id: "units", title: "Units", words: "units feet foot metres meters fathoms depth length distance" },
+  { id: "steer", title: "Steering and tracks", words: "steer steering track ear guide sound turn record recording yellow line trail crumb reverse corner" },
+  { id: "boat", title: "Boat and GPS", words: "boat hull length draft beam bow gps place position manual" },
+  { id: "help", title: "Help and about", words: "help guide getting started tour about garmin navionics privacy terms licence account subscription sign in" },
+] as const;
+
+/** Everything that isn't the chart itself, in sections, with a search box. */
+export function SettingsPanel() {
+  const crumbOn = useHelm((s) => s.crumbOn);
+  const setCrumbOn = useHelm((s) => s.setCrumbOn);
+  const crumb = useHelm((s) => s.crumb);
+  const clearCrumb = useHelm((s) => s.clearCrumb);
+  const reverseTrack = useHelm((s) => s.reverseTrack);
+  const look = useHelm((s) => s.look);
+  const setLook = useHelm((s) => s.setLook);
+  const autoNight = useHelm((s) => s.autoNight);
+  const setAutoNight = useHelm((s) => s.setAutoNight);
+  const sunPunch = useHelm((s) => s.sunPunch);
+  const setSunPunch = useHelm((s) => s.setSunPunch);
+  const tapMode = useHelm((s) => s.tapMode);
+  const setTapMode = useHelm((s) => s.setTapMode);
+  const setPanel = useHelm((s) => s.setPanel);
+  const [q, setQ] = useState("");
+  const words = q.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  const show = (id: (typeof SETTINGS_SECTIONS)[number]["id"]) => {
+    if (!words.length) return true;
+    const sec = SETTINGS_SECTIONS.find((x) => x.id === id)!;
+    const hay = `${sec.title} ${sec.words}`.toLowerCase();
+    return words.every((w) => hay.includes(w));
+  };
+  const head = (id: (typeof SETTINGS_SECTIONS)[number]["id"]) => (
+    <p className="mt-3 mb-1.5 text-t15 font-semibold">{SETTINGS_SECTIONS.find((x) => x.id === id)!.title}</p>
+  );
+  const none = SETTINGS_SECTIONS.every((x) => !show(x.id));
+
+  return (
+    <Sheet id="settings" title="Settings" kicker="Look, units, steering and help">
+      <Input
+        value={q}
+        onChange={(e) => setQ(e.target.value)}
+        placeholder="Search settings, e.g. night or feet"
+        aria-label="Search settings"
+        className="mb-1 h-11 text-base"
+        type="search"
+      />
+      {none ? <p className="mt-2 text-t14 text-muted-foreground">No setting matches “{q.trim()}”.</p> : null}
+      {show("display") ? (
+        <>
+          {head("display")}
+          <div className="mb-2 grid grid-cols-4 gap-2">
+            <Button variant={autoNight ? "default" : "outline"} size="sm" onClick={() => setAutoNight(!autoNight)} aria-pressed={autoNight}>
+              Auto
+            </Button>
+            {([
+              ["normal", "Normal"],
+              ["sunlight", "Sun"],
+              ["night", "Night"],
+            ] as const).map(([id, label]) => (
+              <Button
+                key={id}
+                variant={!autoNight && look === id ? "default" : "outline"}
+                size="sm"
+                onClick={() => {
+                  setAutoNight(false);
+                  setLook(id);
+                  if (id === "sunlight") {
+                    void document.documentElement.requestFullscreen?.().catch(() => {});
+                  } else if (document.fullscreenElement) {
+                    void document.exitFullscreen?.().catch(() => {});
+                  }
+                }}
+              >
+                {label}
+              </Button>
+            ))}
+          </div>
+          <p className="mb-2 text-t13 leading-snug text-muted-foreground">Auto: night (red) after sunset, normal by day. Sun: extra contrast for bright light.</p>
+          {look === "sunlight" ? (
+            <div className="mb-2 grid grid-cols-3 gap-2">
+              {([1, 2, 3] as const).map((n) => (
+                <Button key={n} variant={sunPunch === n ? "default" : "outline"} size="sm" onClick={() => setSunPunch(n)}>
+                  Contrast {n}
+                </Button>
+              ))}
+            </div>
+          ) : null}
+          <TextSizeRow />
+        </>
+      ) : null}
+      {show("units") ? (
+        <>
+          {head("units")}
+          <UnitsPicker />
+        </>
+      ) : null}
+      {show("steer") ? (
+        <>
+          {head("steer")}
+          <TrackSteerSettings />
+          <ToggleRow label="Yellow line while recording" on={crumbOn} onChange={setCrumbOn} />
+          {crumb.length >= 2 ? (
+            <div className="mt-2 grid grid-cols-2 gap-2">
+              <Button variant="outline" size="sm" onClick={() => reverseTrack()}>
+                Reverse trail
+              </Button>
+              <Button variant="ghost" size="sm" onClick={() => clearCrumb()}>
+                Clear trail
+              </Button>
+            </div>
+          ) : null}
+        </>
+      ) : null}
+      {show("boat") ? (
+        <>
+          {head("boat")}
+          <div className="grid grid-cols-2 gap-2">
+            <Button variant="outline" className="h-11" onClick={() => setPanel("boat")}>
+              Boat size and type
+            </Button>
+            <Button
+              variant="outline"
+              className="h-11"
+              onClick={() => {
+                setTapMode(tapMode === "place-boat" ? "none" : "place-boat");
+                setPanel(null);
+              }}
+            >
+              Place boat by hand
+            </Button>
+          </div>
+          <p className="mt-1 text-t13 leading-snug text-muted-foreground">Place the boat by hand only when there is no GPS, e.g. to plan at home.</p>
+        </>
+      ) : null}
+      {show("help") ? (
+        <>
+          {head("help")}
+          <div className="mb-2 flex items-center justify-between gap-2">
+            {isNativeApp() || isPreview() ? (
+              isFreeApp() ? null : <SubscriptionRow />
+            ) : (
+              <>
+                <SignedIn>
+                  <UserButton />
+                </SignedIn>
+                <SignedOut>
+                  <Button asChild variant="outline" size="sm">
+                    <Link to="/login">Sign in</Link>
+                  </Button>
+                </SignedOut>
+              </>
+            )}
+          </div>
           <Button
-            key={id}
-            variant={!autoNight && look === id ? "default" : "outline"}
-            size="sm"
+            variant="outline"
+            className="mb-2 h-11 w-full"
             onClick={() => {
-              setAutoNight(false);
-              setLook(id);
-              if (id === "sunlight") {
-                void document.documentElement.requestFullscreen?.().catch(() => {});
-              } else if (document.fullscreenElement) {
-                void document.exitFullscreen?.().catch(() => {});
-              }
+              setPanel(null);
+              useHelm.getState().setGuideDone(false);
             }}
           >
-            {label}
+            Show the getting-started guide
           </Button>
-        ))}
-      </div>
-      <UnitsPicker />
-      <Button
-        variant="outline"
-        size="sm"
-        className="mb-2 w-full"
-        onClick={() => {
-          setPanel(null);
-          useHelm.getState().setGuideDone(false);
-        }}
-      >
-        Show the getting-started guide
-      </Button>
-      {look === "sunlight" ? (
-        <div className="mb-2 grid grid-cols-3 gap-2">
-          {([1, 2, 3] as const).map((n) => (
-            <Button key={n} variant={sunPunch === n ? "default" : "outline"} size="sm" onClick={() => setSunPunch(n)}>
-              Punch {n}
-            </Button>
-          ))}
-        </div>
+          <p className="text-t13 leading-snug text-muted-foreground">
+            Seamarks and depth contours from OpenSeaMap sit over the satellite. Navionics charts need Garmin’s native marine SDK, so they can't be shown here.{" "}
+            <a href={GARMIN_SDK_URL} target="_blank" rel="noreferrer" className="underline underline-offset-2">
+              Garmin marine SDK
+            </a>
+          </p>
+        </>
       ) : null}
-      <p className="text-t13 leading-snug text-muted-foreground">
-        OpenSeaMap marks and depth contours sit over the satellite. Official Navionics tiles need Garmin’s native marine SDK — there is no web login that unlocks them here.{" "}
-        <a href={GARMIN_SDK_URL} target="_blank" rel="noreferrer" className="underline underline-offset-2">
-          Garmin marine SDK
-        </a>
-      </p>
     </Sheet>
   );
 }
@@ -707,7 +780,7 @@ function OfflinePacks() {
         )}
       </div>
       <p className="mt-0.5 text-t13 leading-snug text-muted-foreground">
-        Zoom out, then drag a box around the reef. A line will not download. z16 covers a whole cay. Green = this water is in the phone.
+        Save the map for no signal: tap Area on screen, or Draw box and drag around the reef. Green means this water is already on the phone.
       </p>
       <div className="mt-1.5 grid grid-cols-2 gap-1.5">
         <Button variant="outline" size="sm" disabled={busy} onClick={() => startDrawPack()}>
@@ -717,9 +790,17 @@ function OfflinePacks() {
           variant="outline"
           size="sm"
           disabled={busy}
-          onClick={() => pickReef(-23.904, 152.395, "Lady Musgrave", 2200)}
+          onClick={() => {
+            // The area on screen now: centre of the view, half its width (capped at 3 km).
+            const v = getChartBounds();
+            if (!v) return;
+            const lat = (v.north + v.south) / 2;
+            const lng = (v.east + v.west) / 2;
+            const halfM = Math.min(3000, Math.max(300, ((v.east - v.west) * 111_320 * Math.cos((lat * Math.PI) / 180)) / 2));
+            pickReef(lat, lng, "This area", halfM);
+          }}
         >
-          Lady Musgrave
+          Area on screen
         </Button>
       </div>
       {box && est ? (
@@ -731,7 +812,7 @@ function OfflinePacks() {
           <p className="text-t12 text-muted-foreground">Close-up zoom</p>
           <div className="grid grid-cols-5 gap-1">
             {PACK_ZOOMS.map((z) => (
-              <Button key={z} variant={maxZ === z ? "default" : "outline"} size="sm" className="h-8" onClick={() => setMaxZ(z)}>
+              <Button key={z} variant={maxZ === z ? "default" : "outline"} size="sm" className="h-10" onClick={() => setMaxZ(z)}>
                 {z === 20 ? "Max" : `z${z}`}
               </Button>
             ))}
@@ -767,7 +848,7 @@ function OfflinePacks() {
             <p className="text-t13 tabular-nums text-muted-foreground">
               {extraStep ? `Saving ${extraStep.toLowerCase()}…` : `Photos ${progress.done}/${progress.total} · ${formatBytes(progress.bytes)}`}
             </p>
-            <Button variant="ghost" size="sm" className="h-7" onClick={() => cancelPackDownload()}>
+            <Button variant="ghost" size="sm" className="h-9" onClick={() => cancelPackDownload()}>
               Cancel
             </Button>
           </div>
@@ -800,7 +881,7 @@ function OfflinePacks() {
                 <Button
                   variant="ghost"
                   size="sm"
-                  className="h-7 shrink-0"
+                  className="h-9 shrink-0"
                   disabled={busy}
                   onClick={() => {
                     void deletePack(p.id).then(() => {
@@ -864,7 +945,7 @@ function TrackSteerSettings() {
             key={deg}
             variant={turnDeg === deg ? "default" : "outline"}
             size="sm"
-            className="h-8 px-0"
+            className="h-10 px-0"
             onClick={() => setTurnDeg(deg)}
           >
             {deg}°
@@ -880,7 +961,7 @@ function TrackSteerSettings() {
             key={m}
             variant={chordM === m ? "default" : "outline"}
             size="sm"
-            className="h-8 px-0"
+            className="h-10 px-0"
             onClick={() => setChordM(m)}
           >
             {formatLength(m)}
@@ -991,6 +1072,7 @@ export function NavigationPanel() {
           st.clearCrumb();
           st.setDrawMode("record");
           st.setPanel(null);
+          tapFeel();
         }}
       >
         <Radio className="size-5" />
