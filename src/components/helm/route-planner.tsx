@@ -545,11 +545,11 @@ function PickedActions({ picked, ctx, shelter }: { picked: Choice; ctx: PlanCont
           onClick={() => {
             const d = asDraft(title, r.points);
             const s = useHelm.getState();
-            // At anchor, following a route would start the off-track alarm: ask first.
+            // At anchor, following a route would start steering cues: ask first.
             if (
               s.anchor?.radiusLocked &&
               !window.confirm(
-                "You're on anchor watch. Following now starts steering cues and the off-track alarm while you're still at anchor. Follow anyway? (Choose Cancel to keep it saved for when you leave.)",
+                "You're on anchor watch. Following now starts steering cues while you're still at anchor. Follow anyway? (Choose Cancel to keep it saved for when you leave.)",
               )
             ) {
               useHelm.setState({ drafts: [d, ...s.drafts].slice(0, 40) });

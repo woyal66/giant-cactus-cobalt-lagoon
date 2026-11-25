@@ -44,7 +44,7 @@ import {
 } from "@/lib/passages";
 import { REEFS } from "@/lib/reefs";
 import { fetchTideRise } from "@/lib/tides";
-import { STEER_PRESETS, XTE_ALARM_PRESETS } from "@/lib/steer";
+import { STEER_PRESETS } from "@/lib/steer";
 import { SignedIn, SignedOut, UserButton } from "@/lib/auth/gates";
 import { isNativeApp } from "@/lib/native";
 import { shareGpx } from "@/lib/share-gpx";
@@ -876,8 +876,6 @@ function OfflinePacks() {
 function TrackSteerSettings() {
   const sense = useHelm((s) => s.steerSense);
   const setSense = useHelm((s) => s.setSteerSense);
-  const alarmM = useHelm((s) => s.xteAlarmM);
-  const setAlarmM = useHelm((s) => s.setXteAlarmM);
   const ear = useHelm((s) => s.steerEar);
   const setEar = useHelm((s) => s.setSteerEar);
   const turnDeg = useHelm((s) => s.trackTurnDeg);
@@ -945,14 +943,6 @@ function TrackSteerSettings() {
       <p className="mt-1 text-t13 leading-snug text-muted-foreground">
         Straights are dropped on save and reverse. A tighter turn or a smaller distance keeps more of the bend.
       </p>
-      <p className="mt-1.5 text-t12 text-muted-foreground">Off-track alarm</p>
-      <div className="mt-1 grid grid-cols-5 gap-1">
-        {XTE_ALARM_PRESETS.map((m) => (
-          <Button key={m} variant={alarmM === m ? "default" : "outline"} size="sm" className="h-8" onClick={() => setAlarmM(m)}>
-            {formatLength(m)}
-          </Button>
-        ))}
-      </div>
     </div>
   );
 }

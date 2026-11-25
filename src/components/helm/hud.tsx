@@ -527,7 +527,6 @@ export function NavRibbon() {
   const panel = useHelm((s) => s.panel);
   const tapMode = useHelm((s) => s.tapMode);
   const steerSense = useHelm((s) => s.steerSense);
-  const xteAlarmM = useHelm((s) => s.xteAlarmM);
   const crumb = useHelm((s) => s.crumb);
   const turnDeg = useHelm((s) => s.trackTurnDeg);
   const chordM = useHelm((s) => s.trackChordM);
@@ -544,7 +543,7 @@ export function NavRibbon() {
   const nav = boat && pts.length >= 1 ? markNav(boat, pts, pinned, courseMark) : null;
   const cue =
     boat && pts.length >= 2
-      ? steerCue(boat, pts, steerSense, xteAlarmM, nav?.index)
+      ? steerCue(boat, pts, steerSense, 0, nav?.index)
       : null;
   const corners = cornerIndexes(pts);
   const nextCorner =

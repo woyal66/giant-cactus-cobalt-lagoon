@@ -217,7 +217,6 @@ export function SteerOverlay() {
   const tapMode = useHelm((s) => s.tapMode);
   const panel = useHelm((s) => s.panel);
   const sense = useHelm((s) => s.steerSense);
-  const alarmM = useHelm((s) => s.xteAlarmM);
   const courseMark = useHelm((s) => s.courseMark);
   const pinned = useHelm((s) => s.pinnedMark);
   const trackAlarm = useHelm((s) => s.trackAlarm);
@@ -231,7 +230,7 @@ export function SteerOverlay() {
   // A turn at the mark just counted as made is still to be steered (see steerLegIndex).
   const legTo = nav ? steerLegIndex(boat, pts, nav.index) : undefined;
   const cue =
-    pts.length >= 2 ? steerCue(boat, pts, sense, alarmM, legTo) : null;
+    pts.length >= 2 ? steerCue(boat, pts, sense, 0, legTo) : null;
   const sog = msToKnots(boat.speedMs);
   const cog = boat.heading;
   const xte = formatXte(cue?.xteM);
