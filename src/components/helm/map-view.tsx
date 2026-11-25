@@ -25,7 +25,12 @@ import {
   ATTR_BING,
   ATTR_ESRI,
   ATTR_GOOGLE,
+  ATTR_HERE,
+  ATTR_MAPBOX,
   ATTR_OPENSEAMAP,
+  KEYED,
+  ensureGoogleSession,
+  googleCopyright,
   ATTR_SENTINEL,
   CLOSE_ZOOM,
   DEPTH_WMS_LAYERS,
@@ -263,7 +268,7 @@ async function fetchRealTile(
     }
   }
   try {
-    if (signal?.aborted) return null;
+    if (signal?.aborted || !url) return null;
     const r = await fetch(url, { mode: "cors", signal });
     if (!r.ok) return null;
     const blob = await r.blob();
@@ -495,6 +500,7 @@ function nativeZoom(id: ImageryId): number {
   if (id === "google" || id === "auto") return 21;
   if (id === "maptiler") return 20;
   if (id === "bing") return 19;
+  if (id === "mapbox" || id === "here") return 20;
   return 18;
 }
 
@@ -602,7 +608,11 @@ export function MapView() {
                 ? ATTR_SENTINEL
                 : id === "maptiler"
                   ? ATTR_MAPTILER
-                  : ATTR_ESRI;
+                  : id === "mapbox"
+                    ? ATTR_MAPBOX
+                    : id === "here"
+                      ? ATTR_HERE
+                      : ATTR_ESRI;
         // Auto credits every source it may draw from in this build.
         const attrFor = (id: ImageryId) =>
           id === "auto"
@@ -624,6 +634,42 @@ export function MapView() {
           hd: activeHd,
         });
         photo.addTo(map);
+        // Licensed Google tiles need a session first; redraw once it exists.
+        if (KEYED.google && activeImagery === "google") {
+          void ensureGoogleSession().then((ok) => {
+            if (ok && map && activeImagery === "google") photo.redraw();
+          });
+        }
+        // Google asks for the copyright of the area in view; refresh it after each move.
+        let googleCredit = "";
+        let creditTimer = 0;
+        const refreshGoogleCredit = () => {
+          window.clearTimeout(creditTimer);
+          creditTimer = window.setTimeout(() => {
+            if (!map) return;
+            const ctl = map.attributionControl;
+            const clear = () => {
+              if (googleCredit && ctl) ctl.removeAttribution(googleCredit);
+              googleCredit = "";
+            };
+            if (!KEYED.google || activeImagery !== "google") {
+              clear();
+              return;
+            }
+            const b = map.getBounds();
+            void googleCopyright(map.getZoom(), { south: b.getSouth(), west: b.getWest(), north: b.getNorth(), east: b.getEast() }).then((c) => {
+              if (!map || activeImagery !== "google") return;
+              const next = c ? `Google · ${c}` : "";
+              if (next === googleCredit) return;
+              clear();
+              if (next && ctl) {
+                ctl.addAttribution(next);
+                googleCredit = next;
+              }
+            });
+          }, 600);
+        };
+        map.on("moveend zoomend", refreshGoogleCredit);
         let incoming: TileLayer | null = null;
         const labels: TileLayer = L.tileLayer(LABELS_URL, {
           maxZoom: MAX_ZOOM,
@@ -1263,6 +1309,12 @@ export function MapView() {
             activeImagery = id;
             activeHd = hd;
             incoming = null;
+            if (id === "google" && KEYED.google) {
+              void ensureGoogleSession().then((ok) => {
+                if (ok && map && activeImagery === "google") photo.redraw();
+              });
+            }
+            refreshGoogleCredit();
           };
           next.once("load", commit);
           window.setTimeout(() => {
