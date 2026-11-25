@@ -54,6 +54,7 @@ export type PanelId =
   | "anchor"
   | "legend"
   | "save"
+  | "rename"
   | "layers"
   | "weather"
   | "boat";
@@ -103,7 +104,25 @@ export type LocalDraft = {
   savedAt: string;
   /** Waypoints tapped on the chart: followed exactly, never simplified. */
   tapped?: boolean;
+  /** Shared to the online library: its id there and the secret that lets this phone remove it. */
+  libraryId?: string;
+  librarySecret?: string;
+  /** Saved from the online library (someone else's track). */
+  fromLibrary?: boolean;
 };
+
+/** Tracks kept on the phone. */
+export const MAX_TRACKS = 150;
+
+/** "Track 1", "Track 2", … the next free number among the saved tracks. */
+export function nextTrackName(drafts: Array<{ title: string }>): string {
+  let n = 0;
+  for (const d of drafts) {
+    const m = /^Track (\d+)$/.exec(d.title.trim());
+    if (m) n = Math.max(n, Number(m[1]));
+  }
+  return `Track ${n + 1}`;
+}
 
 export type WxLayers = {
   wind: boolean;
@@ -207,6 +226,10 @@ export type HelmState = {
   demoPlaying: boolean;
   introOpen: boolean;
   drafts: LocalDraft[];
+  /** The just-recorded track the rename sheet is naming. */
+  renameTrackId: string | null;
+  /** A library track shown on the chart before it is saved. */
+  libraryPreview: LatLng[] | null;
   gpsDenied: boolean;
   tapMode:
     | "none"
@@ -367,6 +390,7 @@ type HelmActions = {
   setDemoPlaying: (v: boolean) => void;
   dismissIntro: () => void;
   saveDraft: (draft: Omit<LocalDraft, "localId" | "savedAt">) => LocalDraft;
+  updateDraft: (localId: string, patch: Partial<Omit<LocalDraft, "localId">>) => void;
   removeDraft: (localId: string) => void;
   setGpsDenied: (v: boolean) => void;
   setTapMode: (mode: HelmState["tapMode"]) => void;
@@ -841,6 +865,8 @@ export const useHelm = create<HelmState & HelmActions>()(
       demoPlaying: false,
       introOpen: false,
       drafts: [],
+      renameTrackId: null,
+      libraryPreview: null,
       gpsDenied: false,
       tapMode: "none",
       measurePts: [],
@@ -1038,19 +1064,21 @@ export const useHelm = create<HelmState & HelmActions>()(
         }));
         const recorded: LocalDraft = {
           localId: `rec-${Date.now()}`,
-          title: "Start to stop",
+          title: nextTrackName(s.drafts),
           region: "",
-          notes: "Recorded from the start to the stop.",
+          notes: "",
           kind: "passage",
           waypoints,
           savedAt: new Date().toISOString(),
         };
         set({
-          drafts: [recorded, ...s.drafts].slice(0, 40),
+          drafts: [recorded, ...s.drafts].slice(0, MAX_TRACKS),
           activePassage: recorded,
           draft: [],
           drawMode: "idle",
-          panel: null,
+          // Ask for a name and a comment straight away (both optional).
+          panel: "rename",
+          renameTrackId: recorded.localId,
           courseMark: 0,
           pinnedMark: null,
           followBoat: true,
@@ -1405,12 +1433,18 @@ export const useHelm = create<HelmState & HelmActions>()(
           savedAt: new Date().toISOString(),
         };
         set({
-          drafts: [draft, ...get().drafts].slice(0, 40),
+          drafts: [draft, ...get().drafts].slice(0, MAX_TRACKS),
           panel: null,
           drawMode: "idle",
           draft: [],
         });
         return draft;
+      },
+      updateDraft: (localId, patch) => {
+        const drafts = get().drafts.map((d) => (d.localId === localId ? { ...d, ...patch } : d));
+        const active = get().activePassage;
+        const nextActive = active && "localId" in active && active.localId === localId ? drafts.find((d) => d.localId === localId) ?? active : active;
+        set({ drafts, activePassage: nextActive });
       },
       removeDraft: (localId) =>
         set({ drafts: get().drafts.filter((d) => d.localId !== localId) }),

@@ -932,6 +932,17 @@ export function MapView() {
           lineJoin: "round",
         });
         // Passage planner: suggested route plus start (green) and finish (chequered) marks.
+        // A library track being previewed before it is saved: dashed, so it never looks like
+        // the track being followed.
+        const libLine: Polyline = L.polyline([], {
+          color: "#c4b5fd",
+          weight: 4,
+          opacity: 0.95,
+          dashArray: "10 8",
+          lineJoin: "round",
+          interactive: false,
+        });
+        let libStamp: Array<{ lat: number; lng: number }> | null = null;
         const planLine: Polyline = L.polyline([], {
           color: "#f0c14a",
           weight: 4,
@@ -1220,10 +1231,13 @@ export function MapView() {
             getBearing?: () => number;
           };
           if (typeof m.setBearing !== "function") return;
-          const cur = m.getBearing?.() ?? 0;
+          // `deg` is the compass direction that should point up the screen (the heading in
+          // head-up). leaflet-rotate turns the map clockwise by its bearing, which brings the
+          // direction 360 − bearing to the top, so it gets the opposite angle.
+          const cur = (360 - (m.getBearing?.() ?? 0)) % 360;
           const d = ((deg - cur + 540) % 360) - 180;
-          if (Math.abs(d) < 0.35 && !(deg === 0 && Math.abs(cur) > 0.35)) return;
-          m.setBearing(deg);
+          if (Math.abs(d) < 0.35 && !(deg === 0 && Math.abs(cur) > 0.35 && Math.abs(cur - 360) > 0.35)) return;
+          m.setBearing((360 - deg) % 360);
         };
 
         const applyImagery = (id: ImageryId, hd: boolean) => {
@@ -1694,6 +1708,12 @@ export function MapView() {
             }
           }
           const pStamp = `${s.routeStart?.lat},${s.routeStart?.lng}|${s.routeFinish?.lat},${s.routeFinish?.lng}|${s.routePreview?.length ?? 0}|${s.routePreview?.[1]?.lat ?? ""}`;
+          if (s.libraryPreview !== libStamp) {
+            libStamp = s.libraryPreview;
+            libLine.setLatLngs((s.libraryPreview ?? []).map((p) => [p.lat, p.lng] as [number, number]));
+            if (s.libraryPreview && !map.hasLayer(libLine)) libLine.addTo(map);
+            else if (!s.libraryPreview && map.hasLayer(libLine)) map.removeLayer(libLine);
+          }
           if (pStamp !== planStamp) {
             planStamp = pStamp;
             planLine.setLatLngs((s.routePreview ?? []).map((p) => [p.lat, p.lng] as [number, number]));

@@ -11,10 +11,10 @@ import {
 } from "@/components/helm/overlays";
 import {
   AnchorPanel,
-  AtlasPanel,
   LayersPanel,
   LegendPanel,
-  PassagesPanel,
+  NavigationPanel,
+  RenameTrackPanel,
   SavePanel,
 } from "@/components/helm/panels";
 import { BoatPanel } from "@/components/helm/boat-panel";
@@ -111,8 +111,8 @@ export function HelmApp() {
       <MobHud />
       <SteerOverlay />
       <NavRibbon />
-      <AtlasPanel />
-      <PassagesPanel />
+      <NavigationPanel />
+      <RenameTrackPanel />
       <AnchorPanel />
       <BoatPanel />
       <LegendPanel />

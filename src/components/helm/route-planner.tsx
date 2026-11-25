@@ -553,7 +553,7 @@ function PickedActions({ picked, ctx, shelter }: { picked: Choice; ctx: PlanCont
               )
             ) {
               useHelm.setState({ drafts: [d, ...s.drafts].slice(0, 40) });
-              toast.success("Saved to Tracks. Follow it from Tracks when you weigh anchor.");
+              toast.success("Saved to My tracks. Follow it from Navigation when you weigh anchor.");
               return;
             }
             useHelm.setState({ drafts: [d, ...s.drafts].slice(0, 40) });
@@ -575,7 +575,7 @@ function PickedActions({ picked, ctx, shelter }: { picked: Choice; ctx: PlanCont
             const s = useHelm.getState();
             useHelm.setState({ drafts: [d, ...s.drafts].slice(0, 40) });
             keepOffline(d.localId);
-            toast.success("Saved to Tracks, with its forecast for offline use");
+            toast.success("Saved to My tracks, with its forecast for offline use");
           }}
         >
           Save

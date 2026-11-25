@@ -95,6 +95,9 @@ jobs:
           VITE_LICENSED_IMAGERY_ONLY: "1"
           VITE_MAPTILER_KEY: ${{ secrets.VITE_MAPTILER_KEY || vars.VITE_MAPTILER_KEY }}
           VITE_ESRI_KEY: ${{ secrets.VITE_ESRI_KEY || vars.VITE_ESRI_KEY }}
+          # Online track library (docs/track-library.md); off when unset.
+          VITE_TRACK_LIBRARY_URL: ${{ vars.VITE_TRACK_LIBRARY_URL }}
+          VITE_TRACK_LIBRARY_KEY: ${{ vars.VITE_TRACK_LIBRARY_KEY }}
           # Data on this same site, relative to /app/.
           VITE_DEPTH_TILES: ../depth/{z}/{x}/{y}.png
           VITE_DEPTH_GLOBAL_TILES: ../depth-world/{z}/{x}/{y}.png

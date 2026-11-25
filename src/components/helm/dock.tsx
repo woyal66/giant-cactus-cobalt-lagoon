@@ -2,10 +2,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import {
   Anchor,
-  BookOpen,
-  Map as MapIcon,
+  Compass,
   Pencil,
-  Radio,
   Route as RouteIcon,
   Square,
   Undo2,
@@ -133,20 +131,13 @@ export function BottomDock() {
   if (wxOn) return null;
   return (
     <nav className="pointer-events-none absolute inset-x-0 bottom-0 z-20 p-2 pb-[max(0.5rem,var(--safe-area-inset-bottom,env(safe-area-inset-bottom)))]">
-      <div className="pointer-events-auto mx-auto grid max-w-lg grid-cols-6 gap-0.5 rounded-xl border border-border bg-card p-1 shadow-[var(--shadow-border)]">
+      <div className="pointer-events-auto mx-auto grid max-w-lg grid-cols-4 gap-0.5 rounded-xl border border-border bg-card p-1 shadow-[var(--shadow-border)]">
         <DockBtn
-          active={panel === "atlas"}
-          label="Places"
-          onClick={() => toggle("atlas")}
-        >
-          <MapIcon />
-        </DockBtn>
-        <DockBtn
-          active={panel === "passages"}
-          label="Tracks"
+          active={panel === "passages" || panel === "rename"}
+          label="Navigation"
           onClick={() => toggle("passages")}
         >
-          <BookOpen />
+          <Compass />
         </DockBtn>
         <DockBtn
           active={panel === "route"}
@@ -177,17 +168,6 @@ export function BottomDock() {
           }}
         >
           <Anchor />
-        </DockBtn>
-        <DockBtn
-          active={false}
-          label="Start"
-          onClick={() => {
-            useHelm.getState().setDraft([]);
-            useHelm.getState().clearCrumb();
-            setDrawMode("record");
-          }}
-        >
-          <Radio />
         </DockBtn>
         <DockBtn
           active={false}

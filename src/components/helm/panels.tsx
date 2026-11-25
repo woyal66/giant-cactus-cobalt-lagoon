@@ -15,7 +15,11 @@ import {
 } from "@/lib/anchor";
 import { bowFromGps, gpsReachM, gpsStationLabel } from "@/lib/boat";
 import { formatDuration, routeSummary } from "@/lib/measure";
-import { searchPlaces } from "@/lib/place-search";
+import { nearestPlaceName, searchPlaces, zoomToFit, type Place } from "@/lib/place-search";
+import { loadHazards } from "@/lib/hazards";
+import { LIMITS, libraryConfig, removeFromLibrary, shareToLibrary } from "@/lib/track-library";
+import { LibraryTab } from "@/components/helm/library-tab";
+import { Radio } from "lucide-react";
 import { formatMeters, haversineMeters, pathLengthMeters, trackInView, TRACK_CHORD_PRESETS, TRACK_TURN_PRESETS } from "@/lib/geo";
 import { BENTHIC_WMS, GARMIN_SDK_URL, PARK_ZONES, availableImagery, imageryShort, isImageryId } from "@/lib/imagery";
 import { centreTileSource, getChartBounds } from "@/components/helm/map-view";
@@ -34,15 +38,7 @@ import {
   PACK_ZOOMS,
   type PackZoom,
 } from "@/lib/offline-tiles";
-import {
-  deletePassage,
-  listMyPassages,
-  listPublicPassages,
-  savePassage,
-  setPublished,
-  type Passage,
-} from "@/lib/passages";
-import { REEFS } from "@/lib/reefs";
+import type { Passage } from "@/lib/passages";
 import { fetchTideRise } from "@/lib/tides";
 import { STEER_PRESETS } from "@/lib/steer";
 import { SignedIn, SignedOut, UserButton } from "@/lib/auth/gates";
@@ -60,9 +56,8 @@ import { openLocationSettings } from "@/lib/background-gps";
 import { isFreeApp, isPreview } from "@/lib/subscription";
 import { radarAvailable } from "@/lib/radar";
 import { SubscriptionRow } from "@/components/subscription";
-import { useCurrentUserState } from "@/lib/auth/use-current-user";
-import { simulateAnchorDrag, startMusgraveDemo, unlockAlarmAudio } from "@/hooks/helm-runtime";
-import { useHelm, useUnitsKey, type LocalDraft, type PanelId } from "@/store/helm";
+import { simulateAnchorDrag, unlockAlarmAudio } from "@/hooks/helm-runtime";
+import { nextTrackName, useHelm, useUnitsKey, type LocalDraft, type PanelId } from "@/store/helm";
 
 export function Sheet({
   id,
@@ -410,54 +405,6 @@ export function AnchorPanel() {
         <p className="text-t12 text-muted-foreground">Hull · GPS</p>
         <p className="font-display text-sm font-semibold">{gpsStationLabel(hull)}</p>
       </button>
-    </Sheet>
-  );
-}
-
-export function AtlasPanel() {
-  const reefId = useHelm((s) => s.reefId);
-  const setReef = useHelm((s) => s.setReef);
-  const packs = useHelm((s) => s.offlinePacks);
-  return (
-    <Sheet
-      id="atlas"
-      title="Places"
-      kicker="Search reefs, harbours and your tracks"
-      help="Search works offline. Reefs in green are saved on the phone. Dark water is deep, brown is coral, pale is sand."
-    >
-      <PlaceSearch />
-      <Button className="mb-3 w-full" onClick={startMusgraveDemo}>
-        Run Lady Musgrave entrance
-      </Button>
-      <ul className="grid gap-2">
-        {REEFS.map((r) => {
-          const onPhone = Boolean(packOnPhone(packs, r.lat, r.lng));
-          return (
-            <li key={r.id}>
-              <button
-                type="button"
-                onClick={() => setReef(r.id)}
-                className={`w-full rounded-lg border px-3 py-3 text-left ${
-                  reefId === r.id ? "border-primary bg-primary/10" : "border-border bg-background"
-                }`}
-              >
-                <div className="flex items-center justify-between gap-2">
-                  <p className="font-display text-lg leading-none font-semibold">{r.name}</p>
-                  {onPhone ? (
-                    <span className="shrink-0 rounded-full bg-emerald-500/20 px-2 py-0.5 text-t12 font-semibold text-emerald-400">
-                      On phone
-                    </span>
-                  ) : null}
-                </div>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  {r.region} · {r.country}
-                </p>
-                <p className="mt-2 text-sm text-pretty text-muted-foreground">{r.blurb}</p>
-              </button>
-            </li>
-          );
-        })}
-      </ul>
     </Sheet>
   );
 }
@@ -977,58 +924,27 @@ export function LegendPanel() {
 
 export function SavePanel() {
   const draft = useHelm((s) => s.draft);
+  const drafts = useHelm((s) => s.drafts);
   const saveDraft = useHelm((s) => s.saveDraft);
   const setDrawMode = useHelm((s) => s.setDrawMode);
-  const { user } = useCurrentUserState();
-  const [title, setTitle] = useState("Untitled cut");
-  const [region, setRegion] = useState("");
+  const [title, setTitle] = useState("");
   const [notes, setNotes] = useState("");
-  const [kind, setKind] = useState<"passage" | "anchorage">("passage");
-  const [busy, setBusy] = useState(false);
   const len = pathLengthMeters(draft);
   const prefs = useHelm((s) => s.routePrefs);
   const card = routeSummary(draft, prefs.motorKn, prefs.fuelLph);
+  const fallback = nextTrackName(drafts);
 
-  const local = () => {
+  const save = () => {
     const saved: LocalDraft = saveDraft({
-      title: title.trim() || "Untitled cut",
-      region,
-      notes,
-      kind,
+      title: title.trim() || fallback,
+      region: "",
+      notes: notes.trim(),
+      kind: "passage",
       waypoints: draft,
     });
     toast(`Saved ${saved.title}`);
-  };
-
-  const publish = async () => {
-    if (!user) return;
-    setBusy(true);
-    try {
-      await savePassage({
-        data: {
-          title: title.trim() || "Untitled cut",
-          region,
-          notes,
-          kind,
-          published: true,
-          waypoints: draft,
-          authorName: user.displayName || "Skipper",
-        },
-      });
-      saveDraft({
-        title: title.trim() || "Untitled cut",
-        region,
-        notes,
-        kind,
-        waypoints: draft,
-      });
-      toast("Published to the library");
-    } catch {
-      toast("Could not publish — saved on this helm only");
-      local();
-    } finally {
-      setBusy(false);
-    }
+    setTitle("");
+    setNotes("");
   };
 
   return (
@@ -1037,47 +953,17 @@ export function SavePanel() {
       {draft.length >= 2 ? <HazardCheck points={draft} /> : null}
       <div className="grid gap-3">
         <label className="grid gap-1">
-          <span className="text-t12 text-muted-foreground">Title</span>
-          <Input
-            autoFocus
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            onFocus={(e) => {
-              const el = e.currentTarget;
-              if (el.value !== "Untitled cut") return;
-              requestAnimationFrame(() => el.select());
-            }}
-          />
+          <span className="text-t13 text-muted-foreground">Name</span>
+          <Input autoFocus value={title} placeholder={fallback} onChange={(e) => setTitle(e.target.value.slice(0, LIMITS.title))} className="h-11 text-base" />
         </label>
         <label className="grid gap-1">
-          <span className="text-t12 text-muted-foreground">Region</span>
-          <Input value={region} onChange={(e) => setRegion(e.target.value)} placeholder="Great Barrier Reef" />
+          <span className="text-t13 text-muted-foreground">Comment (optional)</span>
+          <Input value={notes} onChange={(e) => setNotes(e.target.value.slice(0, LIMITS.comment))} className="h-11 text-base" />
         </label>
-        <label className="grid gap-1">
-          <span className="text-t12 text-muted-foreground">Notes</span>
-          <Input value={notes} onChange={(e) => setNotes(e.target.value)} />
-        </label>
-        <div className="grid grid-cols-2 gap-2">
-          <Button variant={kind === "passage" ? "default" : "outline"} onClick={() => setKind("passage")}>
-            Passage
-          </Button>
-          <Button variant={kind === "anchorage" ? "default" : "outline"} onClick={() => setKind("anchorage")}>
-            Anchorage
-          </Button>
-        </div>
-        <Button onClick={local} disabled={draft.length < 1}>
-          Save on this helm
+        <Button onClick={save} disabled={draft.length < 1}>
+          Save to My tracks
         </Button>
-        <SignedIn>
-          <Button variant="outline" disabled={busy || draft.length < 1} onClick={() => void publish()}>
-            {busy ? "Publishing…" : "Publish to library"}
-          </Button>
-        </SignedIn>
-        <SignedOut>
-          <Button asChild variant="outline">
-            <Link to="/login">Sign in to publish</Link>
-          </Button>
-        </SignedOut>
+        <p className="text-t13 text-muted-foreground">Share it to the online library later from Navigation → My tracks.</p>
         <Button variant="ghost" onClick={() => setDrawMode("idle")}>
           Discard
         </Button>
@@ -1086,158 +972,291 @@ export function SavePanel() {
   );
 }
 
-export function PassagesPanel() {
+/** Navigation: start recording, find a place, your tracks and the online library, in one sheet. */
+export function NavigationPanel() {
   const drafts = useHelm((s) => s.drafts);
   const active = useHelm((s) => s.activePassage);
   const setActive = useHelm((s) => s.setActivePassage);
-  const removeDraft = useHelm((s) => s.removeDraft);
   const reverseTrack = useHelm((s) => s.reverseTrack);
-  const { user } = useCurrentUserState();
-  const pub = useQuery({
-    queryKey: ["passages-public"],
-    queryFn: () => listPublicPassages(),
-    staleTime: 60_000,
-  });
-  const mine = useQuery({
-    queryKey: ["passages-mine", user?.id],
-    queryFn: () => listMyPassages(),
-    enabled: Boolean(user),
-    staleTime: 30_000,
-  });
-
-  const follow = (p: Passage | LocalDraft) => {
-    unlockAlarmAudio();
-    const onChart = trackInView(p.waypoints, getChartBounds());
-    setActive(p);
-    const s = useHelm.getState();
-    s.setChartUp("heading");
-    s.setBoatLow(true);
-    s.setSteerEar(true);
-    if (onChart) s.setFollowBoat(true);
-    s.setPanel(null);
-  };
+  const [tab, setTab] = useState<"mine" | "library">("mine");
+  useUnitsKey();
 
   return (
-    <Sheet id="passages" title="Tracks" kicker="Cuts to follow">
+    <Sheet id="passages" title="Navigation" kicker="Record, find and follow tracks">
+      <Button
+        className="mb-2 h-14 w-full text-t16"
+        onClick={() => {
+          const st = useHelm.getState();
+          st.setDraft([]);
+          st.clearCrumb();
+          st.setDrawMode("record");
+          st.setPanel(null);
+        }}
+      >
+        <Radio className="size-5" />
+        Start recording
+      </Button>
       {active ? (
-        <div className="mb-2 grid grid-cols-2 gap-2">
-          <Button variant="outline" size="sm" onClick={() => reverseTrack()}>
-            Reverse
-          </Button>
-          <Button variant="ghost" size="sm" onClick={() => setActive(null)}>
-            Drop track
-          </Button>
-        </div>
-      ) : null}
-      {drafts.length ? (
-        <div className="mb-3">
-          <p className="mb-1 text-t12 text-muted-foreground">On this helm</p>
-          <ul className="grid gap-1.5">
-            {drafts.map((d) => (
-              <li key={d.localId} className="flex items-center gap-2 rounded-md border border-border px-2 py-1.5">
-                <button type="button" className="min-w-0 flex-1 text-left" onClick={() => follow(d)}>
-                  <p className="truncate text-sm font-medium">{d.title}</p>
-                  <p className="text-t13 text-muted-foreground">{d.waypoints.length} marks</p>
-                </button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-7"
-                  onClick={() => {
-                    shareGpx(d.title, d.waypoints).catch((err: unknown) => {
-                      // Closing the share sheet is not an error.
-                      if (!/cancel/i.test(String(err))) toast.error("Couldn't export the track");
-                    });
-                  }}
-                >
-                  GPX
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-7"
-                  onClick={() => {
-                    if (window.confirm(`Delete "${d.title}"? This can't be undone.`)) {
-                      removeDraft(d.localId);
-                    }
-                  }}
-                >
-                  Del
-                </Button>
-              </li>
-            ))}
-          </ul>
-        </div>
-      ) : null}
-      <SignedIn>
-        {mine.data?.length ? (
-          <div className="mb-3">
-            <p className="mb-1 text-t12 text-muted-foreground">Mine</p>
-            <ul className="grid gap-1.5">
-              {mine.data.map((p) => (
-                <li key={p.id} className="flex items-center gap-2 rounded-md border border-border px-2 py-1.5">
-                  <button type="button" className="min-w-0 flex-1 text-left" onClick={() => follow(p)}>
-                    <p className="truncate text-sm font-medium">{p.title}</p>
-                    <p className="text-t13 text-muted-foreground">{p.published ? "Public" : "Private"}</p>
-                  </button>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-7"
-                    onClick={() => {
-                      void setPublished({ data: { id: p.id, published: !p.published } }).then(() => mine.refetch());
-                    }}
-                  >
-                    {p.published ? "Hide" : "Share"}
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-7"
-                    onClick={() => {
-                      void deletePassage({ data: { id: p.id } }).then(() => mine.refetch());
-                    }}
-                  >
-                    Del
-                  </Button>
-                </li>
-              ))}
-            </ul>
+        <div className="mb-2 rounded-lg border border-primary/50 px-2.5 py-2">
+          <p className="truncate text-t14 font-semibold">Following: {active.title}</p>
+          <div className="mt-1.5 grid grid-cols-2 gap-2">
+            <Button variant="outline" size="sm" onClick={() => reverseTrack()}>
+              Reverse
+            </Button>
+            <Button variant="ghost" size="sm" onClick={() => setActive(null)}>
+              Stop following
+            </Button>
           </div>
-        ) : null}
-      </SignedIn>
-      {!drafts.length && !pub.isLoading && !(pub.data ?? []).length ? (
-        <div className="rounded-lg border border-dashed border-border px-3 py-4 text-center">
+        </div>
+      ) : null}
+      <PlaceSearch />
+      <div className="mb-2 grid grid-cols-2 gap-1 rounded-lg bg-background p-1" role="tablist">
+        {(
+          [
+            ["mine", `My tracks${drafts.length ? ` (${drafts.length})` : ""}`],
+            ["library", "Library"],
+          ] as const
+        ).map(([id, label]) => (
+          <button
+            key={id}
+            type="button"
+            role="tab"
+            aria-selected={tab === id}
+            onClick={() => setTab(id)}
+            className={`h-10 rounded-md text-t14 font-semibold ${tab === id ? "bg-primary text-primary-foreground" : "text-foreground"}`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+      {tab === "mine" ? <MyTracks /> : <LibraryTab />}
+    </Sheet>
+  );
+}
+
+function followTrack(p: Passage | LocalDraft) {
+  unlockAlarmAudio();
+  const onChart = trackInView(p.waypoints, getChartBounds());
+  const s = useHelm.getState();
+  s.setActivePassage(p);
+  s.setChartUp("heading");
+  s.setBoatLow(true);
+  s.setSteerEar(true);
+  if (onChart) s.setFollowBoat(true);
+  else {
+    const fit = zoomToFit(p.waypoints);
+    if (fit) s.fly(fit.lat, fit.lng, fit.zoom);
+  }
+  s.setPanel(null);
+}
+
+function MyTracks() {
+  const drafts = useHelm((s) => s.drafts);
+  const removeDraft = useHelm((s) => s.removeDraft);
+  const [open, setOpen] = useState<string | null>(null);
+  return (
+    <>
+      {drafts.length ? (
+        <ul className="mb-3 grid gap-1.5">
+          {drafts.map((d) => {
+            const isOpen = open === d.localId;
+            return (
+              <li key={d.localId} className="rounded-md border border-border px-2.5 py-2">
+                <button type="button" className="w-full text-left" onClick={() => setOpen(isOpen ? null : d.localId)} aria-expanded={isOpen}>
+                  <div className="flex items-baseline justify-between gap-2">
+                    <p className="min-w-0 truncate text-t15 font-semibold">{d.title}</p>
+                    <span className="shrink-0 text-t13 text-muted-foreground">
+                      {formatMeters(pathLengthMeters(d.waypoints))}
+                      {d.libraryId ? " · shared" : d.fromLibrary ? " · library" : ""}
+                    </span>
+                  </div>
+                  {d.notes || d.region ? (
+                    <p className="mt-0.5 line-clamp-2 text-t13 text-muted-foreground">{[d.region, d.notes].filter(Boolean).join(" · ")}</p>
+                  ) : null}
+                </button>
+                {isOpen ? (
+                  <div className="mt-2 grid grid-cols-2 gap-1.5">
+                    <Button size="sm" className="col-span-2" onClick={() => followTrack(d)}>
+                      Follow
+                    </Button>
+                    <Button variant="outline" size="sm" onClick={() => useHelm.setState({ renameTrackId: d.localId, panel: "rename" })}>
+                      {d.fromLibrary ? "Rename" : d.libraryId ? "Edit / unshare" : "Rename / share"}
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        shareGpx(d.title, d.waypoints).catch((err: unknown) => {
+                          // Closing the share sheet is not an error.
+                          if (!/cancel/i.test(String(err))) toast.error("Couldn't export the track");
+                        });
+                      }}
+                    >
+                      Export GPX
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="col-span-2 text-destructive"
+                      onClick={() => {
+                        if (window.confirm(`Delete "${d.title}" from this phone? This can't be undone.`)) removeDraft(d.localId);
+                      }}
+                    >
+                      Delete from phone
+                    </Button>
+                  </div>
+                ) : null}
+              </li>
+            );
+          })}
+        </ul>
+      ) : (
+        <div className="mb-3 rounded-lg border border-dashed border-border px-3 py-4 text-center">
           <p className="font-display text-base font-semibold">No tracks yet</p>
           <p className="mx-auto mt-1 max-w-xs text-t14 leading-snug text-muted-foreground">
-            Tap <span className="font-semibold text-foreground">Start</span> to record your way in
-            through a cut, or <span className="font-semibold text-foreground">Draw</span> to plan one
-            on the satellite. Saved tracks appear here to follow back out, even at night.
+            Tap <span className="font-semibold text-foreground">Start recording</span> on your way in, or{" "}
+            <span className="font-semibold text-foreground">Draw</span> one on the satellite. Saved tracks stay on the phone
+            to follow back out, even with no signal.
           </p>
         </div>
-      ) : null}
+      )}
       <GpxImportRow />
       <BackupRow />
-      {(pub.data ?? []).length || pub.isLoading ? (
-        <p className="mb-1 text-t12 text-muted-foreground">Library</p>
-      ) : null}
-      {pub.isLoading ? <p className="text-sm text-muted-foreground">Loading cuts…</p> : null}
-      <ul className="grid gap-1.5">
-        {(pub.data ?? []).map((p) => (
-          <li key={p.id}>
-            <button
-              type="button"
-              onClick={() => follow(p)}
-              className="w-full rounded-md border border-border px-2 py-1.5 text-left"
-            >
-              <p className="truncate text-sm font-medium">{p.title}</p>
-              <p className="text-t13 text-muted-foreground">
-                {p.region || p.authorName} · {p.waypoints.length} marks
-              </p>
-            </button>
-          </li>
-        ))}
-      </ul>
+    </>
+  );
+}
+
+/** After Stop (or Rename): name the track, add a comment, and optionally share it. */
+export function RenameTrackPanel() {
+  const id = useHelm((s) => s.renameTrackId);
+  const track = useHelm((s) => s.drafts.find((d) => d.localId === s.renameTrackId) ?? null);
+  const update = useHelm((s) => s.updateDraft);
+  const [title, setTitle] = useState("");
+  const [notes, setNotes] = useState("");
+  const [location, setLocation] = useState("");
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    if (!track) return;
+    setTitle(track.title);
+    setNotes(track.notes);
+    setLocation(track.region);
+    if (track.region || !track.waypoints[0]) return;
+    const first = track.waypoints[0];
+    let live = true;
+    void loadHazards().then((idx) => {
+      if (!live) return;
+      const named = (idx?.items ?? []).filter((h) => h.name).map((h) => ({ name: h.name!, lat: h.c[1], lng: h.c[0] }));
+      const near = nearestPlaceName(first.lat, first.lng, named);
+      if (near) setLocation((cur) => cur || near);
+    });
+    return () => {
+      live = false;
+    };
+    // Only when a different track is opened.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id]);
+  if (!track) return null;
+  const close = () => useHelm.setState({ panel: null, renameTrackId: null });
+  const save = () => {
+    update(track.localId, { title: title.trim() || track.title, notes: notes.trim(), region: location.trim() });
+  };
+  const share = async () => {
+    save();
+    setBusy(true);
+    try {
+      const r = await shareToLibrary({
+        title: title.trim() || track.title,
+        location: location.trim(),
+        comment: notes.trim(),
+        points: track.waypoints,
+        lengthM: pathLengthMeters(track.waypoints),
+      });
+      update(track.localId, { libraryId: r.id, librarySecret: r.secret });
+      toast.success("Shared to the library");
+      close();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Couldn't share the track");
+    } finally {
+      setBusy(false);
+    }
+  };
+  const unshare = async () => {
+    if (!track.libraryId || !track.librarySecret) return;
+    setBusy(true);
+    try {
+      await removeFromLibrary(track.libraryId, track.librarySecret);
+      update(track.localId, { libraryId: undefined, librarySecret: undefined });
+      toast.success("Removed from the library. It stays on this phone.");
+    } catch {
+      toast.error("Couldn't reach the library. Try again with signal.");
+    } finally {
+      setBusy(false);
+    }
+  };
+  const canShare = Boolean(libraryConfig()) && !track.fromLibrary;
+  return (
+    <Sheet id="rename" title="Name this track" kicker={`${formatMeters(pathLengthMeters(track.waypoints))} · ${track.waypoints.length} marks`}>
+      <div className="grid gap-3">
+        <label className="grid gap-1">
+          <span className="text-t13 text-muted-foreground">Name</span>
+          <Input
+            value={title}
+            onChange={(e) => setTitle(e.target.value.slice(0, LIMITS.title))}
+            onFocus={(e) => {
+              const el = e.currentTarget;
+              if (/^Track \d+$/.test(el.value)) requestAnimationFrame(() => el.select());
+            }}
+            className="h-11 text-base"
+          />
+        </label>
+        <label className="grid gap-1">
+          <span className="text-t13 text-muted-foreground">Comment (optional)</span>
+          <Input
+            value={notes}
+            onChange={(e) => setNotes(e.target.value.slice(0, LIMITS.comment))}
+            placeholder="e.g. Half tide or more, keep the bommie to port"
+            className="h-11 text-base"
+          />
+        </label>
+        <Button
+          onClick={() => {
+            save();
+            toast(`Saved ${title.trim() || track.title}`);
+            close();
+          }}
+        >
+          Save
+        </Button>
+        {canShare ? (
+          <div className="rounded-lg border border-border px-2.5 py-2">
+            <p className="text-t14 font-semibold">Share to the online library</p>
+            <p className="mt-0.5 text-t13 leading-snug text-muted-foreground">
+              Other skippers can find it by location and comment and save it to their phone. Shared without your name.
+            </p>
+            <label className="mt-2 grid gap-1">
+              <span className="text-t13 text-muted-foreground">Location</span>
+              <Input
+                value={location}
+                onChange={(e) => setLocation(e.target.value.slice(0, LIMITS.location))}
+                placeholder="e.g. Lady Musgrave lagoon entrance"
+                className="h-11 text-base"
+              />
+            </label>
+            {track.libraryId ? (
+              <Button variant="outline" className="mt-2 w-full" disabled={busy} onClick={() => void unshare()}>
+                {busy ? "Removing…" : "Remove from library"}
+              </Button>
+            ) : (
+              <Button variant="outline" className="mt-2 w-full" disabled={busy || !location.trim()} onClick={() => void share()}>
+                {busy ? "Sharing…" : "Share"}
+              </Button>
+            )}
+          </div>
+        ) : null}
+        <Button variant="ghost" onClick={close}>
+          Not now
+        </Button>
+      </div>
     </Sheet>
   );
 }
@@ -1611,20 +1630,42 @@ function RouteCard({ distM, hours, litres, kn }: { distM: number; hours: number 
   );
 }
 
-/** Search reefs, tide ports and saved tracks (offline); tap a result to go there. */
+/** Search GBRMPA reefs, islands and cays, tide ports and saved tracks (offline); tap a result to go there. */
 function PlaceSearch() {
   const [q, setQ] = useState("");
+  const [named, setNamed] = useState<Place[]>([]);
   const drafts = useHelm((s) => s.drafts);
-  const extra = drafts
-    .filter((d) => d.waypoints.length)
-    .map((d) => ({ name: d.title, detail: "Your track", lat: d.waypoints[0]!.lat, lng: d.waypoints[0]!.lng, zoom: 16, kind: "track" as const }));
+  useEffect(() => {
+    if (q.trim().length < 2 || named.length) return;
+    let live = true;
+    void loadHazards().then((idx) => {
+      if (!live || !idx) return;
+      const seen = new Set<string>();
+      const out: Place[] = [];
+      for (const h of idx.items) {
+        if (!h.name || seen.has(h.name)) continue;
+        seen.add(h.name);
+        out.push({ name: h.name, detail: h.kind === "island" ? "Island" : h.kind === "cay" ? "Cay" : "Reef", lat: h.c[1], lng: h.c[0], zoom: 14, kind: "reef" });
+      }
+      setNamed(out);
+    });
+    return () => {
+      live = false;
+    };
+  }, [q, named.length]);
+  const extra = [
+    ...drafts
+      .filter((d) => d.waypoints.length)
+      .map((d) => ({ name: d.title, detail: "Your track", lat: d.waypoints[0]!.lat, lng: d.waypoints[0]!.lng, zoom: 16, kind: "track" as const })),
+    ...named,
+  ];
   const hits = searchPlaces(q, extra);
   return (
     <div className="mb-3">
       <Input
         value={q}
         onChange={(e) => setQ(e.target.value)}
-        placeholder="Search: reef, harbour or track"
+        placeholder="Find a place: reef, island, harbour or track"
         aria-label="Search places"
         className="h-11 text-base"
         type="search"
