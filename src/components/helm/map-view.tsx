@@ -704,6 +704,7 @@ export function MapView() {
         const wxLayer = createWxLayer(L, map);
         let wxField: WeatherField | null = null;
         let wxLoading = false;
+        let wxFieldModel = "";
         let wxProbeMarker: import("leaflet").Marker | null = null;
         const wxCovers = (f: WeatherField | null) => {
           if (!f || !map) return false;
@@ -717,13 +718,15 @@ export function MapView() {
         };
         const wxLoad = () => {
           const st = useHelm.getState();
-          if (!map || st.wxMapLayer === "off" || wxLoading || wxCovers(wxField)) return;
+          if (!map || st.wxMapLayer === "off" || wxLoading || (wxCovers(wxField) && wxFieldModel === st.wxMapModel)) return;
+          const model = st.wxMapModel;
           wxLoading = true;
           st.setWxMap({ wxMapInfo: { source: "loading", fetchedAt: null, times: wxField?.times ?? [] } });
           const b = map.getBounds();
-          void loadViewField({ south: b.getSouth(), west: b.getWest(), north: b.getNorth(), east: b.getEast() })
+          void loadViewField({ south: b.getSouth(), west: b.getWest(), north: b.getNorth(), east: b.getEast() }, model)
             .then((r) => {
               wxField = r?.field ?? wxField;
+              if (r) wxFieldModel = model;
               setViewField(wxField);
               useHelm.getState().setWxMap({
                 wxMapInfo: r
@@ -1926,8 +1929,9 @@ export function MapView() {
             if (!hookDragging) {
               anchorMarker.setLatLng([s.anchor.lat, s.anchor.lng]);
             }
-            if (s.anchor.radiusLocked) anchorMarker.dragging?.disable();
-            else anchorMarker.dragging?.enable();
+            // While the watch is on, the hook and circle stay where they were set; they move only
+            // on purpose, with Move hook or Swing size in the anchor panel.
+            anchorMarker.dragging?.disable();
             if (!anchorOn) {
               anchorCircle.addTo(map);
               anchorMarker.addTo(map);
@@ -1942,7 +1946,8 @@ export function MapView() {
               alarmShown = false;
             }
 
-            if (!rimDragging && !fenced) {
+            const rimEditable = s.tapMode === "resize-swing";
+            if (!rimDragging && !fenced && rimEditable) {
               const brg = s.boat
                 ? bearingDegrees(s.anchor, s.boat)
                 : 0;
@@ -1953,7 +1958,7 @@ export function MapView() {
                 rimHandle.addTo(map);
                 rimOn = true;
               }
-            } else if (fenced && rimOn) {
+            } else if ((fenced || !rimEditable) && rimOn && !rimDragging) {
               map.removeLayer(rimHandle);
               rimOn = false;
             }

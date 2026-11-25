@@ -18,13 +18,13 @@ export const WX_MAP_LAYERS: Array<{ id: WxMapLayer; label: string }> = [
   { id: "storm", label: "Storms" },
 ];
 
-const MAX_POINTS = 100;
+const MAX_POINTS = 144;
 
-/** A grid over the view (padded 20%), at most 100 points, snapped so small pans reuse it. */
+/** A grid over the view (padded 20%), at most 144 points (12 × 12), snapped so small pans reuse it. */
 export function viewGrid(b: BBox): CorridorGrid & { key: string } {
   const padLat = (b.north - b.south) * 0.2;
   const padLng = (b.east - b.west) * 0.2;
-  let step = Math.max(0.05, Math.max(b.north - b.south + 2 * padLat, b.east - b.west + 2 * padLng) / 9);
+  let step = Math.max(0.05, Math.max(b.north - b.south + 2 * padLat, b.east - b.west + 2 * padLng) / 11);
   step = Number((Math.ceil(step / 0.05) * 0.05).toFixed(2));
   const snap = (v: number, down: boolean) => (down ? Math.floor(v / step) : Math.ceil(v / step)) * step;
   const south = snap(b.south - padLat, true);
@@ -226,23 +226,89 @@ export function upsample(
   values: ArrayLike<number>,
   k: number,
 ): { grid: { lat0: number; lng0: number; dLat: number; dLng: number; nx: number; ny: number }; values: Float32Array } {
+  // Catmull-Rom (bicubic) through the grid points: smooth curves that still pass through every
+  // model value, so isobars are accurate at the grid points and round between them.
   const nx = (g.nx - 1) * k + 1;
   const ny = (g.ny - 1) * k + 1;
   const out = new Float32Array(nx * ny);
+  const at = (i: number, j: number) => values[Math.max(0, Math.min(g.ny - 1, j)) * g.nx + Math.max(0, Math.min(g.nx - 1, i))]!;
+  const cr = (p0: number, p1: number, p2: number, p3: number, t: number) =>
+    0.5 * (2 * p1 + (-p0 + p2) * t + (2 * p0 - 5 * p1 + 4 * p2 - p3) * t * t + (-p0 + 3 * p1 - 3 * p2 + p3) * t * t * t);
   for (let y = 0; y < ny; y++) {
     const fy = y / k;
-    const y0 = Math.min(g.ny - 2, Math.floor(fy));
-    const ty = fy - y0;
+    const y1 = Math.min(g.ny - 2, Math.floor(fy));
+    const ty = fy - y1;
     for (let x = 0; x < nx; x++) {
       const fx = x / k;
-      const x0 = Math.min(g.nx - 2, Math.floor(fx));
-      const tx = fx - x0;
-      const v = (i: number, j: number) => values[j * g.nx + i]!;
-      out[y * nx + x] =
-        v(x0, y0) * (1 - tx) * (1 - ty) + v(x0 + 1, y0) * tx * (1 - ty) + v(x0, y0 + 1) * (1 - tx) * ty + v(x0 + 1, y0 + 1) * tx * ty;
+      const x1 = Math.min(g.nx - 2, Math.floor(fx));
+      const tx = fx - x1;
+      if (g.nx < 2 || g.ny < 2) {
+        out[y * nx + x] = values[0]!;
+        continue;
+      }
+      const row = (j: number) => cr(at(x1 - 1, j), at(x1, j), at(x1 + 1, j), at(x1 + 2, j), tx);
+      out[y * nx + x] = cr(row(y1 - 1), row(y1), row(y1 + 1), row(y1 + 2), ty);
     }
   }
   return { grid: { lat0: g.lat0, lng0: g.lng0, dLat: g.dLat / k, dLng: g.dLng / k, nx, ny }, values: out };
+}
+
+/**
+ * Join contour segments into whole lines (matching shared end points), then round them with two
+ * passes of Chaikin corner-cutting so isobars draw as smooth curves.
+ */
+export function smoothLines(segs: Array<[Pt, Pt]>, passes = 2): Pt[][] {
+  const key = (p: Pt) => `${p.lat.toFixed(6)},${p.lng.toFixed(6)}`;
+  const ends = new Map<string, number[]>();
+  segs.forEach(([a, b], i) => {
+    for (const k of [key(a), key(b)]) {
+      const l = ends.get(k);
+      if (l) l.push(i);
+      else ends.set(k, [i]);
+    }
+  });
+  const used = new Uint8Array(segs.length);
+  const lines: Pt[][] = [];
+  const grow = (line: Pt[], atEnd: boolean) => {
+    for (;;) {
+      const tip = atEnd ? line[line.length - 1]! : line[0]!;
+      const next = (ends.get(key(tip)) ?? []).find((j) => !used[j]);
+      if (next === undefined) return;
+      used[next] = 1;
+      const [a, b] = segs[next]!;
+      const other = key(a) === key(tip) ? b : a;
+      if (atEnd) line.push(other);
+      else line.unshift(other);
+    }
+  };
+  for (let i = 0; i < segs.length; i++) {
+    if (used[i]) continue;
+    used[i] = 1;
+    const line = [segs[i]![0], segs[i]![1]];
+    grow(line, true);
+    grow(line, false);
+    lines.push(line);
+  }
+  return lines.map((l) => {
+    let pts = l;
+    const closed = pts.length > 3 && key(pts[0]!) === key(pts[pts.length - 1]!);
+    for (let pass = 0; pass < passes; pass++) {
+      if (pts.length < 3) break;
+      const out: Pt[] = closed ? [] : [pts[0]!];
+      for (let i = 0; i < pts.length - 1; i++) {
+        const a = pts[i]!;
+        const b = pts[i + 1]!;
+        out.push(
+          { lat: a.lat * 0.75 + b.lat * 0.25, lng: a.lng * 0.75 + b.lng * 0.25 },
+          { lat: a.lat * 0.25 + b.lat * 0.75, lng: a.lng * 0.25 + b.lng * 0.75 },
+        );
+      }
+      if (closed) out.push(out[0]!);
+      else out.push(pts[pts.length - 1]!);
+      pts = out;
+    }
+    return pts;
+  });
 }
 
 /** A colour scale: value stops with RGB colours, blended smoothly between stops (like Windy). */
