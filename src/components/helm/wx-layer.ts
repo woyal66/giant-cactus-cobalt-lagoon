@@ -442,8 +442,8 @@ export function createWxLayer(L: LeafletNS, map: LeafletMap) {
     lastH = h;
     // Pixels a frame per unit: currents are slow, so they get a bigger scale to be seen moving;
     // waves (metres) drift at a steady pace that grows with height.
-    const speed = L1 === "current" ? 2 : waves ? 0.8 : 0.12;
-    const color = L1 === "current" ? "rgba(235,225,255,0.7)" : waves ? "rgba(220,240,255,0.7)" : own ? "rgba(255,255,255,0.62)" : "rgba(255,255,255,0.38)";
+    const speed = L1 === "current" ? 1.4 : waves ? 0.6 : 0.08;
+    const color = L1 === "current" ? "rgba(235,225,255,0.7)" : waves ? "rgba(220,240,255,0.7)" : own ? "rgba(255,255,255,0.55)" : "rgba(255,255,255,0.38)";
     animate(w, h, dpr, speed, color, waves);
   }
 
@@ -523,7 +523,7 @@ export function createWxLayer(L: LeafletNS, map: LeafletMap) {
       const k = lastT ? Math.min(3, (now - lastT) / 16.7) : 1;
       lastT = now;
       g.globalCompositeOperation = "destination-in";
-      g.fillStyle = `rgba(0,0,0,${Math.pow(0.78, k).toFixed(3)})`;
+      g.fillStyle = `rgba(0,0,0,${Math.pow(0.7, k).toFixed(3)})`;
       g.fillRect(0, 0, w, h);
       g.globalCompositeOperation = "source-over";
       g.lineWidth = 1.1;

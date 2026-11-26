@@ -91,9 +91,9 @@ export function Sheet({
   if (panel !== id) return null;
   const height = tall ? "max-h-[78vh]" : compact ? "max-h-[min(34vh,20rem)]" : "max-h-[min(46vh,24rem)]";
   return (
-    <div className="pointer-events-none absolute inset-x-0 bottom-0 z-40 md:inset-y-20 md:right-3 md:bottom-24 md:left-auto md:w-[22rem]">
+    <div className="pointer-events-none absolute inset-x-0 bottom-0 z-40 md:top-3 md:right-3 md:bottom-3 md:left-auto md:w-[26rem] lg:w-[28rem]">
       <div
-        className={`pointer-events-auto ${height} overflow-y-auto rounded-t-xl border border-border bg-card px-3 pt-1 pb-[max(0.6rem,var(--safe-area-inset-bottom,env(safe-area-inset-bottom)))] shadow-[var(--shadow-border)] md:max-h-[min(72vh,36rem)] md:rounded-xl md:p-4`}
+        className={`pointer-events-auto ${height} overflow-y-auto rounded-t-xl border border-border bg-card px-3 pt-1 pb-[max(0.6rem,var(--safe-area-inset-bottom,env(safe-area-inset-bottom)))] shadow-[var(--shadow-border)] md:max-h-full md:rounded-2xl md:p-4`}
         aria-label={kicker ? `${title}: ${kicker}` : title}
       >
         <button

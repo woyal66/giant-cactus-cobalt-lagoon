@@ -180,9 +180,9 @@ export function WxMapBar() {
   const close = () => set({ wxMapLayer: "off", wxMapPlaying: false, wxProbe: null, wxLiveAt: null });
 
   return (
-    <div className="pointer-events-auto absolute inset-x-0 bottom-0 z-30 mx-auto max-w-2xl rounded-t-2xl border border-b-0 border-border bg-card/97 px-2 pt-2 pb-[max(0.5rem,var(--safe-area-inset-bottom,env(safe-area-inset-bottom)))] shadow-[var(--shadow-border)] rp-glass">
+    <div className="pointer-events-auto absolute inset-x-0 bottom-0 z-30 mx-auto max-w-2xl rounded-t-2xl md:bottom-3 md:max-w-4xl md:rounded-2xl md:border-b border border-b-0 border-border bg-card/97 px-2 pt-2 pb-[max(0.5rem,var(--safe-area-inset-bottom,env(safe-area-inset-bottom)))] shadow-[var(--shadow-border)] rp-glass">
       <div className="flex items-center gap-1.5">
-        <div className="flex min-w-0 flex-1 gap-1 overflow-x-auto pb-0.5" role="radiogroup" aria-label="Weather layer">
+        <div className="rp-noscroll flex min-w-0 flex-1 gap-1 overflow-x-auto pb-0.5 md:flex-wrap" role="radiogroup" aria-label="Weather layer">
           {WX_MAP_LAYERS.map((l) => {
             const Icon = ICON[l.id];
             const on = layer === l.id;
@@ -325,7 +325,7 @@ export function WxMapBar() {
       </div>
 
       {!liveMode ? (
-        <div className="mt-1 flex items-center gap-1 overflow-x-auto pb-0.5">
+        <div className="rp-noscroll mt-1 flex items-center gap-1 overflow-x-auto pb-0.5 md:flex-wrap">
           <Pill on={isobars || layer === "pressure"} disabled={layer === "pressure"} label="Isobars" onClick={() => set({ wxIsobars: !isobars })} />
           <Pill
             on={style === "particles" && !lowBattery}

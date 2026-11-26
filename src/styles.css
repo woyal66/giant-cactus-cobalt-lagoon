@@ -760,10 +760,11 @@ svg[aria-label] text {
   box-shadow: var(--shadow-border);
 }
 
-/* Weather map open: the photo or chart steps back so the weather colours read cleanly. */
-.rp-wxdim.rp-wxdim.rp-wxdim .leaflet-tile-pane,
-.rp-wxdim.rp-wxdim.rp-wxdim .leaflet-satOverlay-pane,
-.rp-wxdim.rp-wxdim.rp-wxdim .leaflet-satHi-pane,
-.rp-wxdim.rp-wxdim.rp-wxdim .leaflet-chartOverlay-pane {
-  filter: brightness(0.72) saturate(0.7);
+/* Weather map open: the map stays at full brightness (only the weather colours are see-through). */
+/* Scroll rows of chips without a visible scrollbar. */
+.rp-noscroll {
+  scrollbar-width: none;
+}
+.rp-noscroll::-webkit-scrollbar {
+  display: none;
 }
