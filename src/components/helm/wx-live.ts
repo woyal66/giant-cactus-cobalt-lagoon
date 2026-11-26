@@ -40,11 +40,16 @@ export function createWxLive(L: LeafletNS, map: LeafletMap, onRain: (r: RainNow 
   const hereText = (r: RainNow) => {
     const s = useHelm.getState();
     const spot = s.boat ?? map.getCenter();
-    const c = cellOf(r.grid, spot.lat, spot.lng);
-    if (c.x < 0 || c.y < 0 || c.x >= r.grid.w || c.y >= r.grid.h) return null;
-    const steps = r.frames
-      .filter((f) => f.at >= r.latestAt)
-      .map((f) => ({ at: f.at, mmh: rainRateFromDbz(dbzNear(f.dbz, r.grid.w, r.grid.h, c.x, c.y, 1)) }));
+    const steps: { at: number; mmh: number }[] = [];
+    for (const f of r.frames) {
+      if (f.at < r.latestAt) continue;
+      const g = f.grid ?? r.grid;
+      const c = cellOf(g, spot.lat, spot.lng);
+      if (c.x < 0 || c.y < 0 || c.x >= g.w || c.y >= g.h) return null;
+      // About the same 1–2 km around the spot on either grid.
+      const reach = Math.max(1, Math.round(2 ** (g.z - r.grid.z)));
+      steps.push({ at: f.at, mmh: rainRateFromDbz(dbzNear(f.dbz, g.w, g.h, c.x, c.y, reach)) });
+    }
     if (steps.length < 2) return null;
     return `${s.boat ? "At the boat" : "Chart centre"}: ${outlookText(steps, clock)}`;
   };
@@ -65,7 +70,12 @@ export function createWxLive(L: LeafletNS, map: LeafletMap, onRain: (r: RainNow 
             ? "Rain barely moving"
             : null,
       here: hereText(rain),
-      note: outlook ? null : "Not enough rain on the radar to see where it is heading, so no outlook.",
+      note: [
+        rain.source === "noaa" ? "Sharp US radar (NOAA, every 2 min) for now and the outlook" : null,
+        outlook ? null : "Not enough rain on the radar to see where it is heading, so no outlook.",
+      ]
+        .filter(Boolean)
+        .join(" · ") || null,
     });
   };
 

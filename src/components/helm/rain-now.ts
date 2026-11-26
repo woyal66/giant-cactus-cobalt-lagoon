@@ -1,10 +1,12 @@
 import type { LatLngBounds } from "leaflet";
 import { RADAR_MAX_NATIVE_ZOOM, dbzFromGrey, fetchRadarFrames, kmPerPxAt, radarDataTileUrl, worldPx, type RadarFrame } from "@/lib/radar";
 import { advect, estimateMotion, medianMotion } from "@/lib/rain";
+import { dbzFromRadarColor, usRadarAvailable, usRadarRegion, usRadarUrl } from "@/lib/us-radar";
 
 /** A radar grid: one cell per pixel of zoom `z` (256 px tiles), top-left at world pixel x0, y0. */
 export type RainGrid = { z: number; x0: number; y0: number; w: number; h: number };
-export type RainFrame = { at: number; dbz: Float32Array; outlook: boolean };
+/** `grid` when the frame is on a finer grid than the rest (NOAA's US radar). */
+export type RainFrame = { at: number; dbz: Float32Array; outlook: boolean; grid?: RainGrid };
 export type RainNow = {
   grid: RainGrid;
   frames: RainFrame[];
@@ -14,6 +16,8 @@ export type RainNow = {
   /** Speed and direction the rain is moving toward. */
   speedKn: number | null;
   towardDeg: number | null;
+  /** Where the newest frame came from: RainViewer, or NOAA's sharper US mosaic. */
+  source: "rainviewer" | "noaa";
 };
 
 const OUTLOOK_MIN = [10, 20, 30, 40, 50, 60];
@@ -55,8 +59,8 @@ function loadTile(host: string, f: RadarFrame, z: number, x: number, y: number):
 }
 
 /** The radar grid zoom for a view: as fine as the free tier allows, at most 900 cells across. */
-export function rainGridFor(b: LatLngBounds): RainGrid {
-  for (let z = RADAR_MAX_NATIVE_ZOOM; z >= 2; z--) {
+export function rainGridFor(b: LatLngBounds, maxZ = RADAR_MAX_NATIVE_ZOOM): RainGrid {
+  for (let z = maxZ; z >= 2; z--) {
     const nw = worldPx(b.getNorth(), b.getWest(), z);
     const se = worldPx(b.getSouth(), b.getEast(), z);
     const x0 = Math.floor(nw.x / 256) * 256;
@@ -129,14 +133,67 @@ export async function loadRainNow(b: LatLngBounds): Promise<RainNow | null> {
   }
   const kmPerMin = motion ? Math.hypot(motion.dx, motion.dy) * kmPx : 0;
   const speedKn = motion ? (kmPerMin * 60) / 1.852 : null;
+  // US waters: NOAA's 2-minute mosaic, about four times sharper than the free RainViewer zoom.
+  // It replaces the newest frame and the outlook (moved along the same track); the past hour
+  // stays RainViewer's.
+  let latestAt = last.at;
+  let source: RainNow["source"] = "rainviewer";
+  const c = b.getCenter();
+  const region = usRadarAvailable() ? usRadarRegion(c.lat, c.lng) : null;
+  if (region) {
+    const fine = rainGridFor(b.pad(0.15), 10);
+    const dbz = fine.z > grid.z ? await loadUsFrame(region, fine) : null;
+    if (dbz) {
+      const at = Date.now() - 3 * 60_000; // the mosaic is usually 2–4 minutes old
+      const k = 2 ** (fine.z - grid.z);
+      const keep = frames.filter((f) => !f.outlook && f.at < at - 4 * 60_000);
+      keep.push({ at, dbz, outlook: false, grid: fine });
+      if (motion) {
+        for (const m of OUTLOOK_MIN) {
+          keep.push({ at: at + m * 60_000, dbz: advect(dbz, fine.w, fine.h, motion.dx * m * k, motion.dy * m * k), outlook: true, grid: fine });
+        }
+      }
+      frames.splice(0, frames.length, ...keep);
+      latestAt = at;
+      source = "noaa";
+    }
+  }
   return {
     grid,
     frames,
-    latestAt: last.at,
+    latestAt,
+    source,
     motion,
     speedKn,
     towardDeg: motion && speedKn != null && speedKn >= 2 ? ((Math.atan2(motion.dx, -motion.dy) * 180) / Math.PI + 360) % 360 : null,
   };
+}
+
+/** NOAA's mosaic for a grid as dBZ, read back from its colours (null if it can't be read). */
+function loadUsFrame(region: NonNullable<ReturnType<typeof usRadarRegion>>, g: RainGrid): Promise<Float32Array | null> {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    img.onload = () => {
+      const c = document.createElement("canvas");
+      c.width = g.w;
+      c.height = g.h;
+      const ctx = c.getContext("2d", { willReadFrequently: true });
+      if (!ctx) return resolve(null);
+      ctx.drawImage(img, 0, 0, g.w, g.h);
+      try {
+        const px = ctx.getImageData(0, 0, g.w, g.h).data;
+        const out = new Float32Array(g.w * g.h);
+        for (let k = 0; k < out.length; k++) out[k] = dbzFromRadarColor(px[k * 4]!, px[k * 4 + 1]!, px[k * 4 + 2]!, px[k * 4 + 3]!);
+        resolve(out);
+      } catch {
+        resolve(null); // no CORS: stay on RainViewer
+      }
+    };
+    img.onerror = () => resolve(null);
+    window.setTimeout(() => resolve(null), 15_000);
+    img.src = usRadarUrl(region, g.z, g.x0, g.y0, g.w, g.h);
+  });
 }
 
 /** Grid cell of a position. */

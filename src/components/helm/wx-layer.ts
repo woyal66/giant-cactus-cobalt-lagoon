@@ -92,7 +92,8 @@ export function createWxLayer(L: LeafletNS, map: LeafletMap) {
     let fr = r.frames[0];
     for (const x of r.frames) if (Math.abs(x.at - at) < Math.abs((fr?.at ?? 0) - at)) fr = x;
     if (!fr) return;
-    const { w, h } = r.grid;
+    const grid = fr.grid ?? r.grid;
+    const { w, h } = grid;
     const off = document.createElement("canvas");
     off.width = w;
     off.height = h;
@@ -109,8 +110,8 @@ export function createWxLayer(L: LeafletNS, map: LeafletMap) {
       img.data[k * 4 + 3] = fr.outlook ? 150 : 190;
     }
     o.putImageData(img, 0, 0);
-    const nw = latLngOfWorld(r.grid.x0, r.grid.y0, r.grid.z);
-    const se = latLngOfWorld(r.grid.x0 + w, r.grid.y0 + h, r.grid.z);
+    const nw = latLngOfWorld(grid.x0, grid.y0, grid.z);
+    const se = latLngOfWorld(grid.x0 + w, grid.y0 + h, grid.z);
     const a = toPx(nw.lat, nw.lng);
     const b = toPx(se.lat, se.lng);
     g.imageSmoothingEnabled = true;

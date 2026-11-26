@@ -87,3 +87,26 @@ test("satellite pick and frame times", async () => {
   assert.equal(satTime(satFor(-16.9, 145.8), f[6]!), "2026-11-26T02:30:00Z");
   assert.equal(satTime(satFor(43, 5), now), "2026-11-26");
 });
+
+test("US radar colours read back to dBZ and regions", async () => {
+  const { dbzFromRadarColor, usRadarRegion, usRadarUrl, mercMetres } = await import("./us-radar.ts");
+  const hex = (h: string) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16)) as [number, number, number];
+  // The standard NWS reflectivity colours, 5 dBZ apart.
+  const nws: Array<[string, number]> = [
+    ["#04e9e7", 5], ["#019ff4", 10], ["#0300f4", 15], ["#02fd02", 20], ["#01c501", 25], ["#008e00", 30],
+    ["#fdf802", 35], ["#e5bc00", 40], ["#fd9500", 45], ["#fd0000", 50], ["#d40000", 55], ["#bc0000", 60],
+    ["#f800fd", 65], ["#9854c6", 70], ["#fdfdfd", 75],
+  ];
+  for (const [h, want] of nws) {
+    const [r, g, b] = hex(h);
+    assert.ok(Math.abs(dbzFromRadarColor(r, g, b, 255) - want) <= 5, `${h}: ${dbzFromRadarColor(r, g, b, 255)} vs ${want}`);
+  }
+  assert.equal(dbzFromRadarColor(0, 0, 0, 0), -Infinity);
+  assert.equal(dbzFromRadarColor(120, 120, 120, 255), -Infinity);
+  assert.equal(usRadarRegion(25.7, -80.2)?.layer, "conus_bref_qcd");
+  assert.equal(usRadarRegion(21.3, -157.8)?.layer, "hawaii_bref_qcd");
+  assert.equal(usRadarRegion(-16.9, 145.8), null);
+  const m = mercMetres(128, 128, 0);
+  assert.ok(Math.abs(m.x) < 1e-6 && Math.abs(m.y) < 1e-6);
+  assert.match(usRadarUrl(usRadarRegion(25.7, -80.2)!, 8, 18000, 28000, 300, 200), /conus\/conus_bref_qcd\/ows\?SERVICE=WMS.*WIDTH=300&HEIGHT=200/);
+});
