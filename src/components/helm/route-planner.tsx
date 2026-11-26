@@ -22,7 +22,7 @@ import type { WindowScan } from "@/lib/routing/plan";
 import { WindowFinder } from "@/components/helm/window-finder";
 import type { Choice, DepartureRow, PlanOutput } from "@/lib/routing/plan";
 import type { RouteMetrics, RouteMode, RoutePoint } from "@/lib/routing/router";
-import { boatPerfOf, useHelm, useUnitsKey, type LocalDraft } from "@/store/helm";
+import { MAX_TRACKS, boatPerfOf, useHelm, useUnitsKey, type LocalDraft } from "@/store/helm";
 import { shallowAlong } from "@/lib/depth";
 
 const H = 3_600_000;
@@ -602,11 +602,11 @@ function PickedActions({ picked, ctx, shelter }: { picked: Choice; ctx: PlanCont
                 "You're on anchor watch. Following now starts steering cues while you're still at anchor. Follow anyway? (Choose Cancel to keep it saved for when you leave.)",
               )
             ) {
-              useHelm.setState({ drafts: [d, ...s.drafts].slice(0, 40) });
+              useHelm.setState({ drafts: [d, ...s.drafts].slice(0, MAX_TRACKS) });
               toast.success("Saved to My tracks. Follow it from Navigation when you weigh anchor.");
               return;
             }
-            useHelm.setState({ drafts: [d, ...s.drafts].slice(0, 40) });
+            useHelm.setState({ drafts: [d, ...s.drafts].slice(0, MAX_TRACKS) });
             keepOffline(d.localId);
             s.setActivePassage(d);
             s.setChartUp("heading");
@@ -623,7 +623,7 @@ function PickedActions({ picked, ctx, shelter }: { picked: Choice; ctx: PlanCont
           onClick={() => {
             const d = asDraft(title, r.points);
             const s = useHelm.getState();
-            useHelm.setState({ drafts: [d, ...s.drafts].slice(0, 40) });
+            useHelm.setState({ drafts: [d, ...s.drafts].slice(0, MAX_TRACKS) });
             keepOffline(d.localId);
             toast.success("Saved to My tracks, with its forecast for offline use");
           }}

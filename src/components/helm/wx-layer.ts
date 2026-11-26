@@ -343,12 +343,22 @@ export function createWxLayer(L: LeafletNS, map: LeafletMap) {
       if (wsum < 0.25) return { u: 0, v: 0, kn: NaN };
       return { u: u / wsum, v: v / wsum, kn: kn / wsum };
     };
-    const tick = () => {
+    // About 30 frames a second, all particles drawn as one path: the same look as 60 fps with
+    // one stroke each, for a fraction of the battery. Steps and the fading trail are scaled by
+    // the real time between frames, so speed and trail length don't change.
+    let lastT = 0;
+    const tick = (now: number) => {
+      raf = requestAnimationFrame(tick);
+      if (lastT && now - lastT < 30) return;
+      const k = lastT ? Math.min(3, (now - lastT) / 16.7) : 1;
+      lastT = now;
       g.globalCompositeOperation = "destination-in";
-      g.fillStyle = "rgba(0,0,0,0.9)";
+      g.fillStyle = `rgba(0,0,0,${Math.pow(0.9, k).toFixed(3)})`;
       g.fillRect(0, 0, w, h);
       g.globalCompositeOperation = "source-over";
       g.lineWidth = 1.6;
+      g.strokeStyle = color;
+      g.beginPath();
       for (const p of particles) {
         const s = sample(p.x, p.y);
         if (!Number.isFinite(s.kn) || p.age > 90) {
@@ -359,19 +369,16 @@ export function createWxLayer(L: LeafletNS, map: LeafletMap) {
         }
         // Waves keep a visible drift even where they are small.
         const boost = minSpeed && s.kn > 0 && s.kn < 0.6 ? 0.6 / s.kn : 1;
-        const nx = p.x + s.u * pxPerKn * boost;
-        const ny = p.y - s.v * pxPerKn * boost;
-        g.strokeStyle = color;
-        g.beginPath();
+        const nx = p.x + s.u * pxPerKn * boost * k;
+        const ny = p.y - s.v * pxPerKn * boost * k;
         g.moveTo(p.x, p.y);
         g.lineTo(nx, ny);
-        g.stroke();
         p.x = nx;
         p.y = ny;
-        p.age += 1;
+        p.age += k;
         if (p.x < 0 || p.y < 0 || p.x > w || p.y > h) p.age = 999;
       }
-      raf = requestAnimationFrame(tick);
+      g.stroke();
     };
     raf = requestAnimationFrame(tick);
   }

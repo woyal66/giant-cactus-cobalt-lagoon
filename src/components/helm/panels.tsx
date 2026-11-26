@@ -19,6 +19,7 @@ import { nearestPlaceName, searchPlaces, zoomToFit, type Place } from "@/lib/pla
 import { loadHazards } from "@/lib/hazards";
 import { LIMITS, libraryConfig, removeFromLibrary, shareToLibrary } from "@/lib/track-library";
 import { LibraryTab } from "@/components/helm/library-tab";
+import { tripLine } from "@/components/helm/trip-format";
 import { tapFeel } from "@/lib/haptics";
 import { Radio } from "lucide-react";
 import { formatMeters, haversineMeters, pathLengthMeters, trackInView, TRACK_CHORD_PRESETS, TRACK_TURN_PRESETS } from "@/lib/geo";
@@ -539,7 +540,7 @@ export function LayersPanel() {
 }
 
 const SETTINGS_SECTIONS = [
-  { id: "display", title: "Look and text", words: "look night red dark sun sunlight bright contrast punch text size font bigger larger auto" },
+  { id: "display", title: "Look and text", words: "look night red dark sun sunlight bright contrast punch text size font bigger larger auto screen awake on battery sleep" },
   { id: "units", title: "Units", words: "units feet foot metres meters fathoms depth length distance" },
   { id: "steer", title: "Steering and tracks", words: "steer steering track ear guide sound turn record recording yellow line trail crumb reverse corner" },
   { id: "boat", title: "Boat and GPS", words: "boat hull length draft beam bow gps place position manual" },
@@ -562,6 +563,7 @@ export function SettingsPanel() {
   const tapMode = useHelm((s) => s.tapMode);
   const setTapMode = useHelm((s) => s.setTapMode);
   const setPanel = useHelm((s) => s.setPanel);
+  const keepScreenOn = useHelm((s) => s.keepScreenOn);
   const [q, setQ] = useState("");
   const words = q.trim().toLowerCase().split(/\s+/).filter(Boolean);
   const show = (id: (typeof SETTINGS_SECTIONS)[number]["id"]) => {
@@ -627,6 +629,13 @@ export function SettingsPanel() {
             </div>
           ) : null}
           <TextSizeRow />
+          <div className="mt-2">
+            <ToggleRow
+              label="Keep the screen on while following or recording a route"
+              on={keepScreenOn}
+              onChange={(v) => useHelm.setState({ keepScreenOn: v })}
+            />
+          </div>
         </>
       ) : null}
       {show("units") ? (
@@ -1151,9 +1160,40 @@ function followTrack(p: Passage | LocalDraft) {
 function MyTracks() {
   const drafts = useHelm((s) => s.drafts);
   const removeDraft = useHelm((s) => s.removeDraft);
+  const trips = useHelm((s) => s.trips);
+  const activeTrip = useHelm((s) => s.activeTrip);
   const [open, setOpen] = useState<string | null>(null);
+  const tripOf = (id: string) => trips.find((t) => t.trackId === id);
+  // Trips that followed a route without recording a track of their own.
+  const looseTrips = trips.filter((t) => !t.trackId || !drafts.some((d) => d.localId === t.trackId)).slice(0, 10);
   return (
     <>
+      {activeTrip ? (
+        <p className="mb-2 rounded-md border border-primary/50 px-2.5 py-1.5 text-t13">
+          Logging this trip since {new Date(activeTrip.startedAt).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}. Stats when you stop or set the anchor.
+        </p>
+      ) : null}
+      {looseTrips.length ? (
+        <div className="mb-3">
+          <p className="mb-1 text-t13 text-muted-foreground">Trips</p>
+          <ul className="grid gap-1.5">
+            {looseTrips.map((t) => (
+              <li key={t.id}>
+                <button
+                  type="button"
+                  className="w-full rounded-md border border-border px-2.5 py-2 text-left"
+                  onClick={() => useHelm.setState({ tripView: t.id, panel: "trip" })}
+                >
+                  <p className="truncate text-t15 font-semibold">{t.title}</p>
+                  <p className="text-t13 text-muted-foreground">
+                    {new Date(t.stats.departAt).toLocaleDateString(undefined, { day: "numeric", month: "short" })} · {tripLine(t.stats)}
+                  </p>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
       {drafts.length ? (
         <ul className="mb-3 grid gap-1.5">
           {drafts.map((d) => {
@@ -1171,12 +1211,18 @@ function MyTracks() {
                   {d.notes || d.region ? (
                     <p className="mt-0.5 line-clamp-2 text-t13 text-muted-foreground">{[d.region, d.notes].filter(Boolean).join(" · ")}</p>
                   ) : null}
+                  {tripOf(d.localId) ? <p className="mt-0.5 text-t13 text-primary">{tripLine(tripOf(d.localId)!.stats)}</p> : null}
                 </button>
                 {isOpen ? (
                   <div className="mt-2 grid grid-cols-2 gap-1.5">
-                    <Button size="sm" className="col-span-2" onClick={() => followTrack(d)}>
+                    <Button size="sm" className={tripOf(d.localId) ? "" : "col-span-2"} onClick={() => followTrack(d)}>
                       Follow
                     </Button>
+                    {tripOf(d.localId) ? (
+                      <Button size="sm" variant="outline" onClick={() => useHelm.setState({ tripView: tripOf(d.localId)!.id, panel: "trip" })}>
+                        Trip stats
+                      </Button>
+                    ) : null}
                     <Button variant="outline" size="sm" onClick={() => useHelm.setState({ renameTrackId: d.localId, panel: "rename" })}>
                       {d.fromLibrary ? "Rename" : d.libraryId ? "Edit / unshare" : "Rename / share"}
                     </Button>
@@ -1229,6 +1275,7 @@ export function RenameTrackPanel() {
   const id = useHelm((s) => s.renameTrackId);
   const track = useHelm((s) => s.drafts.find((d) => d.localId === s.renameTrackId) ?? null);
   const update = useHelm((s) => s.updateDraft);
+  const trips = useHelm((s) => s.trips);
   const [title, setTitle] = useState("");
   const [notes, setNotes] = useState("");
   const [location, setLocation] = useState("");
@@ -1255,6 +1302,7 @@ export function RenameTrackPanel() {
   }, [id]);
   if (!track) return null;
   const close = () => useHelm.setState({ panel: null, renameTrackId: null });
+  const trip = trips.find((t) => t.trackId === track.localId);
   const save = () => {
     update(track.localId, { title: title.trim() || track.title, notes: notes.trim(), region: location.trim() });
   };
@@ -1294,6 +1342,20 @@ export function RenameTrackPanel() {
   const canShare = Boolean(libraryConfig()) && !track.fromLibrary;
   return (
     <Sheet id="rename" title="Name this track" kicker={`${formatMeters(pathLengthMeters(track.waypoints))} · ${track.waypoints.length} marks`}>
+      {trip ? (
+        <button
+          type="button"
+          className="mb-3 w-full rounded-lg border border-primary/60 px-2.5 py-2 text-left"
+          onClick={() => {
+            save();
+            useHelm.setState({ tripView: trip.id, panel: "trip", renameTrackId: null });
+          }}
+        >
+          <p className="text-t14 font-semibold">This trip</p>
+          <p className="text-t14">{tripLine(trip.stats)} · top {trip.stats.topKn.toFixed(1)} kn</p>
+          <p className="text-t13 text-primary">See all the trip stats</p>
+        </button>
+      ) : null}
       <div className="grid gap-3">
         <label className="grid gap-1">
           <span className="text-t13 text-muted-foreground">Name</span>

@@ -43,6 +43,9 @@ import {
 import { getPublicPassage } from "@/lib/passages";
 import { listPacks } from "@/lib/offline-tiles";
 import { AnchorStatusCard } from "@/components/helm/anchor-status-card";
+import { useTripRecorder } from "@/hooks/trip-recorder";
+import { useBatterySaver } from "@/hooks/battery";
+import { TripSummaryPanel } from "@/components/helm/trip-panels";
 import { useHelm } from "@/store/helm";
 
 // The passage planner (and its settings, graph and window finder) loads when first opened.
@@ -54,6 +57,8 @@ export function HelmApp() {
   useGpsWatch();
   useDemoCruise();
   useAnchorWatch();
+  useTripRecorder();
+  useBatterySaver();
   useWakeLock();
   useMarkMade();
   useAutoNight();
@@ -126,6 +131,7 @@ export function HelmApp() {
       <NavRibbon />
       <NavigationPanel />
       <RenameTrackPanel />
+      <TripSummaryPanel />
       <AnchorPanel />
       <BoatPanel />
       <LegendPanel />

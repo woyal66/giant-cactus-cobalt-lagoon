@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type { Passage, PassageKind, Waypoint } from "@/lib/passages";
 import { DEFAULT_REEF_ID, getReef } from "@/lib/reefs";
+import { paceFactor } from "@/lib/trip";
 import { isChartUp, type ChartUp, type LatLng, appendTrail, reverseCourse, reverseWaypoints, simplifyTrack, fitTrackView, haversineMeters, type TrackClean } from "@/lib/geo";
 import { HELM_ZOOM, availableImagery, isImageryId, usableImagery, type ImageryId } from "@/lib/imagery";
 import {
@@ -55,6 +56,7 @@ export type PanelId =
   | "legend"
   | "save"
   | "rename"
+  | "trip"
   | "layers"
   | "settings"
   | "weather"
@@ -114,6 +116,19 @@ export type LocalDraft = {
 
 /** Tracks kept on the phone. */
 export const MAX_TRACKS = 150;
+
+export type TripRecord = {
+  id: string;
+  title: string;
+  stats: import("@/lib/trip").TripStats;
+  plan?: import("@/lib/trip").TripPlan;
+  /** The recorded track this trip belongs to (My tracks). */
+  trackId?: string;
+  /** Where the anchor went down at the end, if it did. */
+  anchoredAt?: LatLng;
+};
+
+export const MAX_TRIPS = 100;
 
 /** "Track 1", "Track 2", … the next free number among the saved tracks. */
 export function nextTrackName(drafts: Array<{ title: string }>): string {
@@ -235,6 +250,21 @@ export type HelmState = {
   sharedAnchorages: boolean;
   /** Land heights on the chart: hill shading and height lines. */
   landHeights: boolean;
+  /** The trip being logged now (fixes go to the kv store as `trip:fixes:<id>`). */
+  activeTrip: { id: string; startedAt: number; by: "record" | "follow"; plan?: import("@/lib/trip").TripPlan; passageId?: string } | null;
+  /** Finished trips with their stats, newest first. */
+  trips: TripRecord[];
+  /** The trip open in the summary sheet. */
+  tripView: string | null;
+  /** A finished trip drawn on the chart coloured by speed, and the graph's cursor on it. */
+  tripTrack: { id: string; topKn: number; series: Array<{ at: number; kn: number; lat: number; lng: number }> } | null;
+  tripCursor: LatLng | null;
+  /** Plan with this boat's real pace from past trips (`paceFactor`). */
+  usePace: boolean;
+  /** Keep the screen on while following or recording a route. */
+  keepScreenOn: boolean;
+  /** Phone low and not charging: animations step down (see useBatterySaver). Not persisted. */
+  lowBattery: boolean;
   /** The shared anchorage tapped on the chart. */
   anchorageCard: import("@/lib/anchorage-library").SharedAnchorage | null;
   /** Anchorages shared from this phone, with the secret that removes each. */
@@ -555,6 +585,10 @@ function persistSig(state: Record<string, unknown>): string {
     state.reefDepthLook,
     state.sharedAnchorages,
     state.landHeights,
+    state.activeTrip,
+    persistId(state.trips),
+    state.usePace,
+    state.keepScreenOn,
     state.mySharedAnchorages,
     state.look,
     state.autoNight,
@@ -734,7 +768,16 @@ export function boatPerfOf(prefs: RoutePrefs, loaM: number): BoatPerf {
     motorKn: prefs.motorKn,
     ...(prefs.useLearned ? { learned: prefs.learned } : {}),
     ...(prefs.tune && prefs.boatType !== "motor" ? { tune: prefs.tune } : {}),
+    ...paceNow(),
   };
+}
+
+/** The boat's real pace from finished trips, when the skipper has turned it on. */
+function paceNow(): { pace?: number } {
+  const st = useHelm.getState?.();
+  if (!st?.usePace) return {};
+  const k = paceFactor(st.trips);
+  return k ? { pace: k } : {};
 }
 
 export type RoutePreset = "family" | "delivery" | "racing" | "custom";
@@ -899,6 +942,14 @@ export const useHelm = create<HelmState & HelmActions>()(
       libraryPreview: null,
       sharedAnchorages: true,
       landHeights: false,
+      activeTrip: null,
+      trips: [],
+      tripView: null,
+      tripTrack: null,
+      tripCursor: null,
+      usePace: false,
+      keepScreenOn: true,
+      lowBattery: false,
       anchorageCard: null,
       mySharedAnchorages: [],
       gpsDenied: false,
@@ -1774,6 +1825,10 @@ export const useHelm = create<HelmState & HelmActions>()(
         reefDepthLook: s.reefDepthLook,
         sharedAnchorages: s.sharedAnchorages,
         landHeights: s.landHeights,
+        activeTrip: s.activeTrip,
+        trips: s.trips,
+        usePace: s.usePace,
+        keepScreenOn: s.keepScreenOn,
         mySharedAnchorages: s.mySharedAnchorages,
         drafts: s.drafts,
         lastFix: s.lastFix,
@@ -1857,6 +1912,15 @@ export const useHelm = create<HelmState & HelmActions>()(
           reefDepthLook: typeof p.reefDepthLook === "boolean" ? p.reefDepthLook : current.reefDepthLook,
           sharedAnchorages: typeof p.sharedAnchorages === "boolean" ? p.sharedAnchorages : current.sharedAnchorages,
           landHeights: typeof p.landHeights === "boolean" ? p.landHeights : current.landHeights,
+          activeTrip:
+            p.activeTrip && typeof p.activeTrip === "object" && typeof (p.activeTrip as { id?: unknown }).id === "string"
+              ? (p.activeTrip as HelmState["activeTrip"])
+              : null,
+          trips: Array.isArray(p.trips)
+            ? (p.trips as TripRecord[]).filter((t) => t && typeof t.id === "string" && t.stats && Number.isFinite(t.stats.startAt)).slice(0, MAX_TRIPS)
+            : current.trips,
+          usePace: p.usePace === true,
+          keepScreenOn: p.keepScreenOn !== false,
           mySharedAnchorages: Array.isArray(p.mySharedAnchorages)
             ? p.mySharedAnchorages
                 .filter((x: unknown): x is { id: string; secret: string; lat: number; lng: number } =>
