@@ -8,10 +8,11 @@ import { openMeteoUrl } from "../open-meteo.ts";
 import type { WeatherField } from "./field.ts";
 import type { BBox } from "./land.ts";
 
-export type RouteModel = { id: string; label: string; param: string };
+/** `fallback`: the model asked for when `param` comes back empty or short (ECMWF 9 km → 25 km). */
+export type RouteModel = { id: string; label: string; param: string; fallback?: string };
 
 export const ROUTE_MODELS: RouteModel[] = [
-  { id: "ecmwf", label: "ECMWF", param: "ecmwf_ifs025" },
+  { id: "ecmwf", label: "ECMWF", param: "ecmwf_ifs", fallback: "ecmwf_ifs025" },
   { id: "gfs", label: "GFS", param: "gfs_global" },
   { id: "icon", label: "ICON", param: "icon_global" },
   { id: "ukmo", label: "UKMO", param: "ukmo_global_deterministic_10km" },
@@ -162,6 +163,14 @@ export async function fetchField(grid: CorridorGrid, model: RouteModel, days: nu
   m.searchParams.set("hourly", "wave_height,wave_direction,wave_period,ocean_current_velocity,ocean_current_direction");
   m.searchParams.set("timeformat", "unixtime");
   m.searchParams.set("forecast_days", String(Math.min(8, Number(d))));
-  const [wind, marine] = await Promise.all([getJson(w), getJson(m).catch(() => null)]);
+  const [first, marine] = await Promise.all([getJson(w), getJson(m).catch(() => null)]);
+  let wind = first;
+  // The fine model may not be served (or may run shorter than asked): use the fallback then.
+  const want = Number(d) * 24 * 0.8;
+  const real = (wind[0]?.hourly?.wind_speed_10m ?? []).filter((v) => typeof v === "number" && Number.isFinite(v)).length;
+  if (model.fallback && real < want) {
+    w.searchParams.set("models", model.fallback);
+    wind = await getJson(w);
+  }
   return fieldFromResponses(grid, model.id, wind, marine);
 }

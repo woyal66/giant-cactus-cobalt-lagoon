@@ -462,17 +462,27 @@ export function WxProbeCard() {
       ) : (
         <p className="text-t14">No forecast here. Pan so the spot is inside the view.</p>
       )}
-      <Button
-        size="sm"
-        className="mt-1.5 w-full"
-        onClick={() => {
-          const s = useHelm.getState();
-          useHelm.setState({ wxPin: { lat: probe.lat, lng: probe.lng } });
-          s.setPanel("weather");
-        }}
-      >
-        Full forecast here
-      </Button>
+      <div className="mt-1.5 grid grid-cols-2 gap-1">
+        <Button
+          size="sm"
+          onClick={() => {
+            useHelm.setState({ wxPin: { lat: probe.lat, lng: probe.lng }, wxView: "forecast" });
+            useHelm.getState().setPanel("weather");
+          }}
+        >
+          Forecast
+        </Button>
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() => {
+            useHelm.setState({ wxPin: { lat: probe.lat, lng: probe.lng }, wxView: "compare" });
+            useHelm.getState().setPanel("weather");
+          }}
+        >
+          Compare
+        </Button>
+      </div>
     </div>
   );
 }
