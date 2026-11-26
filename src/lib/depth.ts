@@ -277,6 +277,60 @@ export async function loadDemTile(z: number, x: number, y: number): Promise<DemT
   return t ? { z, x, y, size: t.size, h: t.h } : null;
 }
 
+/*
+ * Land heights. The worldwide seabed tiles cap land at 5 m to stay small, so hills and
+ * mountains come from the base AWS Terrain Tiles directly (SRTM on land, about 30 m; up to z15).
+ */
+export const LAND_MAX_Z = 14;
+const landCache = new Map<string, Promise<{ size: number; h: Float32Array } | null>>();
+
+/** Land heights for one tile (AWS terrarium, metres above sea level; − = under water). */
+export async function loadLandTile(z: number, x: number, y: number): Promise<DemTile | null> {
+  const key = `${z}/${x}/${y}`;
+  let p = landCache.get(key);
+  if (!p) {
+    p = (async () => {
+      const tiles = typeof indexedDB !== "undefined" ? await import("./offline-tiles.ts") : null;
+      const saved = tiles ? await tiles.readTile(`land/${key}`) : null;
+      const blob = saved ?? (await get(depthTileUrl(z, x, y)));
+      if (!blob) return null;
+      if (!saved && tiles) void tiles.putTile(`land/${key}`, blob).catch(() => undefined);
+      return decode(blob);
+    })().catch(() => null);
+    landCache.set(key, p);
+    if (landCache.size > 200) landCache.delete(landCache.keys().next().value!);
+  }
+  const t = await p;
+  return t ? { z, x, y, size: t.size, h: t.h } : null;
+}
+
+/**
+ * Seabed from the depth model under water, real land heights on land: the height source for
+ * the 3D view, so mountains stand up instead of being flattened at 5 m.
+ */
+export async function terrainTilePng(z: number, x: number, y: number): Promise<ArrayBuffer | null> {
+  const sea = await cached(z, x, y);
+  if (!sea) return null;
+  if (!sea.h.some((v) => v > 0)) return sea.blob.arrayBuffer();
+  const land = await loadLandTile(z, x, y);
+  if (!land || land.size !== sea.size) return sea.blob.arrayBuffer();
+  const h = new Float32Array(sea.h);
+  // Only where the depth model says land: the coastline and the water stay the seabed model's.
+  for (let i = 0; i < h.length; i++) if (h[i]! > 0) h[i] = Math.max(h[i]!, land.h[i]!);
+  const blob = await encode(sea.size, h);
+  return blob ? blob.arrayBuffer() : sea.blob.arrayBuffer();
+}
+
+/** Let MapLibre read the combined seabed + land heights (terraindem://z/x/y). */
+export function registerTerrainProtocol(maplibre: { addProtocol: (name: string, fn: (p: { url: string }) => Promise<{ data: unknown }>) => void }) {
+  maplibre.addProtocol("terraindem", async (params) => {
+    const m = /terraindem:\/\/(\d+)\/(\d+)\/(\d+)/.exec(params.url);
+    const data = m ? await terrainTilePng(+m[1]!, +m[2]!, +m[3]!) : null;
+    if (!data) throw new Error("no terrain tile");
+    return { data };
+  });
+}
+
 /** The merged tile as PNG bytes, for MapLibre's depthdem:// protocol. */
 export async function depthTilePng(z: number, x: number, y: number): Promise<ArrayBuffer | null> {
   const t = await cached(z, x, y);
