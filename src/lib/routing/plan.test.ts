@@ -88,3 +88,11 @@ test("re-routing underway keeps only the waypoints still ahead", async () => {
   assert.equal(remainingVia({ lat: -23.5, lng: 152.15 }, via, fin).length, 1); // past the first
   assert.equal(remainingVia({ lat: -23.5, lng: 152.4 }, via, fin).length, 0); // past both
 });
+
+test("a single leg uses the channel finder's obstacle when given one", async () => {
+  const { routeVia } = await import("./plan.ts");
+  const f: WeatherField = uniformField({ windKn: 14, windDir: 0 }, box, t0, 48);
+  const wall = () => true; // blocks every step
+  const r = routeVia({ start: A, finish: B, departAt: t0, field: f, boat, mode: "fastest", limits: DEFAULT_LIMITS, legObstacles: [wall] });
+  assert.equal(r.ok, false);
+});

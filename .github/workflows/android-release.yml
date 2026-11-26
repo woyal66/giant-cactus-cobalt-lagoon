@@ -50,6 +50,8 @@ jobs:
           VITE_LICENSED_IMAGERY_ONLY: "1"
           VITE_MAPTILER_KEY: ${{ secrets.VITE_MAPTILER_KEY || vars.VITE_MAPTILER_KEY }}
           VITE_ESRI_KEY: ${{ secrets.VITE_ESRI_KEY || vars.VITE_ESRI_KEY }}
+          # Commercial Open-Meteo key (higher limits, commercial terms); free tier when unset.
+          VITE_OPEN_METEO_KEY: ${{ secrets.VITE_OPEN_METEO_KEY || vars.VITE_OPEN_METEO_KEY }}
           # Online-only licensed imagery (docs/imagery-keys.md); each is off when unset.
           VITE_GOOGLE_TILES_KEY: ${{ secrets.VITE_GOOGLE_TILES_KEY || vars.VITE_GOOGLE_TILES_KEY }}
           VITE_AZURE_MAPS_KEY: ${{ secrets.VITE_AZURE_MAPS_KEY || vars.VITE_AZURE_MAPS_KEY }}

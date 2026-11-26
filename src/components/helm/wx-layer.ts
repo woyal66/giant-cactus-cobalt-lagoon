@@ -8,7 +8,7 @@ import {
   WAVE_RAMP,
   WIND_RAMP,
   contourSegments,
-  extremes,
+  extremesSmooth,
   isobarLevels,
   isobarStep,
   layerIndex,
@@ -201,7 +201,7 @@ export function createWxLayer(L: LeafletNS, map: LeafletMap) {
         }
       }
       g.font = "700 28px system-ui";
-      for (const e of extremes(f, raw)) {
+      for (const e of extremesSmooth(f, raw, 4)) {
         const pe = toPx(e.lat, e.lng);
         g.lineWidth = 4;
         g.strokeStyle = "rgba(0,0,0,0.75)";

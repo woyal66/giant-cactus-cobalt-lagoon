@@ -58,6 +58,7 @@ import { measure } from "@/lib/measure";
 import { createRadar } from "@/components/helm/radar-layer";
 import { radarAvailable } from "@/lib/radar";
 import { createDepthLayer, type DepthLook } from "@/components/helm/depth-layer";
+import { createAnchorageLayer } from "@/components/helm/anchorage-layer";
 import { createHazardLayer } from "@/components/helm/hazard-layer";
 import { OFFICIAL_CHARTS } from "@/lib/official-charts";
 import { createWxLayer } from "@/components/helm/wx-layer";
@@ -718,6 +719,12 @@ export function MapView() {
 
         // Reefs, drying reef, rocks and cays from the bundled GBRMPA file (works offline).
         const reefs = createHazardLayer(L, MAX_ZOOM);
+        // Other skippers' shared anchorages (online library), once zoomed in.
+        const anchorages = createAnchorageLayer(L, map);
+        const onShared = (e: Event) => anchorages.add((e as CustomEvent).detail);
+        const onRemoved = (e: Event) => anchorages.remove((e as CustomEvent<string>).detail);
+        window.addEventListener("helm:anchorage-shared", onShared);
+        window.addEventListener("helm:anchorage-removed", onRemoved);
         // Free official charts (NOAA in the USA): one WMS layer per covered area, so nothing
         // is requested outside it. Under the reef outlines and seamarks.
         const official = L.layerGroup(
@@ -783,6 +790,10 @@ export function MapView() {
             f.lng0 + (f.nx - 1) * f.dLng >= b.getEast()
           );
         };
+        const keptInfo = () =>
+          wxField
+            ? { source: "kept" as const, fetchedAt: wxField.fetchedAt ?? null, times: wxField.times }
+            : { source: "none" as const, fetchedAt: null, times: [] };
         const wxLoad = () => {
           const st = useHelm.getState();
           if (!map || st.wxMapLayer === "off" || wxLoading || (wxCovers(wxField) && wxFieldModel === st.wxMapModel)) return;
@@ -798,9 +809,12 @@ export function MapView() {
               useHelm.getState().setWxMap({
                 wxMapInfo: r
                   ? { source: r.source, fetchedAt: r.field.fetchedAt ?? null, times: r.field.times }
-                  : { source: "none", fetchedAt: null, times: [] },
+                  : keptInfo(),
               });
             })
+            // A failed download (no signal, or the forecast service's per-minute limit) must not
+            // leave the time slider with no hours: keep the forecast already on screen.
+            .catch(() => useHelm.getState().setWxMap({ wxMapInfo: keptInfo() }))
             .finally(() => {
               wxLoading = false;
               const s2 = useHelm.getState();
@@ -811,6 +825,9 @@ export function MapView() {
         stopWx = () => {
           map?.off("moveend", wxLoad);
           wxLayer.destroy();
+          anchorages.destroy();
+          window.removeEventListener("helm:anchorage-shared", onShared);
+          window.removeEventListener("helm:anchorage-removed", onRemoved);
         };
         // Allen Coral Atlas sand / coral / seagrass, only when the build names its map service.
         const benthic: TileLayer | null = BENTHIC_WMS
@@ -1526,6 +1543,7 @@ export function MapView() {
             zonesOn = false;
           }
           radar.set(s.radar && radarAvailable());
+          anchorages.set(s.sharedAnchorages);
           if (s.wxMapLayer !== "off") wxLoad();
           wxLayer.set({ layer: s.wxMapLayer, style: s.wxMapStyle, at: s.wxMapAt, field: wxField });
           // The tapped weather spot: a draggable pin, only while the weather map is on.

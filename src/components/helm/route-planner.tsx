@@ -17,6 +17,7 @@ import { shareGpx } from "@/lib/share-gpx";
 import { shareTextAndFile } from "@/lib/share-file";
 import { passageBrief } from "@/lib/routing/brief";
 import { findWeatherWindows, runPlan } from "@/lib/routing/client";
+import { lowestTideAt, mslLimitM, wantedDepthM } from "@/lib/routing/min-depth";
 import type { WindowScan } from "@/lib/routing/plan";
 import { WindowFinder } from "@/components/helm/window-finder";
 import type { Choice, DepartureRow, PlanOutput } from "@/lib/routing/plan";
@@ -35,9 +36,6 @@ type PlanContext = {
   rules: RouteRules;
   models: string[];
 };
-
-/** Under the keel at mean sea level, on top of the draft: the depth model is approximate and tides fall below MSL. */
-const SHALLOW_MARGIN_M = 1;
 
 function when(at: number): string {
   const d = new Date(at);
@@ -152,6 +150,7 @@ function PlannerSheet() {
   const [out, setOut] = useState<PlanOutput | null>(null);
   const [ctx, setCtx] = useState<PlanContext | null>(null);
   const [picked, setPicked] = useState<{ mode: RouteMode; departAt: number } | null>(null);
+  const [depthNote, setDepthNote] = useState<{ want: number; low: number | null } | null>(null);
   const stops = [start, ...via, finish];
   const distM = stops.slice(1).reduce((m, p, i) => m + haversineMeters(stops[i]!, p), 0);
 
@@ -163,7 +162,11 @@ function PlannerSheet() {
     setPicked(null);
     setPreview(null);
     const boat = boatPerfOf(prefs, hull.loaM);
-    runPlan({
+    const rule = { minDepthM: prefs.minDepthM, depthAt: prefs.depthAt };
+    (rule.depthAt === "low" ? lowestTideAt(start.lat, start.lng) : Promise.resolve(null))
+      .then((low: number | null) => {
+        setDepthNote({ want: wantedDepthM(rule, hull.draftM), low: rule.depthAt === "low" ? low : null });
+        return runPlan({
       start,
       finish,
       via,
@@ -173,9 +176,10 @@ function PlannerSheet() {
       limits: prefs.limits,
       rules: prefs.rules,
       models: prefs.models,
-      minDepthM: hull.draftM + SHALLOW_MARGIN_M,
+      minDepthM: mslLimitM(rule, hull.draftM, low),
       onStatus: setBusy,
-    })
+    });
+      })
       .then(({ out: o, fields, box, forecastAt }) => {
         setOut(o);
         setCtx({ fields, box, forecastAt, boat, limits: prefs.limits, rules: prefs.rules, models: prefs.models });
@@ -278,7 +282,11 @@ function PlannerSheet() {
             disabled={Boolean(busy) || distM < 926}
             onClick={() => {
               setBusy("Starting…");
-              findWeatherWindows({
+              const rule = { minDepthM: prefs.minDepthM, depthAt: prefs.depthAt };
+              (rule.depthAt === "low" ? lowestTideAt(start.lat, start.lng) : Promise.resolve(null))
+                .then((low: number | null) => {
+                  const windowDepthM = mslLimitM(rule, hull.draftM, low);
+                  return findWeatherWindows({
                 start,
                 finish,
                 via,
@@ -286,9 +294,10 @@ function PlannerSheet() {
                 limits: prefs.limits,
                 rules: prefs.rules,
                 models: prefs.models,
-                minDepthM: hull.draftM + SHALLOW_MARGIN_M,
+                minDepthM: windowDepthM,
                 onStatus: setBusy,
-              })
+              });
+                })
                 .then((sc) => {
                   setScan(sc);
                   setView("windows");
@@ -309,7 +318,7 @@ function PlannerSheet() {
           </div>
         </>
       ) : (
-        <Results out={out} ctx={ctx} picked={pickedResult} onChoose={choose} onAgain={() => setOut(null)} />
+        <Results out={out} ctx={ctx} picked={pickedResult} depthNote={depthNote} onChoose={choose} onAgain={() => setOut(null)} />
       )}
     </Sheet>
   );
@@ -326,17 +335,21 @@ function Results({
   out,
   ctx,
   picked,
+  depthNote,
   onChoose,
   onAgain,
 }: {
   out: PlanOutput;
   ctx: PlanContext | null;
   picked: Choice | null;
+  depthNote: { want: number; low: number | null } | null;
   onChoose: (mode: RouteMode, row: DepartureRow) => void;
   onAgain: () => void;
 }) {
   const motorBoat = useHelm((s) => s.routePrefs.boatType === "motor");
   const fuelLph = useHelm((s) => s.routePrefs.fuelLph);
+  const prefs = useHelm((s) => s.routePrefs);
+  const hull = useHelm((s) => s.hull);
   const modes: RouteMode[] = ["safest", "fastest", "comfort"];
   if (!modes.some((m) => out.best[m])) {
     const reason = out.rows.map((r) => r.results.fastest).find((r) => !r.ok);
@@ -393,9 +406,20 @@ function Results({
         })}
       </div>
 
+      {out.channelPoints ? (
+        <p className="mb-2 rounded-md border border-primary/50 px-2.5 py-1.5 text-t13 leading-snug">
+          Kept to the deepest water: added {out.channelPoints} turning point{out.channelPoints === 1 ? "" : "s"} through the shallows from the depth model. Check them against the photo before you go.
+        </p>
+      ) : null}
       {out.depthCheck === "used" ? (
         <p className="mb-2 text-t13 text-muted-foreground">
-          Routes keep to water at least {formatDepth(useHelm.getState().hull.draftM + SHALLOW_MARGIN_M)} deep at mean sea level (depth model), and off mapped land and reefs.
+          Routes keep to water at least {formatDepth(depthNote?.want ?? wantedDepthM({ minDepthM: prefs.minDepthM, depthAt: prefs.depthAt }, hull.draftM))} deep
+          {prefs.depthAt === "low"
+            ? depthNote?.low != null
+              ? ` at the lowest tide (${formatDepth(Math.abs(depthNote.low))} below mean sea level here)`
+              : " at mean sea level (no tide data here for the lowest tide)"
+            : " at mean sea level"}{" "}
+          by the depth model, and off mapped land and reefs. Change it in Change times, boat or limits.
         </p>
       ) : out.depthCheck === "relaxed" ? (
         <p className="mb-2 rounded-md border border-amber-400/50 bg-amber-400/10 px-2.5 py-2 text-t14 text-amber-200">

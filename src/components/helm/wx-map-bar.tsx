@@ -118,6 +118,8 @@ export function WxMapBar() {
         ? "Saved forecast (no signal)"
         : info?.source === "passage"
           ? "Passage forecast (offline)"
+          : info?.source === "kept"
+            ? "Couldn't update for this area: showing the last forecast"
           : info?.source === "none"
             ? "No forecast for this area"
             : marine

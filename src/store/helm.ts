@@ -231,6 +231,12 @@ export type HelmState = {
   renameTrackId: string | null;
   /** A library track shown on the chart before it is saved. */
   libraryPreview: LatLng[] | null;
+  /** Show other skippers' shared anchorages on the chart (needs signal and the library). */
+  sharedAnchorages: boolean;
+  /** The shared anchorage tapped on the chart. */
+  anchorageCard: import("@/lib/anchorage-library").SharedAnchorage | null;
+  /** Anchorages shared from this phone, with the secret that removes each. */
+  mySharedAnchorages: Array<{ id: string; secret: string; lat: number; lng: number }>;
   gpsDenied: boolean;
   tapMode:
     | "none"
@@ -288,7 +294,7 @@ export type HelmState = {
   wxMapModel: string;
   wxMapAt: number;
   wxMapPlaying: boolean;
-  wxMapInfo: { source: "live" | "saved" | "passage" | "none" | "loading"; fetchedAt: number | null; times: number[] } | null;
+  wxMapInfo: { source: "live" | "saved" | "passage" | "none" | "loading" | "kept"; fetchedAt: number | null; times: number[] } | null;
   /** Weather map: the point tapped for a readout (Windy-style), not saved. */
   wxProbe: LatLng | null;
   /** Base map: satellite photo, vector chart, or chart lines over the photo. */
@@ -545,6 +551,8 @@ function persistSig(state: Record<string, unknown>): string {
     state.textSize,
     state.reefClarity,
     state.reefDepthLook,
+    state.sharedAnchorages,
+    state.mySharedAnchorages,
     state.look,
     state.autoNight,
     state.depthUnit,
@@ -706,6 +714,10 @@ export type RoutePrefs = {
   fuelLph: number;
   /** The skipper's own polar numbers (15 kn true wind) and pointing angle; null = built-in. */
   tune: PolarTune | null;
+  /** Keep routes out of water shallower than this, metres (null = draft + 1 m). */
+  minDepthM: number | null;
+  /** Measure that depth at mean sea level or at the lowest tide (safer). */
+  depthAt: "msl" | "low";
 };
 
 /** Boat profile for the router from the route settings. */
@@ -777,6 +789,8 @@ export const DEFAULT_ROUTE_PREFS: RoutePrefs = {
   engineOn: false,
   fuelLph: 0,
   tune: null,
+  minDepthM: null,
+  depthAt: "low",
 };
 
 function readTune(v: unknown, num: (x: unknown, d: number, lo: number, hi: number) => number): PolarTune | null {
@@ -818,6 +832,8 @@ function readRoutePrefs(v: unknown): RoutePrefs {
     engineOn: p.engineOn === true,
     fuelLph: Math.round(num(p.fuelLph, 0, 0, 500) * 10) / 10,
     tune: readTune(p.tune, num),
+    minDepthM: typeof p.minDepthM === "number" && Number.isFinite(p.minDepthM) ? Math.round(Math.min(50, Math.max(0.5, p.minDepthM)) * 10) / 10 : null,
+    depthAt: p.depthAt === "msl" ? "msl" : "low",
   };
 }
 
@@ -878,6 +894,9 @@ export const useHelm = create<HelmState & HelmActions>()(
       drafts: [],
       renameTrackId: null,
       libraryPreview: null,
+      sharedAnchorages: true,
+      anchorageCard: null,
+      mySharedAnchorages: [],
       gpsDenied: false,
       tapMode: "none",
       measurePts: [],
@@ -1519,7 +1538,7 @@ export const useHelm = create<HelmState & HelmActions>()(
             limits: { ...cur.limits, ...(p.limits ?? {}) },
             rules: { ...cur.rules, ...(p.rules ?? {}) },
             // Hand-edits turn a preset into Custom; choosing a preset sets it explicitly.
-            preset: p.preset ?? (Object.keys(p).some((k) => !["sails", "boatType", "models", "learned", "useLearned", "engineOn", "fuelLph", "tune"].includes(k)) ? "custom" : cur.preset),
+            preset: p.preset ?? (Object.keys(p).some((k) => !["sails", "boatType", "models", "learned", "useLearned", "engineOn", "fuelLph", "tune", "minDepthM", "depthAt"].includes(k)) ? "custom" : cur.preset),
           },
         });
       },
@@ -1749,6 +1768,8 @@ export const useHelm = create<HelmState & HelmActions>()(
         textSize: s.textSize,
         reefClarity: s.reefClarity,
         reefDepthLook: s.reefDepthLook,
+        sharedAnchorages: s.sharedAnchorages,
+        mySharedAnchorages: s.mySharedAnchorages,
         drafts: s.drafts,
         lastFix: s.lastFix,
         rode: s.rode,
@@ -1829,6 +1850,14 @@ export const useHelm = create<HelmState & HelmActions>()(
           textSize: p.textSize === "standard" || p.textSize === "large" || p.textSize === "xl" ? p.textSize : current.textSize,
           reefClarity: typeof p.reefClarity === "boolean" ? p.reefClarity : current.reefClarity,
           reefDepthLook: typeof p.reefDepthLook === "boolean" ? p.reefDepthLook : current.reefDepthLook,
+          sharedAnchorages: typeof p.sharedAnchorages === "boolean" ? p.sharedAnchorages : current.sharedAnchorages,
+          mySharedAnchorages: Array.isArray(p.mySharedAnchorages)
+            ? p.mySharedAnchorages
+                .filter((x: unknown): x is { id: string; secret: string; lat: number; lng: number } =>
+                  Boolean(x) && typeof (x as { id?: unknown }).id === "string" && typeof (x as { secret?: unknown }).secret === "string" &&
+                  Number.isFinite((x as { lat?: unknown }).lat) && Number.isFinite((x as { lng?: unknown }).lng))
+                .slice(0, 200)
+            : current.mySharedAnchorages,
           look: isLookMode(p.look)
             ? p.look
             : p.sunlight === true

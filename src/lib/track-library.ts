@@ -105,7 +105,7 @@ export function randomSecret(): string {
   return Array.from(b, (x) => x.toString(16).padStart(2, "0")).join("");
 }
 
-async function call(path: string, init: RequestInit = {}): Promise<Response> {
+export async function libraryRequest(path: string, init: RequestInit = {}): Promise<Response> {
   const cfg = libraryConfig();
   if (!cfg) throw new Error("The track library isn't set up in this build.");
   const res = await fetch(`${cfg.url}/rest/v1/${path}`, {
@@ -122,13 +122,13 @@ async function call(path: string, init: RequestInit = {}): Promise<Response> {
 }
 
 export async function searchLibrary(q: string, box?: { s: number; w: number; n: number; e: number } | null): Promise<LibraryTrack[]> {
-  const res = await call(`tracks?${searchQuery(q, box)}`);
+  const res = await libraryRequest(`tracks?${searchQuery(q, box)}`);
   const rows = (await res.json()) as unknown;
   return Array.isArray(rows) ? rows.map((r) => rowToTrack(r as Record<string, unknown>)).filter((t): t is LibraryTrack => t != null) : [];
 }
 
 export async function loadLibraryPoints(id: string): Promise<LatLngPt[]> {
-  const res = await call(`tracks?select=pts&id=eq.${encodeURIComponent(id)}&limit=1`);
+  const res = await libraryRequest(`tracks?select=pts&id=eq.${encodeURIComponent(id)}&limit=1`);
   const rows = (await res.json()) as Array<{ pts?: unknown }>;
   return unpackPoints(rows[0]?.pts);
 }
@@ -144,7 +144,7 @@ export async function shareToLibrary(input: {
   const pts = packPoints(input.points);
   if (pts.length < 2) throw new Error("A track needs at least two points.");
   const secret = randomSecret();
-  const res = await call("rpc/share_track", {
+  const res = await libraryRequest("rpc/share_track", {
     method: "POST",
     body: JSON.stringify({
       p_title: input.title.trim().slice(0, LIMITS.title) || "Track",
@@ -161,9 +161,9 @@ export async function shareToLibrary(input: {
 }
 
 export async function removeFromLibrary(id: string, secret: string): Promise<void> {
-  await call("rpc/remove_track", { method: "POST", body: JSON.stringify({ p_id: id, p_secret: secret }) });
+  await libraryRequest("rpc/remove_track", { method: "POST", body: JSON.stringify({ p_id: id, p_secret: secret }) });
 }
 
 export async function reportLibraryTrack(id: string): Promise<void> {
-  await call("rpc/report_track", { method: "POST", body: JSON.stringify({ p_id: id }) });
+  await libraryRequest("rpc/report_track", { method: "POST", body: JSON.stringify({ p_id: id }) });
 }

@@ -24,6 +24,7 @@ import {
 } from "@/lib/routing/underway";
 import type { RouteMode, RoutePoint } from "@/lib/routing/router";
 import { remainingVia, type PlanOutput } from "@/lib/routing/plan";
+import { lowestTideAt, mslLimitM } from "@/lib/routing/min-depth";
 import { isLocalDraft, useHelm, useUnitsKey, type LocalDraft } from "@/store/helm";
 
 const MIN = 60_000;
@@ -197,7 +198,12 @@ export function PassageHud() {
         limits: saved.limits,
         rules: saved.rules,
         models: saved.models,
-        minDepthM: useHelm.getState().hull.draftM + 1,
+        minDepthM: await (async () => {
+          const st = useHelm.getState();
+          const rule = { minDepthM: st.routePrefs.minDepthM, depthAt: st.routePrefs.depthAt };
+          const low = rule.depthAt === "low" ? await lowestTideAt(from.lat, from.lng) : null;
+          return mslLimitM(rule, st.hull.draftM, low);
+        })(),
       };
       let out: PlanOutput;
       let fields = saved.fields;

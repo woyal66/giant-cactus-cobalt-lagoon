@@ -130,3 +130,29 @@ test("smoothLines joins contour segments into one line", () => {
   assert.ok(smooth[0]!.length > 4);
   assert.deepEqual(smooth[0]![0], lines[0]![0]);
 });
+
+test("an L moves smoothly with the low, not grid point by grid point", async () => {
+  const { extremesSmooth } = await import("./wx-map.ts");
+  const g = { lat0: 0, lng0: 0, dLat: 1, dLng: 1, nx: 9, ny: 9 };
+  const field = (cx: number) => {
+    const v: number[] = [];
+    for (let y = 0; y < 9; y++) for (let x = 0; x < 9; x++) v.push(1012 - 12 * Math.exp(-((x - cx) ** 2 + (y - 4) ** 2) / 6));
+    return v;
+  };
+  const xs = [3.6, 4.0, 4.4].map((cx) => {
+    const ls = extremesSmooth(g, field(cx)).filter((e) => e.kind === "L");
+    assert.equal(ls.length, 1, `one low at ${cx}`);
+    return ls[0]!.lng;
+  });
+  // Each step of 0.4 grid cells moves the L, and close to where the low really is.
+  assert.ok(xs[0]! < xs[1]! && xs[1]! < xs[2]!, JSON.stringify(xs));
+  assert.ok(Math.abs(xs[0]! - 3.6) < 0.15 && Math.abs(xs[2]! - 4.4) < 0.15, JSON.stringify(xs));
+});
+
+test("no H or L on a gentle slope", async () => {
+  const { extremesSmooth } = await import("./wx-map.ts");
+  const g = { lat0: 0, lng0: 0, dLat: 1, dLng: 1, nx: 6, ny: 6 };
+  const v: number[] = [];
+  for (let y = 0; y < 6; y++) for (let x = 0; x < 6; x++) v.push(1010 + x * 0.5);
+  assert.equal(extremesSmooth(g, v).length, 0);
+});

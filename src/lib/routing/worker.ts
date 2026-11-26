@@ -7,6 +7,7 @@ import { isDaylight } from "../sun.ts";
 import { clearAround, landObstacle, loadLandPolygons, rasterize, shelterAround, type BBox, type Polygon } from "./land.ts";
 import { loadReefPolygons, markReefs } from "./reefs.ts";
 import { markShallow } from "./shallow-mask.ts";
+import { planChannels } from "./channel-legs.ts";
 import { findWindows, planPassage, type PlanInput, type PlanOutput, type WindowScan } from "./plan.ts";
 
 export type PlanRequest = Omit<PlanInput, "obstacle" | "isDay"> & {
@@ -58,11 +59,20 @@ self.onmessage = async (e: MessageEvent<PlanRequest>) => {
       return;
     }
     const depthOn = Boolean(req.minDepthM && req.minDepthM > 0);
-    let planned = planPassage({ ...req, obstacle: landObstacle(mask), isDay: isDaylight });
+    // Shallow water: find the deepest channel on a fine depth grid for each short leg, and
+    // add its turning points as waypoints (the coarse grid misses narrow channels and islets).
+    let channel: Awaited<ReturnType<typeof planChannels>> | null = null;
+    if (depthOn) {
+      const { loadDemTile } = await import("../depth.ts");
+      channel = await planChannels([req.start, ...(req.via ?? []), req.finish], req.minDepthM!, polys, reefs, (z, x, y) => loadDemTile(z, x, y)).catch(() => null);
+    }
+    const viaReq = channel && channel.checked ? { via: channel.via, legObstacles: channel.legObstacles } : {};
+    let planned = planPassage({ ...req, ...viaReq, obstacle: landObstacle(mask), isDay: isDaylight });
     let depthCheck: "used" | "relaxed" | "off" = depthOn ? "used" : "off";
     if (depthOn && !Object.values(planned.best).some(Boolean)) {
       // The depth model (hundreds of metres in places) can close narrow channels: try the coastline only.
       planned = planPassage({ ...req, obstacle: landObstacle(coastOnly), isDay: isDaylight });
+      channel = null;
       depthCheck = "relaxed";
     }
     const out = {
@@ -70,6 +80,7 @@ self.onmessage = async (e: MessageEvent<PlanRequest>) => {
       shelter,
       reefData: reefs ? ("used" as const) : ("missing" as const),
       depthCheck,
+      channelPoints: channel?.added ?? 0,
     };
     (self as unknown as Worker).postMessage({ id: req.id, ok: true, out } satisfies PlanReply);
   } catch (err) {
