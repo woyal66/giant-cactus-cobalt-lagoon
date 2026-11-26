@@ -26,6 +26,8 @@ export type BoatPerf = {
   learned?: LearnedPolar;
   /** The skipper's own numbers: best speeds in 15 kn of true wind, and how close it points. */
   tune?: PolarTune;
+  /** This boat's real pace against the planner, from finished trips (1 = as planned). */
+  pace?: number;
 };
 
 /** Boat speed (kn) through the water in 15 kn of true wind at four points of sail, and pointing. */
@@ -168,6 +170,12 @@ export type Speed = { stwKn: number; motoring: boolean };
  * Motor-sailing never makes the boat slower than sailing alone.
  */
 export function boatSpeed(p: BoatPerf, twsKn: number, twaDeg: number): Speed {
+  const s = boatSpeedPlain(p, twsKn, twaDeg);
+  const k = p.pace && Number.isFinite(p.pace) ? Math.max(0.7, Math.min(1.3, p.pace)) : 1;
+  return k === 1 ? s : { ...s, stwKn: s.stwKn * k };
+}
+
+function boatSpeedPlain(p: BoatPerf, twsKn: number, twaDeg: number): Speed {
   if (p.type === "motor") return { stwKn: p.motorKn, motoring: true };
   const sail = sailSpeed(p, twsKn, twaDeg);
   const twa = Math.abs(((twaDeg + 540) % 360) - 180);

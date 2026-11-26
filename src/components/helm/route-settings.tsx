@@ -1,6 +1,7 @@
 import { Button } from "@/components/ui/button";
 import { depthSuffix, formatDepth, fromDepth, toDepth } from "@/lib/units";
 import { wantedDepthM } from "@/lib/routing/min-depth";
+import { paceFactor } from "@/lib/trip";
 import { BOAT_TYPES, defaultTune, type PolarTune } from "@/lib/routing/polar";
 import { BoatTypePicker } from "@/components/helm/boat-type";
 import { ROUTE_MODELS } from "@/lib/routing/fetch-field";
@@ -211,6 +212,8 @@ export function RouteSettings({ onDone }: { onDone: () => void }) {
       )}
 
       <DepthLimitSettings />
+
+      <PaceSettings />
 
       {motorBoat ? null : <PolarTuneSettings />}
 
@@ -474,6 +477,39 @@ function DepthLimitSettings() {
       <p className="mt-1 text-t13 leading-snug text-muted-foreground">
         From the depth model: about 30 m detail on the Great Barrier Reef, much coarser elsewhere, and no bommies. It keeps routes off banks and reef flats, not off every rock. Low tide uses the lowest tide this year where you start.
       </p>
+    </div>
+  );
+}
+
+/** Plan with this boat's real pace, learned from finished trips that followed a plan. */
+function PaceSettings() {
+  const usePace = useHelm((s) => s.usePace);
+  const trips = useHelm((s) => s.trips);
+  const k = paceFactor(trips);
+  const n = trips.filter((t) => t.stats.plan).length;
+  return (
+    <div>
+      <p className={label}>Your real pace</p>
+      {k ? (
+        <>
+          <p className="text-t14">
+            On {n} trip{n === 1 ? "" : "s"} that followed a plan you went at {Math.round(k * 100)}% of the planned speed.
+          </p>
+          <Button
+            size="sm"
+            className="mt-1.5 w-full"
+            variant={usePace ? "default" : "outline"}
+            aria-pressed={usePace}
+            onClick={() => useHelm.setState({ usePace: !usePace })}
+          >
+            {usePace ? `Planning at your pace (${Math.round(k * 100)}%)` : "Plan at your pace"}
+          </Button>
+        </>
+      ) : (
+        <p className="text-t13 leading-snug text-muted-foreground">
+          After two trips that follow a planned route, the planner can learn how your boat really goes and time future plans to match.
+        </p>
+      )}
     </div>
   );
 }

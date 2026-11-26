@@ -60,6 +60,7 @@ import { radarAvailable } from "@/lib/radar";
 import { createDepthLayer, type DepthLook } from "@/components/helm/depth-layer";
 import { createAnchorageLayer } from "@/components/helm/anchorage-layer";
 import { createLandLayer } from "@/components/helm/land-layer";
+import { speedColor } from "@/lib/trip";
 import { createHazardLayer } from "@/components/helm/hazard-layer";
 import { OFFICIAL_CHARTS } from "@/lib/official-charts";
 import { createWxLayer } from "@/components/helm/wx-layer";
@@ -1030,6 +1031,10 @@ export function MapView() {
           interactive: false,
         });
         let libStamp: Array<{ lat: number; lng: number }> | null = null;
+        // A finished trip coloured by speed, and the speed graph's cursor on it.
+        const tripGroup = L.layerGroup();
+        let tripStamp: unknown = null;
+        const tripDot = L.circleMarker([0, 0], { radius: 8, color: "#ffffff", weight: 3, fillColor: "#0b1f26", fillOpacity: 1, interactive: false });
         const planLine: Polyline = L.polyline([], {
           color: "#f0c14a",
           weight: 4,
@@ -1808,6 +1813,26 @@ export function MapView() {
             }
           }
           const pStamp = `${s.routeStart?.lat},${s.routeStart?.lng}|${s.routeFinish?.lat},${s.routeFinish?.lng}|${s.routePreview?.length ?? 0}|${s.routePreview?.[1]?.lat ?? ""}`;
+          if (s.tripTrack !== tripStamp) {
+            tripStamp = s.tripTrack;
+            tripGroup.clearLayers();
+            const ser = s.tripTrack?.series ?? [];
+            for (let i = 1; i < ser.length; i++) {
+              L.polyline(
+                [
+                  [ser[i - 1]!.lat, ser[i - 1]!.lng],
+                  [ser[i]!.lat, ser[i]!.lng],
+                ],
+                { color: speedColor(ser[i]!.kn, s.tripTrack!.topKn), weight: 5, opacity: 0.95, lineCap: "round", interactive: false },
+              ).addTo(tripGroup);
+            }
+            if (ser.length && !map.hasLayer(tripGroup)) tripGroup.addTo(map);
+            else if (!ser.length && map.hasLayer(tripGroup)) map.removeLayer(tripGroup);
+          }
+          if (s.tripCursor) {
+            tripDot.setLatLng([s.tripCursor.lat, s.tripCursor.lng]);
+            if (!map.hasLayer(tripDot)) tripDot.addTo(map);
+          } else if (map.hasLayer(tripDot)) map.removeLayer(tripDot);
           if (s.libraryPreview !== libStamp) {
             libStamp = s.libraryPreview;
             libLine.setLatLngs((s.libraryPreview ?? []).map((p) => [p.lat, p.lng] as [number, number]));
