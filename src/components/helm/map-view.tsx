@@ -757,7 +757,7 @@ export function MapView() {
         const depthLook = (): DepthLook => {
           const st = useHelm.getState();
           return {
-            mode: st.depthLayer === "shallow" ? "shallow" : "depth",
+            mode: st.depthLayer === "shallow" ? "shallow" : st.depthLayer === "lines" ? "lines" : "depth",
             tideMsl: st.tideNowMsl ?? 0,
             limitM: st.hull.draftM + 0.5,
           };

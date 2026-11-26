@@ -435,6 +435,8 @@ export function LayersPanel() {
   const setSharpTiles = useHelm((s) => s.setSharpTiles);
   const reefClarity = useHelm((s) => s.reefClarity);
   const setReefClarity = useHelm((s) => s.setReefClarity);
+  const reefDepthLook = useHelm((s) => s.reefDepthLook);
+  const setReefDepthLook = useHelm((s) => s.setReefDepthLook);
   const setRadar = useHelm((s) => s.setRadar);
   const setPanel = useHelm((s) => s.setPanel);
 
@@ -505,6 +507,7 @@ export function LayersPanel() {
       <div className="mb-2 grid gap-1.5">
         <ToggleRow label="Sharp photos (HD, about 4× the data)" on={sharpTiles} onChange={setSharpTiles} />
         <ToggleRow label="Reef clarity (more contrast to read depth)" on={reefClarity} onChange={setReefClarity} />
+        <ToggleRow label="Reef depth colours (sand, coral and deep water stand apart)" on={reefDepthLook} onChange={setReefDepthLook} />
         <PhotoInfoRow />
       </div>
       <div className="mb-2 grid grid-cols-2 gap-2">
@@ -1653,22 +1656,23 @@ function DepthRow() {
   const setMode = useHelm((s) => s.setDepthLayer);
   const benthicOn = useHelm((s) => s.benthic);
   const setBenthic = useHelm((s) => s.setBenthic);
-  const opts: Array<{ id: "off" | "depth" | "shallow"; label: string }> = [
+  const opts: Array<{ id: "off" | "depth" | "lines" | "shallow"; label: string }> = [
     { id: "off", label: "Off" },
+    { id: "lines", label: "Lines" },
     { id: "depth", label: "Depth" },
-    { id: "shallow", label: "Too shallow" },
+    { id: "shallow", label: "Shallow" },
   ];
   return (
     <div>
       <p className="mb-1 text-t13 text-muted-foreground">Seabed (approximate)</p>
-      <div className="grid grid-cols-3 gap-1.5" role="radiogroup" aria-label="Seabed overlay">
+      <div className="grid grid-cols-4 gap-1.5" role="radiogroup" aria-label="Seabed overlay">
         {opts.map((o) => (
           <Button
             key={o.id}
             role="radio"
             aria-checked={mode === o.id}
             variant={mode === o.id ? "default" : "outline"}
-            className="h-11"
+            className="h-11 px-1"
             onClick={() => setMode(o.id)}
           >
             {o.label}
@@ -1679,7 +1683,9 @@ function DepthRow() {
         <p className="mt-1 text-t13 leading-snug text-muted-foreground">
           {mode === "shallow"
             ? "Red where the water is shallower than your draft plus 0.5 m at today's tide. "
-            : ""}
+            : mode === "lines"
+              ? "Depth lines every metre from 1 to 5 m (red at 1 m, then orange, amber and yellow to 5 m), then 10, 20, 50, 100 and 200 m, at today's tide. "
+              : "Shading by depth, with depth lines, at today's tide. "}
           The depth model shows reefs and drop-offs at a few hundred metres, not bommies.
         </p>
       ) : null}
