@@ -246,6 +246,8 @@ export type HelmState = {
   /** Passage planner: start and finish taps, and the route shown on the chart. Not persisted. */
   routeStart: LatLng | null;
   routeFinish: LatLng | null;
+  /** The skipper's turning points between start and finish (while picking: every tap so far). */
+  routeVia: LatLng[];
   routePreview: LatLng[] | null;
   /** Predicted man-overboard drift (5/10/20 min) and where the inputs came from. Not persisted. */
   mobDrift: { points: DriftPoint[]; source: string } | null;
@@ -406,6 +408,10 @@ type HelmActions = {
   beginRoutePlan: () => void;
   setRouteStart: (p: LatLng | null) => void;
   setRouteFinish: (p: LatLng | null) => void;
+  addRouteWaypoint: (p: LatLng) => void;
+  undoRouteWaypoint: () => void;
+  finishRouteHere: () => void;
+  editRouteWaypoints: () => void;
   setRoutePreview: (pts: LatLng[] | null) => void;
   setRouteCursor: (p: LatLng | null) => void;
   setMobDrift: (d: { points: DriftPoint[]; source: string } | null) => void;
@@ -888,6 +894,7 @@ export const useHelm = create<HelmState & HelmActions>()(
       remoteWatch: null,
       routeStart: null,
       routeFinish: null,
+      routeVia: [],
       routePreview: null,
       routeCursor: null,
       mobDrift: null,
@@ -1466,6 +1473,7 @@ export const useHelm = create<HelmState & HelmActions>()(
         set({
           routeStart: null,
           routeFinish: null,
+          routeVia: [],
           routePreview: null,
           tapMode: "route-start",
           panel: "route",
@@ -1476,6 +1484,24 @@ export const useHelm = create<HelmState & HelmActions>()(
       setRouteStart: (routeStart) =>
         set({ routeStart, routePreview: null, tapMode: routeStart ? "route-finish" : "route-start" }),
       setRouteFinish: (routeFinish) => set({ routeFinish, routePreview: null, tapMode: "none" }),
+      addRouteWaypoint: (p) => set({ routeVia: [...get().routeVia, p], routePreview: null }),
+      undoRouteWaypoint: () => {
+        const v = get().routeVia;
+        if (v.length) set({ routeVia: v.slice(0, -1) });
+        else set({ routeStart: null, tapMode: "route-start" });
+      },
+      finishRouteHere: () => {
+        const v = get().routeVia;
+        if (!v.length) return;
+        // The last point tapped is the destination; the ones before it are the turning points.
+        set({ routeFinish: v[v.length - 1]!, routeVia: v.slice(0, -1), routePreview: null, tapMode: "none", panel: "route" });
+      },
+      editRouteWaypoints: () => {
+        const s = get();
+        if (!s.routeFinish) return;
+        // Back to tapping, with the finish as the last point so far.
+        set({ routeVia: [...s.routeVia, s.routeFinish], routeFinish: null, routePreview: null, tapMode: "route-finish" });
+      },
       setRoutePreview: (routePreview) => set({ routePreview, routeCursor: null }),
       setRouteCursor: (routeCursor) => set({ routeCursor }),
       setMobDrift: (mobDrift) => set({ mobDrift }),
@@ -1496,6 +1522,7 @@ export const useHelm = create<HelmState & HelmActions>()(
         set({
           routeStart: null,
           routeFinish: null,
+          routeVia: [],
           routePreview: null,
           tapMode: get().tapMode.startsWith("route-") ? "none" : get().tapMode,
           panel: null,
@@ -1771,6 +1798,7 @@ export const useHelm = create<HelmState & HelmActions>()(
           routePrefs: readRoutePrefs(p.routePrefs),
           routeStart: null,
           routeFinish: null,
+          routeVia: [],
           routePreview: null,
           remoteWatch:
             p.remoteWatch &&

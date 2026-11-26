@@ -40,12 +40,12 @@ self.onmessage = async (e: MessageEvent<PlanRequest>) => {
     if (reefs) markReefs(mask, reefs, rasterize);
     // A copy without the depth check, in case it closes every route (narrow channels).
     const coastOnly = { ...mask, cells: mask.cells.slice() };
-    clearAround(coastOnly, [req.start, req.finish], 2500);
+    clearAround(coastOnly, [req.start, ...(req.via ?? []), req.finish], 2500);
     if (req.minDepthM && req.minDepthM > 0) {
       const { loadDemTile } = await import("../depth.ts");
       await markShallow(mask, req.minDepthM, (z, x, y) => loadDemTile(z, x, y)).catch(() => 0);
     }
-    clearAround(mask, [req.start, req.finish], 2500);
+    clearAround(mask, [req.start, ...(req.via ?? []), req.finish], 2500);
     if (req.kind === "windows") {
       const scan = findWindows({
         ...req,

@@ -11,6 +11,22 @@ import type { Limits, RouteRules } from "./router.ts";
 import type { PlanReply, PlanRequest } from "./worker.ts";
 
 let worker: Worker | null = null;
+
+/** The forecast box around every point of the passage (start, waypoints, finish). */
+function corridorAll(start: LatLng, finish: LatLng, via: LatLng[] = []) {
+  const pts = [start, ...via, finish];
+  const lo = { lat: Math.min(...pts.map((p) => p.lat)), lng: Math.min(...pts.map((p) => p.lng)) };
+  const hi = { lat: Math.max(...pts.map((p) => p.lat)), lng: Math.max(...pts.map((p) => p.lng)) };
+  return via.length ? corridor(lo, hi) : corridor(start, finish);
+}
+
+/** Total straight-line length through the waypoints, metres. */
+function legsM(start: LatLng, finish: LatLng, via: LatLng[] = []): number {
+  const pts = [start, ...via, finish];
+  let m = 0;
+  for (let i = 1; i < pts.length; i += 1) m += haversineMeters(pts[i - 1]!, pts[i]!);
+  return m;
+}
 let seq = 0;
 
 function getWorker(): Worker {
@@ -21,6 +37,8 @@ function getWorker(): Worker {
 export type PlanRun = {
   start: LatLng;
   finish: LatLng;
+  /** The skipper's turning points, in order. */
+  via?: LatLng[];
   windowStart: number;
   windowEnd: number;
   boat: BoatPerf;
@@ -44,6 +62,7 @@ export function planOnFields(run: PlanRun & { fields: WeatherField[]; box: PlanR
     id: (seq += 1),
     start: run.start,
     finish: run.finish,
+    via: run.via,
     windowStart: run.windowStart,
     windowEnd: run.windowEnd,
     fields: run.fields,
@@ -75,8 +94,8 @@ function post(req: PlanRequest): Promise<Extract<PlanReply, { ok: true }>> {
 }
 
 export async function runPlan(run: PlanRun): Promise<PlanRunResult> {
-  const grid = corridor(run.start, run.finish);
-  const directNm = haversineMeters(run.start, run.finish) / 1852;
+  const grid = corridorAll(run.start, run.finish, run.via);
+  const directNm = legsM(run.start, run.finish, run.via) / 1852;
   const days = (run.windowEnd - Date.now()) / 86_400_000 + directNm / 4 / 24 + 1;
   const models = (run.models?.length ? run.models : ["ecmwf", "gfs"])
     .map((id) => ROUTE_MODELS.find((m) => m.id === id))
@@ -97,6 +116,7 @@ export async function runPlan(run: PlanRun): Promise<PlanRunResult> {
     id,
     start: run.start,
     finish: run.finish,
+    via: run.via,
     windowStart: run.windowStart,
     windowEnd: run.windowEnd,
     fields: fields.fields,
@@ -115,8 +135,8 @@ export async function runPlan(run: PlanRun): Promise<PlanRunResult> {
  * main model only (the scan is about timing; models are compared when planning).
  */
 export async function findWeatherWindows(run: Omit<PlanRun, "windowStart" | "windowEnd">): Promise<WindowScan> {
-  const grid = corridor(run.start, run.finish);
-  const directNm = haversineMeters(run.start, run.finish) / 1852;
+  const grid = corridorAll(run.start, run.finish, run.via);
+  const directNm = legsM(run.start, run.finish, run.via) / 1852;
   const main = ROUTE_MODELS.find((m) => m.id === (run.models?.[0] ?? "ecmwf")) ?? ROUTE_MODELS[0]!;
   run.onStatus?.("Downloading 10 days of weather…");
   const field = await fetchField(grid, main, 10);
@@ -132,6 +152,7 @@ export async function findWeatherWindows(run: Omit<PlanRun, "windowStart" | "win
     minDepthM: run.minDepthM,
     start: run.start,
     finish: run.finish,
+    via: run.via,
     windowStart: from,
     windowEnd: to,
     fields: [field],

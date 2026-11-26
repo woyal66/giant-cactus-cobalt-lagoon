@@ -13,10 +13,23 @@ and depth tiles** for the web app).
 | Microsoft aerial (Bing) | `VITE_AZURE_MAPS_KEY` | No | Per 1,000 tiles after a monthly free allowance |
 | Mapbox Satellite | `VITE_MAPBOX_TOKEN` | No | Per tile after a monthly free allowance |
 | HERE Satellite | `VITE_HERE_KEY` | No | Per tile after a monthly free allowance |
+| New Zealand aerial (LINZ) | `VITE_LINZ_KEY` | Yes | Free |
 
 The keys end up inside the app, where a determined person can read them. That is normal for
 map keys; what protects you is restricting each key to its one service and **setting a quota
 and budget alert**, so a stolen key can't run up a bill.
+
+## Free sources (no bill)
+
+These are on in every build, cost nothing, and can be saved in offline packs:
+
+- **Sentinel-2 (2016, free)**: EOX Sentinel-2 cloudless 2016, worldwide, 10 m, CC BY 4.0. The
+  store build uses the 2016 year because 2018 and later are non-commercial.
+- **Government aerial (free)**: NSW Spatial Services and Queensland state imagery (CC BY 4.0),
+  USGS for the USA (public domain), and New Zealand from LINZ once `VITE_LINZ_KEY` is set:
+  sign up at basemaps.linz.govt.nz (free), create an API key, and add it as that GitHub secret.
+
+Check each provider's fair-use terms before a big launch; offline packs download in bulk.
 
 ## Google (Map Tiles API)
 

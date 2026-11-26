@@ -23,7 +23,7 @@ import {
   type LogEntry,
 } from "@/lib/routing/underway";
 import type { RouteMode, RoutePoint } from "@/lib/routing/router";
-import type { PlanOutput } from "@/lib/routing/plan";
+import { remainingVia, type PlanOutput } from "@/lib/routing/plan";
 import { isLocalDraft, useHelm, useUnitsKey, type LocalDraft } from "@/store/helm";
 
 const MIN = 60_000;
@@ -190,6 +190,7 @@ export function PassageHud() {
       const common = {
         start: from,
         finish: saved.finish,
+        via: saved.via?.length ? remainingVia(from, saved.via, saved.finish) : undefined,
         windowStart: departAt,
         windowEnd: departAt,
         boat: saved.boat,

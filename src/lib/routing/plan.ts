@@ -8,14 +8,64 @@ import type { WeatherField } from "./field.ts";
 import type { BoatPerf } from "./polar.ts";
 import {
   DEFAULT_RULES,
+  metricsOf,
   route,
   type IsDay,
   type Limits,
   type Obstacle,
+  type RouteInput,
   type RouteMode,
   type RouteResult,
   type RouteRules,
 } from "./router.ts";
+
+/**
+ * Waypoints still ahead of the boat when re-planning underway: a waypoint counts as passed once
+ * the boat is nearer the next target than that waypoint is.
+ */
+export function remainingVia(boat: LatLng, via: LatLng[], finish: LatLng): LatLng[] {
+  const d = (a: LatLng, b: LatLng) => Math.hypot(a.lat - b.lat, (a.lng - b.lng) * Math.cos((a.lat * Math.PI) / 180));
+  let k = 0;
+  while (k < via.length) {
+    const next = via[k + 1] ?? finish;
+    if (d(boat, next) < d(via[k]!, next)) k += 1;
+    else break;
+  }
+  return via.slice(k);
+}
+
+/**
+ * Route through the skipper's own waypoints: start → via… → finish, each leg starting when
+ * the one before arrives, joined into one route. With no waypoints it is a plain route.
+ * The skipper's waypoints steer it round islands and reefs the coarse coastline misses.
+ */
+export function routeVia(input: RouteInput & { via?: LatLng[] }): RouteResult {
+  const via = input.via ?? [];
+  if (!via.length) return route(input);
+  const stops = [input.start, ...via, input.finish];
+  let at = input.departAt;
+  let joined: Extract<RouteResult, { ok: true }> | null = null;
+  const warnings = new Set<string>();
+  for (let i = 0; i < stops.length - 1; i += 1) {
+    const leg = route({ ...input, start: stops[i]!, finish: stops[i + 1]!, departAt: at });
+    if (!leg.ok) {
+      const name = i === 0 ? "start to waypoint 1" : i === stops.length - 2 ? `waypoint ${i} to the finish` : `waypoint ${i} to waypoint ${i + 1}`;
+      return { ok: false, mode: input.mode, model: leg.model, departAt: input.departAt, reason: `Leg ${name}: ${leg.reason}` };
+    }
+    for (const w of leg.warnings) warnings.add(w);
+    if (!joined) joined = { ...leg, points: leg.points.slice() };
+    else joined.points.push(...leg.points.slice(1));
+    at = leg.arriveAt;
+  }
+  if (!joined) return route(input);
+  return {
+    ...joined,
+    departAt: input.departAt,
+    arriveAt: at,
+    metrics: metricsOf(joined.points, input.isDay),
+    warnings: [...warnings],
+  };
+}
 
 export type Light = "green" | "amber" | "red";
 
@@ -43,6 +93,8 @@ export type PlanOutput = {
 export type PlanInput = {
   start: LatLng;
   finish: LatLng;
+  /** The skipper's turning points between start and finish, in order. */
+  via?: LatLng[];
   windowStart: number;
   windowEnd: number;
   /** First is the main model; the rest are used for agreement. */
@@ -119,13 +171,13 @@ export function planPassage(input: PlanInput): PlanOutput {
   for (const departAt of times) {
     const results = {} as Record<RouteMode, RouteResult>;
     for (const mode of MODES) {
-      results[mode] = route({ ...input, departAt, field: main, mode, coarse });
+      results[mode] = routeVia({ ...input, departAt, field: main, mode, coarse });
     }
     let spreadH: number | null = null;
     if (results.fastest.ok && others.length) {
       const arrivals = [results.fastest.arriveAt];
       for (const f of others) {
-        const r = route({ ...input, departAt, field: f, mode: "fastest", coarse: true });
+        const r = routeVia({ ...input, departAt, field: f, mode: "fastest", coarse: true });
         if (r.ok) arrivals.push(r.arriveAt);
       }
       if (arrivals.length > 1) spreadH = (Math.max(...arrivals) - Math.min(...arrivals)) / H;
@@ -160,7 +212,7 @@ export function planPassage(input: PlanInput): PlanOutput {
     for (const mode of MODES) {
       const c = best[mode];
       if (!c) continue;
-      const fine = route({ ...input, departAt: c.row.departAt, field: main, mode });
+      const fine = routeVia({ ...input, departAt: c.row.departAt, field: main, mode });
       if (fine.ok) {
         c.row.results[mode] = fine;
         best[mode] = { row: c.row, result: fine };
@@ -204,7 +256,7 @@ export function findWindows(
   const stepH = input.stepH ?? 3;
   const slots: (WindowSlot & { r?: Ok })[] = [];
   for (let t = input.from; t <= input.to; t += stepH * H) {
-    const r = route({ ...input, departAt: t, field: main, mode: "safest", coarse: true });
+    const r = routeVia({ ...input, departAt: t, field: main, mode: "safest", coarse: true });
     if (!r.ok) {
       slots.push({ departAt: t, light: "red", score: Infinity, hours: null });
       continue;

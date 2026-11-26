@@ -26,6 +26,8 @@ import {
   ATTR_ESRI,
   ATTR_GOOGLE,
   ATTR_HERE,
+  ATTR_GOV,
+  LICENSED_IMAGERY_ONLY,
   ATTR_MAPBOX,
   ATTR_OPENSEAMAP,
   KEYED,
@@ -500,7 +502,8 @@ function nativeZoom(id: ImageryId): number {
   if (id === "google" || id === "auto") return 21;
   if (id === "maptiler") return 20;
   if (id === "bing") return 19;
-  if (id === "mapbox" || id === "here") return 20;
+  if (id === "mapbox" || id === "here" || id === "gov") return 20;
+  if (id === "sentinel") return LICENSED_IMAGERY_ONLY ? 15 : 18;
   return 18;
 }
 
@@ -612,7 +615,9 @@ export function MapView() {
                     ? ATTR_MAPBOX
                     : id === "here"
                       ? ATTR_HERE
-                      : ATTR_ESRI;
+                      : id === "gov"
+                        ? ATTR_GOV
+                        : ATTR_ESRI;
         // Auto credits every source it may draw from in this build.
         const attrFor = (id: ImageryId) =>
           id === "auto"
@@ -1013,6 +1018,9 @@ export function MapView() {
           interactive: false,
         });
         let planStamp = "";
+        // The skipper's waypoints: numbered dots joined by a dashed line from the start.
+        const viaGroup = L.layerGroup();
+        let viaStamp = "";
         const planCursor = L.circleMarker([0, 0], {
           radius: 7,
           color: "#071318",
@@ -1100,6 +1108,7 @@ export function MapView() {
         draftLine.addTo(map);
         swingLine.addTo(map);
         planLine.addTo(map);
+        viaGroup.addTo(map);
         crumbLine.addTo(map);
         packGroup.addTo(map);
         tubeGroup.addTo(map);
@@ -1766,6 +1775,43 @@ export function MapView() {
             if (s.libraryPreview && !map.hasLayer(libLine)) libLine.addTo(map);
             else if (!s.libraryPreview && map.hasLayer(libLine)) map.removeLayer(libLine);
           }
+          const picking = s.tapMode === "route-finish";
+          const vStamp = s.routeStart
+            ? `${picking}|${s.routeStart.lat},${s.routeStart.lng}|${s.routeVia.map((p) => `${p.lat},${p.lng}`).join(";")}|${s.routeFinish?.lat ?? ""}|${s.routePreview ? 1 : 0}`
+            : "";
+          if (vStamp !== viaStamp) {
+            viaStamp = vStamp;
+            viaGroup.clearLayers();
+            if (s.routeStart && (s.routeVia.length || picking)) {
+              const pts = [s.routeStart, ...s.routeVia, ...(s.routeFinish ? [s.routeFinish] : [])];
+              // The dashed guide shows the skipper's chosen way until a route is drawn over it.
+              if (pts.length >= 2) {
+                const ll = pts.map((p) => [p.lat, p.lng] as [number, number]);
+                // Dark under-line so the white dashes read on pale sand as well as deep water.
+                L.polyline(ll, { color: "#071318", weight: 4, opacity: s.routePreview ? 0.3 : 0.6, interactive: false }).addTo(viaGroup);
+                L.polyline(ll, {
+                  color: "#ffffff",
+                  weight: 2,
+                  opacity: s.routePreview ? 0.45 : 0.9,
+                  dashArray: "6 6",
+                  interactive: false,
+                }).addTo(viaGroup);
+              }
+              s.routeVia.forEach((p, i) => {
+                const last = picking && i === s.routeVia.length - 1;
+                L.marker([p.lat, p.lng], {
+                  icon: L.divIcon({
+                    className: "rp-divicon",
+                    html: `<div style="width:26px;height:26px;border-radius:13px;background:${last ? "#e5484d" : "#f0c14a"};color:#071318;border:2px solid #fff;display:grid;place-items:center;font:700 13px system-ui">${i + 1}</div>`,
+                    iconSize: [26, 26],
+                    iconAnchor: [13, 13],
+                  }),
+                  interactive: false,
+                  keyboard: false,
+                }).addTo(viaGroup);
+              });
+            }
+          }
           if (pStamp !== planStamp) {
             planStamp = pStamp;
             planLine.setLatLngs((s.routePreview ?? []).map((p) => [p.lat, p.lng] as [number, number]));
@@ -2173,7 +2219,8 @@ export function MapView() {
             return;
           }
           if (s.tapMode === "route-finish") {
-            s.setRouteFinish(wp);
+            // Each tap adds a waypoint; "Finish here" makes the last one the destination.
+            s.addRouteWaypoint(wp);
             return;
           }
           if (s.tapMode === "place-boat") {
