@@ -39,7 +39,7 @@ export function remainingVia(boat: LatLng, via: LatLng[], finish: LatLng): LatLn
  * the one before arrives, joined into one route. With no waypoints it is a plain route.
  * The skipper's waypoints steer it round islands and reefs the coarse coastline misses.
  */
-export function routeVia(input: RouteInput & { via?: LatLng[] }): RouteResult {
+export function routeVia(input: RouteInput & { via?: LatLng[]; legObstacles?: (Obstacle | undefined)[] }): RouteResult {
   const via = input.via ?? [];
   if (!via.length) return route(input);
   const stops = [input.start, ...via, input.finish];
@@ -47,7 +47,8 @@ export function routeVia(input: RouteInput & { via?: LatLng[] }): RouteResult {
   let joined: Extract<RouteResult, { ok: true }> | null = null;
   const warnings = new Set<string>();
   for (let i = 0; i < stops.length - 1; i += 1) {
-    const leg = route({ ...input, start: stops[i]!, finish: stops[i + 1]!, departAt: at });
+    const obstacle = input.legObstacles?.[i] ?? input.obstacle;
+    const leg = route({ ...input, obstacle, start: stops[i]!, finish: stops[i + 1]!, departAt: at });
     if (!leg.ok) {
       const name = i === 0 ? "start to waypoint 1" : i === stops.length - 2 ? `waypoint ${i} to the finish` : `waypoint ${i} to waypoint ${i + 1}`;
       return { ok: false, mode: input.mode, model: leg.model, departAt: input.departAt, reason: `Leg ${name}: ${leg.reason}` };
@@ -88,6 +89,8 @@ export type PlanOutput = {
   reefData?: "used" | "missing";
   /** Depth model check: "used" kept routes out of shallow water; "relaxed" found no route that way. */
   depthCheck?: "used" | "relaxed" | "off";
+  /** Waypoints the channel finder added to keep to the deepest water. */
+  channelPoints?: number;
 };
 
 export type PlanInput = {
@@ -95,6 +98,8 @@ export type PlanInput = {
   finish: LatLng;
   /** The skipper's turning points between start and finish, in order. */
   via?: LatLng[];
+  /** Per-leg obstacle (from the channel finder), overriding `obstacle` for that leg. */
+  legObstacles?: (Obstacle | undefined)[];
   windowStart: number;
   windowEnd: number;
   /** First is the main model; the rest are used for agreement. */

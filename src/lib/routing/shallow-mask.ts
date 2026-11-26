@@ -65,3 +65,36 @@ export async function markShallow(m: LandMask, minDepthM: number, load: LoadTile
   }
   return blocked;
 }
+
+/** Seabed height (m, mean sea level; − = under water) for every cell of a grid, NaN with no data. */
+export async function heightGrid(m: LandMask, load: LoadTile): Promise<Float32Array> {
+  const { z, x0, x1, y0, y1 } = maskTiles(m, 64);
+  const tiles = new Map<string, HeightTile>();
+  await Promise.all(
+    Array.from({ length: (x1 - x0 + 1) * (y1 - y0 + 1) }, async (_, k) => {
+      const x = x0 + (k % (x1 - x0 + 1));
+      const y = y0 + Math.floor(k / (x1 - x0 + 1));
+      tiles.set(`${x}/${y}`, await load(z, x, y).catch(() => null));
+    }),
+  );
+  const n = 2 ** z;
+  const out = new Float32Array(m.nx * m.ny).fill(NaN);
+  const dx = (m.east - m.west) / m.nx;
+  const dy = (m.north - m.south) / m.ny;
+  for (let iy = 0; iy < m.ny; iy++) {
+    const lat = m.south + (iy + 0.5) * dy;
+    const s = Math.sin((lat * Math.PI) / 180);
+    const wy = (0.5 - Math.log((1 + s) / (1 - s)) / (4 * Math.PI)) * n;
+    for (let ix = 0; ix < m.nx; ix++) {
+      const lng = m.west + (ix + 0.5) * dx;
+      const wx = ((lng + 180) / 360) * n;
+      const t = tiles.get(`${Math.floor(wx)}/${Math.floor(wy)}`);
+      if (!t) continue;
+      const px = Math.min(t.size - 1, Math.floor((wx - Math.floor(wx)) * t.size));
+      const py = Math.min(t.size - 1, Math.floor((wy - Math.floor(wy)) * t.size));
+      const h = t.h[py * t.size + px]!;
+      if (h > -32000) out[iy * m.nx + ix] = h;
+    }
+  }
+  return out;
+}

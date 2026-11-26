@@ -1,12 +1,13 @@
 import { Button } from "@/components/ui/button";
 import { formatDepth } from "@/lib/units";
+import { wantedDepthM } from "@/lib/routing/min-depth";
 import { BOAT_TYPES, defaultTune, type PolarTune } from "@/lib/routing/polar";
 import { BoatTypePicker } from "@/components/helm/boat-type";
 import { ROUTE_MODELS } from "@/lib/routing/fetch-field";
 import { TREAT_LABEL, type Treat } from "@/lib/routing/storm";
 import type { RouteRules } from "@/lib/routing/router";
 import type { SailDef } from "@/lib/routing/sails";
-import { ROUTE_PRESETS, boatPerfOf, useHelm, type RoutePreset } from "@/store/helm";
+import { ROUTE_PRESETS, boatPerfOf, useHelm, useUnitsKey, type RoutePreset } from "@/store/helm";
 import { EMPTY_LEARNED, MIN_SAMPLES, polarInsight } from "@/lib/routing/learned";
 
 const label = "mb-1 text-t12 text-muted-foreground";
@@ -208,6 +209,8 @@ export function RouteSettings({ onDone }: { onDone: () => void }) {
         <p className="mt-1 text-t13 text-muted-foreground">Ranges are typical sailmaker figures. Your sailmaker&apos;s chart is the better guide.</p>
       </div>
       )}
+
+      <DepthLimitSettings />
 
       {motorBoat ? null : <PolarTuneSettings />}
 
@@ -417,6 +420,59 @@ function LearnedPolarSettings() {
       <p className="mt-1 text-t13 text-muted-foreground">
         Learned bins are used only once they have {MIN_SAMPLES} clean samples; elsewhere the built-in polar is used.
         Wind comes from the forecast, so treat it as a trend, not a trim tool.
+      </p>
+    </div>
+  );
+}
+
+/** How deep the water must be for a route, and whether that is at mean sea level or low tide. */
+function DepthLimitSettings() {
+  useUnitsKey();
+  const prefs = useHelm((s) => s.routePrefs);
+  const setPrefs = useHelm((s) => s.setRoutePrefs);
+  const draftM = useHelm((s) => s.hull.draftM);
+  const want = wantedDepthM({ minDepthM: prefs.minDepthM, depthAt: prefs.depthAt }, draftM);
+  return (
+    <div>
+      <p className={label}>Keep out of water shallower than</p>
+      <div className="grid grid-cols-[1fr_8rem] items-center gap-2">
+        <span className="text-sm">
+          {prefs.minDepthM == null ? `Draft + 1 m (${formatDepth(want)})` : formatDepth(want)}
+        </span>
+        <Stepper
+          label="m"
+          value={want}
+          step={0.5}
+          show={(v) => v.toFixed(1)}
+          onChange={(v) => setPrefs({ minDepthM: Math.max(0.5, Math.min(50, Math.round(v * 10) / 10)) })}
+        />
+      </div>
+      {prefs.minDepthM != null ? (
+        <Button variant="ghost" size="sm" className="mt-1" onClick={() => setPrefs({ minDepthM: null })}>
+          Back to draft + 1 m
+        </Button>
+      ) : null}
+      <div className="mt-1.5 grid grid-cols-2 gap-1.5" role="radiogroup" aria-label="Measure the depth at">
+        {(
+          [
+            ["low", "At low tide (safer)"],
+            ["msl", "At mean sea level"],
+          ] as const
+        ).map(([id, text]) => (
+          <Button
+            key={id}
+            size="sm"
+            role="radio"
+            aria-checked={prefs.depthAt === id}
+            variant={prefs.depthAt === id ? "default" : "outline"}
+            onClick={() => setPrefs({ depthAt: id })}
+          >
+            {text}
+          </Button>
+        ))}
+      </div>
+      <p className="mt-1 text-t13 leading-snug text-muted-foreground">
+        From the depth model: about 30 m detail on the Great Barrier Reef, much coarser elsewhere, and no bommies. It keeps routes off banks and reef flats, not off every rock. Low tide uses the lowest tide this year where you start.
       </p>
     </div>
   );

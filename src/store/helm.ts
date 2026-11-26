@@ -706,6 +706,10 @@ export type RoutePrefs = {
   fuelLph: number;
   /** The skipper's own polar numbers (15 kn true wind) and pointing angle; null = built-in. */
   tune: PolarTune | null;
+  /** Keep routes out of water shallower than this, metres (null = draft + 1 m). */
+  minDepthM: number | null;
+  /** Measure that depth at mean sea level or at the lowest tide (safer). */
+  depthAt: "msl" | "low";
 };
 
 /** Boat profile for the router from the route settings. */
@@ -777,6 +781,8 @@ export const DEFAULT_ROUTE_PREFS: RoutePrefs = {
   engineOn: false,
   fuelLph: 0,
   tune: null,
+  minDepthM: null,
+  depthAt: "low",
 };
 
 function readTune(v: unknown, num: (x: unknown, d: number, lo: number, hi: number) => number): PolarTune | null {
@@ -818,6 +824,8 @@ function readRoutePrefs(v: unknown): RoutePrefs {
     engineOn: p.engineOn === true,
     fuelLph: Math.round(num(p.fuelLph, 0, 0, 500) * 10) / 10,
     tune: readTune(p.tune, num),
+    minDepthM: typeof p.minDepthM === "number" && Number.isFinite(p.minDepthM) ? Math.round(Math.min(50, Math.max(0.5, p.minDepthM)) * 10) / 10 : null,
+    depthAt: p.depthAt === "msl" ? "msl" : "low",
   };
 }
 
@@ -1519,7 +1527,7 @@ export const useHelm = create<HelmState & HelmActions>()(
             limits: { ...cur.limits, ...(p.limits ?? {}) },
             rules: { ...cur.rules, ...(p.rules ?? {}) },
             // Hand-edits turn a preset into Custom; choosing a preset sets it explicitly.
-            preset: p.preset ?? (Object.keys(p).some((k) => !["sails", "boatType", "models", "learned", "useLearned", "engineOn", "fuelLph", "tune"].includes(k)) ? "custom" : cur.preset),
+            preset: p.preset ?? (Object.keys(p).some((k) => !["sails", "boatType", "models", "learned", "useLearned", "engineOn", "fuelLph", "tune", "minDepthM", "depthAt"].includes(k)) ? "custom" : cur.preset),
           },
         });
       },
