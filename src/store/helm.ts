@@ -1936,6 +1936,8 @@ export const useHelm = create<HelmState & HelmActions>()(
         // Restored on relaunch so an OS kill overnight does not silently end the watch.
         anchor: s.anchor?.demo ? null : s.anchor,
         guideDone: s.guideDone,
+        // Bump to show a new tour once to people who finished the old one.
+        guideV: 2,
         remoteWatch: s.remoteWatch,
         routePrefs: s.routePrefs,
       }),
@@ -1966,7 +1968,7 @@ export const useHelm = create<HelmState & HelmActions>()(
           radarInfo: null,
           autoNight: typeof p.autoNight === "boolean" ? p.autoNight : current.autoNight,
           depthUnit: applyDepthUnit(p.depthUnit, current.depthUnit),
-          guideDone: typeof p.guideDone === "boolean" ? p.guideDone : current.guideDone,
+          guideDone: (p as { guideV?: unknown }).guideV === 2 && typeof p.guideDone === "boolean" ? p.guideDone : current.guideDone,
           routePrefs: readRoutePrefs(p.routePrefs),
           routeStart: null,
           routeFinish: null,

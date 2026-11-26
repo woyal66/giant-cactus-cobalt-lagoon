@@ -809,7 +809,7 @@ export function SettingsPanel() {
               useHelm.getState().setGuideDone(false);
             }}
           >
-            Show the getting-started guide
+            Show the tour of the main buttons
           </Button>
           <p className="text-t13 leading-snug text-muted-foreground">
             Seamarks and depth contours from OpenSeaMap sit over the satellite. Navionics charts need Garmin’s native marine SDK, so they can't be shown here.{" "}

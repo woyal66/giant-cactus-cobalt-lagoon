@@ -134,6 +134,7 @@ export function BottomDock() {
     <nav className="pointer-events-none absolute inset-x-0 bottom-0 z-20 p-2 pb-[max(0.5rem,var(--safe-area-inset-bottom,env(safe-area-inset-bottom)))]">
       <div className="pointer-events-auto mx-auto grid max-w-lg grid-cols-3 gap-0.5 rounded-xl border border-border bg-card p-1 shadow-[var(--shadow-border)]">
         <DockBtn
+          tour="navigation"
           active={panel === "passages" || panel === "rename"}
           label="Navigation"
           onClick={() => toggle("passages")}
@@ -141,6 +142,7 @@ export function BottomDock() {
           <Compass />
         </DockBtn>
         <DockBtn
+          tour="route"
           active={panel === "route"}
           label="Route"
           onClick={() => {
@@ -152,6 +154,7 @@ export function BottomDock() {
           <RouteIcon />
         </DockBtn>
         <DockBtn
+          tour="anchor"
           active={panel === "anchor"}
           label={breach ? "Alarm" : watching ? "Watch" : "Anchor"}
           // Filled only while the watch runs (red on alarm), so the dock shows the watch state.
@@ -182,7 +185,9 @@ function DockBtn({
   onClick,
   emphasize,
   danger,
+  tour,
 }: {
+  tour?: string;
   active: boolean;
   label: string;
   children: ReactNode;
@@ -193,6 +198,7 @@ function DockBtn({
   return (
     <Button
       variant={danger ? "danger" : active || emphasize ? "default" : "ghost"}
+      data-tour={tour}
       onClick={onClick}
       className="h-14 flex-col gap-1 rounded-lg px-1 text-t13 font-semibold [&_svg]:size-5"
     >
