@@ -117,6 +117,21 @@ export type LocalDraft = {
 /** Tracks kept on the phone. */
 export const MAX_TRACKS = 150;
 
+/** What the weather map's live strip has: radar (past frames, then the outlook) or satellite. */
+export type WxLiveInfo = {
+  kind: "radar" | "sat";
+  status: "loading" | "ok" | "none";
+  /** Frame times, oldest first. Radar frames at or after `outlookFrom` are the outlook. */
+  frames: number[];
+  latestAt: number | null;
+  outlookFrom: number | null;
+  /** "Rain moving NE at 18 kn", when the radar shows it. */
+  motion: string | null;
+  /** The next hour at the boat (or the chart centre). */
+  here: string | null;
+  note: string | null;
+};
+
 export type TripRecord = {
   id: string;
   title: string;
@@ -329,6 +344,12 @@ export type HelmState = {
   wxMapInfo: { source: "live" | "saved" | "passage" | "none" | "loading" | "kept"; fetchedAt: number | null; times: number[] } | null;
   /** Weather map: the point tapped for a readout (Windy-style), not saved. */
   wxProbe: LatLng | null;
+  /**
+   * Live view on the weather map (not saved): the radar frame (Rain, Storms) or satellite frame
+   * (Cloud) shown, by time; null = the model forecast on the hourly slider.
+   */
+  wxLiveAt: number | null;
+  wxLiveInfo: WxLiveInfo | null;
   /** Base map: satellite photo, vector chart, or chart lines over the photo. */
   baseMap: "photo" | "chart" | "lines";
   /** 3D reef view open (not saved). */
@@ -462,7 +483,9 @@ type HelmActions = {
   setSunPunch: (n: 1 | 2 | 3) => void;
   setSharpTiles: (v: boolean) => void;
   setDepthLayer: (v: "off" | "depth" | "lines" | "shallow") => void;
-  setWxMap: (p: Partial<Pick<HelmState, "wxMapLayer" | "wxMapStyle" | "wxMapAt" | "wxMapInfo" | "wxMapPlaying" | "wxProbe" | "wxMapModel">>) => void;
+  setWxMap: (
+    p: Partial<Pick<HelmState, "wxMapLayer" | "wxMapStyle" | "wxMapAt" | "wxMapInfo" | "wxMapPlaying" | "wxProbe" | "wxMapModel" | "wxLiveAt" | "wxLiveInfo">>,
+  ) => void;
   setTideNowMsl: (v: number | null) => void;
   setBenthic: (v: boolean) => void;
   /** Put the two measuring pins on the chart (default: across the middle of the view). */
@@ -989,6 +1012,8 @@ export const useHelm = create<HelmState & HelmActions>()(
       wxMapPlaying: false,
       wxMapInfo: null,
       wxProbe: null,
+      wxLiveAt: null,
+      wxLiveInfo: null,
       reef3d: false,
       tideNowMsl: null,
       benthic: false,

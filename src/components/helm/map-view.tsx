@@ -56,6 +56,8 @@ import { squareFromCorners } from "@/lib/offline-tiles";
 import { toast } from "sonner";
 import { measure } from "@/lib/measure";
 import { createRadar } from "@/components/helm/radar-layer";
+import { createWxLive } from "@/components/helm/wx-live";
+import type { RainNow } from "@/components/helm/rain-now";
 import { radarAvailable } from "@/lib/radar";
 import { createDepthLayer, type DepthLook } from "@/components/helm/depth-layer";
 import { createAnchorageLayer } from "@/components/helm/anchorage-layer";
@@ -781,6 +783,19 @@ export function MapView() {
         // Weather on the chart: grid for the view, loaded when a layer is on and after panning away.
         const wxLayer = createWxLayer(L, map);
         let wxField: WeatherField | null = null;
+        // Live radar (Rain, Storms) and satellite (Cloud) for the weather map's live strip.
+        let liveRain: RainNow | null = null;
+        const wxState = (s: ReturnType<typeof useHelm.getState>) => ({
+          layer: s.wxMapLayer,
+          style: s.lowBattery ? ("arrows" as const) : s.wxMapStyle,
+          at: s.wxMapAt,
+          field: wxField,
+          live: liveRain && s.wxLiveAt != null ? { rain: liveRain, at: s.wxLiveAt } : null,
+        });
+        const wxLive = createWxLive(L, map, (r) => {
+          liveRain = r;
+          wxLayer.set(wxState(useHelm.getState()));
+        });
         let wxLoading = false;
         let wxFieldModel = "";
         let wxProbeMarker: import("leaflet").Marker | null = null;
@@ -821,14 +836,14 @@ export function MapView() {
             .catch(() => useHelm.getState().setWxMap({ wxMapInfo: keptInfo() }))
             .finally(() => {
               wxLoading = false;
-              const s2 = useHelm.getState();
-              wxLayer.set({ layer: s2.wxMapLayer, style: s2.lowBattery ? "arrows" : s2.wxMapStyle, at: s2.wxMapAt, field: wxField });
+              wxLayer.set(wxState(useHelm.getState()));
             });
         };
         map.on("moveend", wxLoad);
         stopWx = () => {
           map?.off("moveend", wxLoad);
           wxLayer.destroy();
+          wxLive.destroy();
           anchorages.destroy();
           window.removeEventListener("helm:anchorage-shared", onShared);
           window.removeEventListener("helm:anchorage-removed", onRemoved);
@@ -1555,7 +1570,8 @@ export function MapView() {
           if (s.landHeights && !map.hasLayer(land)) land.addTo(map);
           else if (!s.landHeights && map.hasLayer(land)) map.removeLayer(land);
           if (s.wxMapLayer !== "off") wxLoad();
-          wxLayer.set({ layer: s.wxMapLayer, style: s.lowBattery ? "arrows" : s.wxMapStyle, at: s.wxMapAt, field: wxField });
+          wxLive.set(s.wxMapLayer, s.wxMapLayer === "off" ? null : s.wxLiveAt);
+          wxLayer.set(wxState(s));
           // The tapped weather spot: a draggable pin, only while the weather map is on.
           const probe = s.wxMapLayer !== "off" ? s.wxProbe : null;
           if (!probe) {

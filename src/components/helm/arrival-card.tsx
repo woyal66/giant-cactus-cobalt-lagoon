@@ -2,6 +2,8 @@ import { useQuery } from "@tanstack/react-query";
 import { fetchWeather, windCardinal, type WxHour } from "@/lib/weather";
 import { moonInfo } from "@/lib/moon";
 import { sunRiseSet } from "@/lib/sun";
+import { reefLight } from "@/lib/rain";
+import SunCalc from "suncalc";
 import { formatDepth } from "@/lib/units";
 import type { LatLng } from "@/lib/geo";
 
@@ -45,6 +47,14 @@ export function ArrivalCard({ finish, eta, shelter }: { finish: LatLng; eta: num
   const exposedHours = shelter ? night.filter((h) => !shelter[sector(h.dirDeg)] && h.windKn >= 12) : [];
   const turns = data?.sea?.tideTurns?.filter((t) => t.at >= eta - H).slice(0, 2) ?? [];
   const sunsetGap = sun ? (sun.set - eta) / 60_000 : null;
+  // Reading the reef: low cloud and a low sun both hide bommies.
+  const light = at
+    ? reefLight({
+        cloudPct: at.cloudPct,
+        lowCloudPct: at.lowCloudPct,
+        sunAltDeg: (SunCalc.getPosition(new Date(eta), finish.lat, finish.lng).altitude * 180) / Math.PI,
+      })
+    : null;
 
   return (
     <div className="mt-2 rounded-lg border border-border bg-background px-3 py-2 text-t14 leading-snug">
@@ -57,6 +67,11 @@ export function ArrivalCard({ finish, eta, shelter }: { finish: LatLng; eta: num
           {at.gustKn ? `, gusts ${Math.round(at.gustKn)}` : ""}
           {at.precipMm >= 0.5 ? `, rain ${at.precipMm.toFixed(1)} mm/h` : ""}
           {data?.sea?.waveM != null ? ` · seas around ${formatDepth(data.sea.waveM)}` : ""}
+        </p>
+      ) : null}
+      {light ? (
+        <p className={`mt-0.5 ${light.grade === "good" ? "" : light.grade === "fair" ? "text-amber-200" : "text-amber-300"}`}>
+          Reef light: {light.text}
         </p>
       ) : null}
       {worst ? (

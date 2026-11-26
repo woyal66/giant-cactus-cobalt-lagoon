@@ -1,12 +1,12 @@
 import { useEffect, useMemo } from "react";
-import { CloudLightning, CloudRain, Gauge, Navigation, Pause, Play, Waves, Wind, X, Zap } from "lucide-react";
+import { Cloud, CloudLightning, CloudRain, Gauge, Navigation, Pause, Play, Waves, Wind, X, Zap } from "lucide-react";
+import { RAIN_BANDS } from "@/lib/rain";
 import { Button } from "@/components/ui/button";
 import { formatDepth } from "@/lib/units";
 import { compassPoint } from "@/lib/routing/explain";
 import {
   CAPE_RAMP,
   CURRENT_RAMP,
-  RAIN_RAMP,
   WAVE_RAMP,
   WIND_RAMP,
   WX_MAP_LAYERS,
@@ -31,7 +31,11 @@ const ICON: Record<WxMapLayer, typeof Wind> = {
   pressure: Gauge,
   rain: CloudRain,
   storm: CloudLightning,
+  cloud: Cloud,
 };
+
+/** Layers with a live view: radar for rain and storms, the satellite for cloud. */
+const LIVE_LAYERS = new Set<string>(["rain", "storm", "cloud"]);
 
 /** Legend: colour ramp and the numbers shown under it. */
 const LEGEND: Partial<Record<WxMapLayer, { ramp: Ramp; ticks: number[]; unit: string }>> = {
@@ -39,7 +43,6 @@ const LEGEND: Partial<Record<WxMapLayer, { ramp: Ramp; ticks: number[]; unit: st
   gust: { ramp: WIND_RAMP, ticks: [0, 10, 20, 30, 40], unit: "kn" },
   current: { ramp: CURRENT_RAMP, ticks: [0, 1, 2, 3], unit: "kn" },
   waves: { ramp: WAVE_RAMP, ticks: [0, 1, 2, 4, 6], unit: "m" },
-  rain: { ramp: RAIN_RAMP, ticks: [0.1, 3, 6, 12], unit: "mm/h" },
   storm: { ramp: CAPE_RAMP, ticks: [300, 2000, 3500], unit: "storm energy" },
 };
 
@@ -63,7 +66,11 @@ export function WxMapBar() {
   const set = useHelm((s) => s.setWxMap);
   const playing = useHelm((s) => s.wxMapPlaying);
   const modelId = useHelm((s) => s.wxMapModel);
+  const liveAt = useHelm((s) => s.wxLiveAt);
+  const live = useHelm((s) => s.wxLiveInfo);
   const field = useViewField();
+  const liveMode = LIVE_LAYERS.has(layer) && liveAt != null;
+  const liveFrames = useMemo(() => (liveMode && live?.status === "ok" ? live.frames : []), [liveMode, live]);
   const times = info?.times ?? [];
   const now = Date.now();
   const first = times.find((t) => t >= now - H) ?? times[0] ?? now;
@@ -73,14 +80,24 @@ export function WxMapBar() {
   const shown = first + step * H;
 
   useEffect(() => {
-    if (!playing || !hours) return;
+    if (!playing || !liveFrames.length) return;
+    const id = window.setInterval(() => {
+      const s = useHelm.getState();
+      const i = liveFrames.findIndex((t) => t === s.wxLiveAt);
+      s.setWxMap({ wxLiveAt: liveFrames[(i + 1) % liveFrames.length]! });
+    }, 700);
+    return () => window.clearInterval(id);
+  }, [playing, liveFrames]);
+
+  useEffect(() => {
+    if (!playing || !hours || liveMode) return;
     const id = window.setInterval(() => {
       const s = useHelm.getState();
       const cur = Math.round((s.wxMapAt - first) / H);
       s.setWxMap({ wxMapAt: first + ((cur + 1) % (hours + 1)) * H });
     }, 900);
     return () => window.clearInterval(id);
-  }, [playing, hours, first]);
+  }, [playing, hours, first, liveMode]);
 
   // Midnights on the timeline, for day labels.
   const days = useMemo(() => {
@@ -96,7 +113,7 @@ export function WxMapBar() {
 
   // Say so when a layer has nothing to show at this hour (no rain, no storms).
   const empty = useMemo(() => {
-    if (!field || layer === "off") return null;
+    if (!field || layer === "off" || liveMode) return null;
     const t = layerIndex(field, shown);
     if (layer === "rain") return layerMax(field.precipMm?.[t]) < 0.1 ? "No rain in view at this hour." : null;
     if (layer === "storm") return layerMax(field.capeJkg?.[t]) < 300 ? "No storm risk in view at this hour." : null;
@@ -104,7 +121,7 @@ export function WxMapBar() {
       return Number.isFinite(layerMax((layer === "waves" ? field.waveM : field.curKn)[t])) ? null : "No sea data for this area (inland or very close inshore).";
     }
     return null;
-  }, [field, layer, shown]);
+  }, [field, layer, shown, liveMode]);
 
   if (layer === "off" || panel) return null;
   const motion = layer === "wind" || layer === "gust" || layer === "current" || layer === "waves";
@@ -139,7 +156,7 @@ export function WxMapBar() {
                 type="button"
                 role="radio"
                 aria-checked={on}
-                onClick={() => set({ wxMapLayer: l.id })}
+                onClick={() => set({ wxMapLayer: l.id, wxLiveAt: LIVE_LAYERS.has(l.id) ? Date.now() : null, wxMapPlaying: false })}
                 className={`flex h-12 min-w-[3.6rem] shrink-0 flex-col items-center justify-center gap-0.5 rounded-lg px-2 text-t12 font-semibold ${on ? "bg-primary text-primary-foreground" : "bg-background text-foreground"}`}
               >
                 <Icon className="size-4" aria-hidden />
@@ -161,6 +178,27 @@ export function WxMapBar() {
         </div>
       </div>
 
+      {LIVE_LAYERS.has(layer) ? (
+        <div className="mt-2 flex gap-1" role="radiogroup" aria-label="Live or forecast">
+          {[
+            { on: liveMode, label: layer === "cloud" ? "Satellite now" : "Radar now + 1 h", pick: () => set({ wxLiveAt: Date.now(), wxMapPlaying: false }) },
+            { on: !liveMode, label: "Forecast, 3 days", pick: () => set({ wxLiveAt: null, wxMapPlaying: false }) },
+          ].map((b) => (
+            <button
+              key={b.label}
+              type="button"
+              role="radio"
+              aria-checked={b.on}
+              onClick={b.pick}
+              className={`h-10 flex-1 rounded-lg px-2 text-t13 font-semibold ${b.on ? "bg-primary text-primary-foreground" : "bg-background text-foreground"}`}
+            >
+              {b.label}
+            </button>
+          ))}
+        </div>
+      ) : null}
+
+      {liveMode ? <LiveStrip /> : (
       <div className="mt-2 flex items-center gap-2">
         <Button
           variant="outline"
@@ -202,9 +240,24 @@ export function WxMapBar() {
           </div>
         </div>
       </div>
+      )}
 
       <div className="mt-1 flex items-center gap-2">
-        {legend ? (
+        {layer === "rain" || (layer === "storm" && liveMode) ? (
+          <div className="flex min-w-0 flex-1 flex-wrap gap-1" aria-label="Rain intensity">
+            {RAIN_BANDS.map((b, i) => (
+              <span key={b.label} className="flex items-center gap-1 text-t11 text-muted-foreground tabular-nums">
+                <span className="inline-block size-3 rounded-sm" style={{ background: `rgb(${b.color.join(",")})` }} />
+                {b.label} {i < RAIN_BANDS.length - 1 ? `${b.min}–${RAIN_BANDS[i + 1]!.min}` : `${b.min}+`}
+              </span>
+            ))}
+            <span className="text-t11 text-muted-foreground">mm/h{layer === "storm" ? " · ringed = storm core" : ""}</span>
+          </div>
+        ) : layer === "cloud" ? (
+          <p className="min-w-0 flex-1 text-t12 text-muted-foreground">
+            {liveMode ? "" : "White veil = cloud cover; greyer = low cloud, the kind that hides reefs."}
+          </p>
+        ) : legend ? (
           <div className="min-w-0 flex-1">
             <div className="h-2.5 rounded-full" style={{ background: rampGradient(legend.ramp) }} />
             <div className="relative h-4 text-t11 text-muted-foreground tabular-nums">
@@ -223,7 +276,7 @@ export function WxMapBar() {
         ) : (
           <p className="min-w-0 flex-1 text-t12 text-muted-foreground">Isobars (hPa) · H high, L low · close lines = strong wind</p>
         )}
-        {legend ? (
+        {legend && !(layer === "storm" && liveMode) ? (
           <span className="shrink-0 text-t12 text-muted-foreground">{layer === "waves" ? formatDepth(1).replace(/^[\d.,\s]+/, "") : legend.unit}</span>
         ) : null}
         {motion ? (
@@ -232,7 +285,7 @@ export function WxMapBar() {
           </Button>
         ) : null}
       </div>
-      <div className="mt-1 flex items-center gap-1.5">
+      <div className={`mt-1 flex items-center gap-1.5 ${liveMode ? "hidden" : ""}`}>
         <span className="shrink-0 text-t12 text-muted-foreground">Model</span>
         <div className="flex min-w-0 gap-1 overflow-x-auto" role="radiogroup" aria-label="Weather model">
           {ROUTE_MODELS.map((m) => {
@@ -254,8 +307,81 @@ export function WxMapBar() {
       </div>
       <p className="text-t12 text-muted-foreground">
         {empty ? <span className="font-semibold text-foreground">{empty} </span> : null}
-        Tap the chart for the forecast at a spot · {source}
+        {liveMode
+          ? layer === "cloud"
+            ? "Satellite: NASA GIBS (Himawari, GOES)"
+            : "Radar © RainViewer · the outlook moves today's rain along its track; new showers can still pop up"
+          : `Tap the chart for the forecast at a spot · ${source}`}
       </p>
+    </div>
+  );
+}
+
+const clock = (at: number) => new Date(at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+
+/** Live frames: radar for the last hour then the outlook, or the satellite's last two hours. */
+function LiveStrip() {
+  const live = useHelm((s) => s.wxLiveInfo);
+  const at = useHelm((s) => s.wxLiveAt);
+  const playing = useHelm((s) => s.wxMapPlaying);
+  const set = useHelm((s) => s.setWxMap);
+  if (!live || live.status === "loading") return <p className="mt-2 text-t14 text-muted-foreground">Loading the {live?.kind === "sat" ? "satellite picture" : "radar"}…</p>;
+  if (live.status === "none" || !live.frames.length) return <p className="mt-2 text-t14">{live.note ?? "Not available right now."}</p>;
+  const frames = live.frames;
+  let i = 0;
+  if (at != null) for (let k = 1; k < frames.length; k++) if (Math.abs(frames[k]! - at) < Math.abs(frames[i]! - at)) i = k;
+  const t = frames[i]!;
+  const outlook = live.outlookFrom != null && t >= live.outlookFrom;
+  const mins = live.latestAt != null ? Math.round((t - live.latestAt) / 60_000) : 0;
+  const tag =
+    live.kind === "sat"
+      ? i === frames.length - 1
+        ? "newest picture"
+        : `${Math.round((frames[frames.length - 1]! - t) / 60_000)} min earlier`
+      : outlook
+        ? `outlook +${mins} min`
+        : mins === 0
+          ? "radar, latest"
+          : `radar, ${-mins} min ago`;
+  const nowPct = live.outlookFrom != null ? (frames.findIndex((x) => x === live.latestAt) / Math.max(1, frames.length - 1)) * 100 : null;
+  return (
+    <div className="mt-2">
+      <div className="flex items-center gap-2">
+        <Button variant="outline" className="h-11 w-11 shrink-0 p-0" aria-label={playing ? "Pause" : "Play the loop"} onClick={() => set({ wxMapPlaying: !playing })}>
+          {playing ? <Pause className="size-5" /> : <Play className="size-5" />}
+        </Button>
+        <div className="relative min-w-0 flex-1">
+          <div className="mb-0.5 flex items-baseline justify-between gap-2">
+            <span className="text-t15 font-semibold tabular-nums">{clock(t)}</span>
+            <span className={`text-t13 ${outlook ? "font-semibold text-amber-200" : "text-muted-foreground"}`}>{tag}</span>
+          </div>
+          <input
+            type="range"
+            min={0}
+            max={frames.length - 1}
+            step={1}
+            value={i}
+            aria-label={live.kind === "sat" ? "Satellite picture time" : "Radar time"}
+            onChange={(e) => set({ wxLiveAt: frames[Number(e.target.value)]!, wxMapPlaying: false })}
+            className="h-8 w-full accent-[var(--color-primary)]"
+          />
+          {nowPct != null ? (
+            <div className="relative h-4 text-t11 text-muted-foreground">
+              <span className="absolute left-0">past hour</span>
+              <span className="absolute -translate-x-1/2 border-l border-border pl-1" style={{ left: `${nowPct}%` }}>
+                now
+              </span>
+              <span className="absolute right-0">next hour</span>
+            </div>
+          ) : null}
+        </div>
+      </div>
+      {live.here ? <p className="mt-1 text-t14 font-semibold">{live.here}</p> : null}
+      {live.motion || live.note ? (
+        <p className="text-t13 text-muted-foreground">
+          {[live.motion, live.note].filter(Boolean).join(" · ")}
+        </p>
+      ) : null}
     </div>
   );
 }
@@ -276,6 +402,7 @@ export function WxProbeCard() {
   if (p.waveM != null) rows.push(["Waves", `${formatDepth(p.waveM)}${dir(p.waveFrom)}${p.periodS != null ? `, ${Math.round(p.periodS)} s` : ""}`]);
   if (p.curKn != null && p.curKn >= 0.1) rows.push(["Current", `${p.curKn.toFixed(1)} kn toward${dir(p.curToward)}`]);
   if (p.rainMm != null) rows.push(["Rain", p.rainMm < 0.1 ? "none" : `${p.rainMm.toFixed(1)} mm/h`]);
+  if (p.cloudPct != null) rows.push(["Cloud", `${Math.round(p.cloudPct)}%${p.lowCloudPct != null ? `, low ${Math.round(p.lowCloudPct)}%` : ""}`]);
   if (p.capeJkg != null && p.capeJkg >= 300) rows.push(["Storms", p.capeJkg >= 2000 ? "high risk" : p.capeJkg >= 1000 ? "possible" : "low risk"]);
   if (p.pressureHpa != null) rows.push(["Pressure", `${Math.round(p.pressureHpa)} hPa`]);
   return (

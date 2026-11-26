@@ -47,7 +47,7 @@ export async function saveAreaWeather(b: BBox): Promise<boolean> {
   const grid = viewGrid(b);
   const key = `wx:view:${grid.key}`;
   try {
-    const field = await fetchField(grid, ROUTE_MODELS[0]!, 3);
+    const field = await fetchField(grid, ROUTE_MODELS[0]!, 3, { cloud: true });
     mem.set(key, field);
     await kvSet(key, field);
     await remember(key, field);
@@ -76,7 +76,7 @@ export async function loadViewField(b: BBox, modelId = "ecmwf"): Promise<ViewFie
   const hit = mem.get(key);
   if (hit && now - (hit.fetchedAt ?? 0) < FRESH_MS) return { field: hit, source: "live" };
   try {
-    const field = await fetchField(grid, model, 3);
+    const field = await fetchField(grid, model, 3, { cloud: true });
     mem.set(key, field);
     void kvSet(key, field)
       .then(() => remember(key, field))

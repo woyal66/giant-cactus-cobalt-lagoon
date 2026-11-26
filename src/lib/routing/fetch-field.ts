@@ -82,6 +82,10 @@ export function fieldFromResponses(
     pressureHpa: layers(),
     fetchedAt: Date.now(),
   };
+  if (wind[0]?.hourly?.cloud_cover) {
+    f.cloudPct = layers();
+    f.lowCloudPct = layers();
+  }
   const put = (dst: Float32Array[], src: (number | null)[] | undefined, k: number, scale = 1, idx?: Map<number, number>) => {
     if (!src) return;
     for (let t = 0; t < times.length; t += 1) {
@@ -103,6 +107,8 @@ export function fieldFromResponses(
     put(f.code!, w?.weather_code, k);
     put(f.tempC!, w?.temperature_2m, k);
     put(f.pressureHpa!, w?.pressure_msl, k);
+    if (f.cloudPct) put(f.cloudPct, w?.cloud_cover, k);
+    if (f.lowCloudPct) put(f.lowCloudPct, w?.cloud_cover_low, k);
     const m = marine?.[k]?.hourly;
     if (m?.time) {
       const idx = new Map(m.time.map((s, i) => [s * 1000, i] as const));
@@ -133,7 +139,8 @@ async function getJson(url: URL): Promise<Loc[]> {
   return Array.isArray(json) ? json : [json];
 }
 
-export async function fetchField(grid: CorridorGrid, model: RouteModel, days: number): Promise<WeatherField> {
+/** `cloud` adds cloud cover (weather map); the router doesn't need it. */
+export async function fetchField(grid: CorridorGrid, model: RouteModel, days: number, opts: { cloud?: boolean } = {}): Promise<WeatherField> {
   const { lat, lng } = coords(grid);
   const d = String(Math.min(10, Math.max(2, Math.ceil(days))));
   const w = openMeteoUrl("https://api.open-meteo.com/v1/forecast");
@@ -141,7 +148,8 @@ export async function fetchField(grid: CorridorGrid, model: RouteModel, days: nu
   w.searchParams.set("longitude", lng);
   w.searchParams.set(
     "hourly",
-    "wind_speed_10m,wind_direction_10m,wind_gusts_10m,cape,lifted_index,convective_inhibition,precipitation,weather_code,temperature_2m,pressure_msl",
+    "wind_speed_10m,wind_direction_10m,wind_gusts_10m,cape,lifted_index,convective_inhibition,precipitation,weather_code,temperature_2m,pressure_msl" +
+      (opts.cloud ? ",cloud_cover,cloud_cover_low" : ""),
   );
   w.searchParams.set("wind_speed_unit", "kn");
   w.searchParams.set("models", model.param);

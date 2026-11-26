@@ -1,10 +1,12 @@
 import type { Map as LeafletMap, Point } from "leaflet";
 import type { WeatherField } from "@/lib/routing/field";
 import { thunderRisk } from "@/lib/routing/storm";
+import { RAIN_BANDS, rainBandIndex, rainRateFromDbz, stormCells } from "@/lib/rain";
+import { latLngOfWorld, type RainNow } from "@/components/helm/rain-now";
 import {
   CAPE_RAMP,
+  CLOUD_RAMP,
   CURRENT_RAMP,
-  RAIN_RAMP,
   WAVE_RAMP,
   WIND_RAMP,
   contourSegments,
@@ -28,6 +30,8 @@ export type WxLayerState = {
   style: "particles" | "arrows";
   at: number;
   field: WeatherField | null;
+  /** Live radar frame to draw instead of the model's rain (Rain and Storms layers). */
+  live?: { rain: RainNow; at: number } | null;
 };
 
 const PAD = 0.3; // extra canvas around the view so heading-up rotation never shows bare corners
@@ -83,6 +87,63 @@ export function createWxLayer(L: LeafletNS, map: LeafletMap) {
     if (clear) moving.getContext("2d")?.clearRect(0, 0, moving.width, moving.height);
   }
 
+  /** A radar frame by rain intensity, plus storm cores outlined and labelled. */
+  function drawRadar(g: CanvasRenderingContext2D, r: RainNow, at: number) {
+    let fr = r.frames[0];
+    for (const x of r.frames) if (Math.abs(x.at - at) < Math.abs((fr?.at ?? 0) - at)) fr = x;
+    if (!fr) return;
+    const { w, h } = r.grid;
+    const off = document.createElement("canvas");
+    off.width = w;
+    off.height = h;
+    const o = off.getContext("2d");
+    if (!o) return;
+    const img = o.createImageData(w, h);
+    for (let k = 0; k < w * h; k++) {
+      const b = rainBandIndex(rainRateFromDbz(fr.dbz[k]!));
+      if (b < 0) continue;
+      const c = RAIN_BANDS[b]!.color;
+      img.data[k * 4] = c[0];
+      img.data[k * 4 + 1] = c[1];
+      img.data[k * 4 + 2] = c[2];
+      img.data[k * 4 + 3] = fr.outlook ? 150 : 190;
+    }
+    o.putImageData(img, 0, 0);
+    const nw = latLngOfWorld(r.grid.x0, r.grid.y0, r.grid.z);
+    const se = latLngOfWorld(r.grid.x0 + w, r.grid.y0 + h, r.grid.z);
+    const a = toPx(nw.lat, nw.lng);
+    const b = toPx(se.lat, se.lng);
+    g.imageSmoothingEnabled = true;
+    g.imageSmoothingQuality = "high";
+    g.drawImage(off, a.x, a.y, b.x - a.x, b.y - a.y);
+    // Storm cores (50 dBZ and up): ringed, with the way they are heading.
+    const sx = (b.x - a.x) / w;
+    const sy = (b.y - a.y) / h;
+    g.font = "600 14px system-ui";
+    g.textAlign = "center";
+    for (const c of stormCells(fr.dbz, w, h).slice(0, 12)) {
+      const x = a.x + c.x * sx;
+      const y = a.y + c.y * sy;
+      const rad = Math.max(10, Math.sqrt(c.cells) * sx * 0.8);
+      g.lineWidth = 3;
+      g.strokeStyle = "rgba(0,0,0,0.7)";
+      g.beginPath();
+      g.arc(x, y, rad + 1.5, 0, Math.PI * 2);
+      g.stroke();
+      g.lineWidth = 2;
+      g.strokeStyle = "#ffffff";
+      g.beginPath();
+      g.arc(x, y, rad, 0, Math.PI * 2);
+      g.stroke();
+      if (r.towardDeg != null) arrow(g, x, y - rad - 14, (r.towardDeg * Math.PI) / 180, 12, "#ffffff", "");
+      g.lineWidth = 4;
+      g.strokeStyle = "rgba(0,0,0,0.75)";
+      g.strokeText("Storm", x, y + rad + 16);
+      g.fillStyle = "#ffffff";
+      g.fillText("Storm", x, y + rad + 16);
+    }
+  }
+
   function draw(keep = false) {
     stop(!keep);
     const { w, h } = frame();
@@ -99,7 +160,10 @@ export function createWxLayer(L: LeafletNS, map: LeafletMap) {
     g.setTransform(dpr, 0, 0, dpr, 0, 0);
     g.clearRect(0, 0, w, h);
     const f = state.field;
-    if (state.layer === "off" || !f) return;
+    if (state.layer === "off") return;
+    const live = state.live && (state.layer === "rain" || state.layer === "storm") ? state.live : null;
+    if (live) drawRadar(g, live.rain, live.at);
+    if (!f) return;
     const t = layerIndex(f, state.at);
     // Smooth colour fill: sample on a coarse pixel grid, then scale up with smoothing.
     const shade = (step: number, color: (lat: number, lng: number) => [number, number, number, number] | null) => {
@@ -142,8 +206,28 @@ export function createWxLayer(L: LeafletNS, map: LeafletMap) {
     else if (L1 === "gust") fill(f.gustKn[t], WIND_RAMP, 130);
     else if (L1 === "current") fill(f.curKn[t], CURRENT_RAMP, 95);
     else if (L1 === "waves") fill(f.waveM[t], WAVE_RAMP, 125);
-    else if (L1 === "rain") fill(f.precipMm?.[t], RAIN_RAMP, 150, 0.1);
-    else if (L1 === "storm" && f.capeJkg) {
+    else if (L1 === "rain" && !live && f.precipMm) {
+      // Rain by intensity band. The model grid is coarse (about 10 km), so it is smoothed into
+      // rounded areas; the live radar shows the real detail.
+      const up = upsample(f, f.precipMm[t]!, 4);
+      const ug = up.grid as unknown as WeatherField;
+      shade(4, (la, lo) => {
+        const k = rainBandIndex(valueAt(ug, up.values, la, lo));
+        if (k < 0) return null;
+        const c = RAIN_BANDS[k]!.color;
+        return [c[0], c[1], c[2], k === 0 ? 120 : 170];
+      });
+    } else if (L1 === "cloud" && f.cloudPct) {
+      // Cloud: a veil as thick as the cover; low cloud (the kind that hides reefs) greyer.
+      shade(6, (la, lo) => {
+        const tot = valueAt(f, f.cloudPct![t]!, la, lo);
+        if (!Number.isFinite(tot) || tot < 8) return null;
+        const low = f.lowCloudPct ? valueAt(f, f.lowCloudPct[t]!, la, lo) : NaN;
+        const share = Number.isFinite(low) && tot > 0 ? Math.min(1, low / tot) : 0;
+        const c = rampColor(CLOUD_RAMP, 100 - share * 45);
+        return [c[0], c[1], c[2], Math.round(25 + tot * 1.5)];
+      });
+    } else if (L1 === "storm" && !live && f.capeJkg) {
       shade(6, (la, lo) => {
         const cape = valueAt(f, f.capeJkg![t]!, la, lo);
         const r = thunderRisk({
@@ -393,7 +477,7 @@ export function createWxLayer(L: LeafletNS, map: LeafletMap) {
   return {
     set(next: WxLayerState) {
       const restart = next.layer !== state.layer || next.style !== state.style;
-      const changed = restart || next.at !== state.at || next.field !== state.field;
+      const changed = restart || next.at !== state.at || next.field !== state.field || next.live?.rain !== state.live?.rain || next.live?.at !== state.live?.at;
       state = next;
       if (!changed) return;
       if (restart) {

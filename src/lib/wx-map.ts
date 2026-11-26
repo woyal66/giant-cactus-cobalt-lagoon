@@ -6,7 +6,7 @@ import type { BBox } from "./routing/land.ts";
 import type { WeatherField } from "./routing/field.ts";
 import type { CorridorGrid } from "./routing/fetch-field.ts";
 
-export type WxMapLayer = "wind" | "gust" | "current" | "waves" | "pressure" | "rain" | "storm";
+export type WxMapLayer = "wind" | "gust" | "current" | "waves" | "pressure" | "rain" | "storm" | "cloud";
 
 export const WX_MAP_LAYERS: Array<{ id: WxMapLayer; label: string }> = [
   { id: "wind", label: "Wind" },
@@ -16,6 +16,7 @@ export const WX_MAP_LAYERS: Array<{ id: WxMapLayer; label: string }> = [
   { id: "pressure", label: "Pressure" },
   { id: "rain", label: "Rain" },
   { id: "storm", label: "Storms" },
+  { id: "cloud", label: "Cloud" },
 ];
 
 const MAX_POINTS = 144;
@@ -402,6 +403,12 @@ export const RAIN_RAMP: Ramp = [
   [6, [150, 60, 220]],
   [12, [230, 50, 120]],
 ];
+/** Cloud cover, %: clear sky shows the chart, overcast is a white veil. */
+export const CLOUD_RAMP: Ramp = [
+  [0, [40, 50, 70]],
+  [50, [170, 180, 195]],
+  [100, [245, 248, 252]],
+];
 /** Current, knots. */
 export const CURRENT_RAMP: Ramp = [
   [0, [60, 70, 150]],
@@ -450,6 +457,8 @@ export type WxProbe = {
   rainMm: number | null;
   pressureHpa: number | null;
   capeJkg: number | null;
+  cloudPct: number | null;
+  lowCloudPct: number | null;
 };
 
 const fin = (v: number) => (Number.isFinite(v) ? v : null);
@@ -473,6 +482,8 @@ export function probeAt(f: WeatherField, at: number, lat: number, lng: number): 
     rainMm: f.precipMm ? fin(valueAt(f, f.precipMm[t]!, lat, lng)) : null,
     pressureHpa: f.pressureHpa ? fin(valueAt(f, f.pressureHpa[t]!, lat, lng)) : null,
     capeJkg: f.capeJkg ? fin(valueAt(f, f.capeJkg[t]!, lat, lng)) : null,
+    cloudPct: f.cloudPct ? fin(valueAt(f, f.cloudPct[t]!, lat, lng)) : null,
+    lowCloudPct: f.lowCloudPct ? fin(valueAt(f, f.lowCloudPct[t]!, lat, lng)) : null,
   };
 }
 
