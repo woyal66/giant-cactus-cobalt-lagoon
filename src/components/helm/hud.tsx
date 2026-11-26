@@ -87,6 +87,7 @@ export function TopHud() {
         <div className="pointer-events-auto flex w-[4.75rem] flex-col gap-1.5">
           {/* Chart */}
           <RailBtn
+            tour="centre"
             on={following || follow}
             label={tracking ? (following ? "Following" : "Follow") : !follow ? "Centre" : chartUp === "heading" ? "Head up" : "North up"}
             aria={tracking ? (following ? "Release the chart" : "Follow the track") : !follow ? "Centre on boat" : chartUp === "heading" ? "Heading up. Tap for north up" : "North up. Tap for heading up"}
@@ -124,6 +125,7 @@ export function TopHud() {
           <div className="h-1" aria-hidden />
           {/* Weather: one button for the forecast and the weather map. */}
           <RailBtn
+            tour="weather"
             on={wxLayerOn || panel === "weather"}
             danger={gust >= 25 && !wxLayerOn}
             label="Weather"
@@ -160,6 +162,7 @@ export function TopHud() {
             variant={mob ? "danger" : "helm"}
             size="icon"
             className="h-12 w-full border-2 border-destructive/80"
+            data-tour="mob"
             aria-label={mob ? "Man overboard is marked" : "Man overboard"}
             onClick={() => {
               if (mob) return;
@@ -172,10 +175,10 @@ export function TopHud() {
         </div>
         <div className={`pointer-events-auto flex flex-col items-end gap-1.5 ${wxLayerOn ? "invisible" : ""}`}>
           <div className="flex w-[4.25rem] flex-col gap-1.5">
-            <RailBtn on={panel === "layers"} label="Map" aria="Map: base map, photos, what's shown, offline areas" onClick={() => setPanel(panel === "layers" ? null : "layers")}>
+            <RailBtn tour="map" on={panel === "layers"} label="Map" aria="Map: base map, photos, what's shown, offline areas" onClick={() => setPanel(panel === "layers" ? null : "layers")}>
               <Layers className="size-5" aria-hidden />
             </RailBtn>
-            <RailBtn on={panel === "settings"} label="Settings" aria="Settings: look, text size, units, steering and help" onClick={() => setPanel(panel === "settings" ? null : "settings")}>
+            <RailBtn tour="settings" on={panel === "settings"} label="Settings" aria="Settings: look, text size, units, steering and help" onClick={() => setPanel(panel === "settings" ? null : "settings")}>
               <Settings className="size-5" aria-hidden />
             </RailBtn>
           </div>
@@ -258,7 +261,9 @@ function RailBtn({
   on,
   danger,
   onClick,
+  tour,
 }: {
+  tour?: string;
   children: ReactNode;
   label: string;
   aria: string;
@@ -271,6 +276,7 @@ function RailBtn({
       type="button"
       aria-label={aria}
       aria-pressed={on}
+      data-tour={tour}
       onClick={onClick}
       className={`flex min-h-12 w-full flex-col items-center justify-center gap-0.5 rounded-md border px-0.5 py-1 shadow-[var(--shadow-border)] ${
         danger

@@ -13,7 +13,7 @@ import {
   rodeMath,
   suggestedPayOutM,
 } from "@/lib/anchor";
-import { bowFromGps, gpsReachM, gpsStationLabel } from "@/lib/boat";
+import { bowFromGps, gpsReachM, gpsStationLabel, sounderOffset } from "@/lib/boat";
 import { formatDuration, routeSummary } from "@/lib/measure";
 import { nearestPlaceName, searchPlaces, zoomToFit, type Place } from "@/lib/place-search";
 import { loadHazards } from "@/lib/hazards";
@@ -188,8 +188,6 @@ export function AnchorPanel() {
   const clearFence = useHelm((s) => s.clearFence);
   const setMuted = useHelm((s) => s.setAlarmMuted);
   const rode = useHelm((s) => s.rode);
-  const swingTrailOn = useHelm((s) => s.swingTrailOn);
-  const setSwingTrailOn = useHelm((s) => s.setSwingTrailOn);
   const setRode = useHelm((s) => s.setRode);
   const hull = useHelm((s) => s.hull);
   const setPanel = useHelm((s) => s.setPanel);
@@ -199,6 +197,7 @@ export function AnchorPanel() {
   const distM = bow && anchor ? haversineMeters(bow, anchor) : 0;
   const dist = bow && anchor ? formatMeters(distM) : null;
   const math = rodeMath(rode, gpsReachM(hull));
+  const sounderOff = sounderOffset(hull);
   const loc = anchor ?? boat;
   const pay = suggestedPayOutM(rode, math);
   const letMoreM = Math.round((pay - rode.chainM) * 10) / 10;
@@ -259,7 +258,13 @@ export function AnchorPanel() {
       ) : null}
       {anchor?.radiusLocked ? <NightCheckCard radiusM={anchor.radiusM} compact /> : null}
       <div className="mb-2 grid grid-cols-2 gap-2">
-        <UnitStepField label="Depth" kind="depth" valueM={rode.depthM} steps={{ m: 0.2, ft: 1, fm: 0.5 }} onChange={(n) => setRode({ depthM: n })} />
+        <UnitStepField
+          label={sounderOff > 0 ? "Sounder reads" : "Depth"}
+          kind="depth"
+          valueM={Math.max(0, rode.depthM - sounderOff)}
+          steps={{ m: 0.2, ft: 1, fm: 0.5 }}
+          onChange={(n) => setRode({ depthM: n + sounderOff })}
+        />
         <UnitStepField label="Chain out" kind="length" valueM={rode.chainM} steps={{ m: 5, ft: 10 }} onChange={(n) => setRode({ chainM: n })} />
       </div>
       <div className="mb-2 rounded-lg border border-border bg-background px-3 py-2">
@@ -324,7 +329,7 @@ export function AnchorPanel() {
               </div>
             </div>
           ) : null}
-          <ToggleRow label="Swing trail" on={swingTrailOn} onChange={setSwingTrailOn} />
+          <p className="mb-1 text-t13 leading-snug text-muted-foreground">The line on the chart is where the boat has swung since the alarm was set. It is only shown, not saved.</p>
           <p className="text-t13 leading-snug text-muted-foreground">
             {isNativeApp()
               ? "Lock the phone and sleep: the watch keeps checking the GPS with the screen off. The alarm needs the boat outside the circle for 12 s, and ignores fixes too vague to judge. GPS lost sounds after 60 s without a fix. Keep the phone on charge, and don't swipe Anchor Mate closed."
@@ -809,7 +814,7 @@ export function SettingsPanel() {
               useHelm.getState().setGuideDone(false);
             }}
           >
-            Show the getting-started guide
+            Show the tour of the main buttons
           </Button>
           <p className="text-t13 leading-snug text-muted-foreground">
             Seamarks and depth contours from OpenSeaMap sit over the satellite. Navionics charts need Garmin’s native marine SDK, so they can't be shown here.{" "}

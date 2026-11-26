@@ -765,5 +765,5 @@ svg[aria-label] text {
 .rp-wxdim.rp-wxdim.rp-wxdim .leaflet-satOverlay-pane,
 .rp-wxdim.rp-wxdim.rp-wxdim .leaflet-satHi-pane,
 .rp-wxdim.rp-wxdim.rp-wxdim .leaflet-chartOverlay-pane {
-  filter: brightness(0.42) saturate(0.35);
+  filter: brightness(0.72) saturate(0.7);
 }

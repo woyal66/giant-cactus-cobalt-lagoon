@@ -217,8 +217,9 @@ export function hoursUntil(at: number | null, now = Date.now()): string {
   return min ? `${hr} h ${min} m` : `${hr} h`;
 }
 
-export const SWING_TRAIL_STEP_M = 3;
-export const SWING_TRAIL_MAX = 800;
+/** The swing trail: a point every 2 m, a whole night kept (on screen only, never saved). */
+export const SWING_TRAIL_STEP_M = 2;
+export const SWING_TRAIL_MAX = 3000;
 
 export function appendSwingTrail(trail: LatLng[], p: LatLng): LatLng[] {
   const last = trail[trail.length - 1];

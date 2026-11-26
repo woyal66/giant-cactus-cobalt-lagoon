@@ -10,17 +10,21 @@ import {
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { rodeMath, formatTideClock } from "@/lib/anchor";
-import { gpsReachM } from "@/lib/boat";
+import { gpsReachM, sounderOffset } from "@/lib/boat";
 import { unlockAlarmAudio } from "@/hooks/helm-runtime";
 import { armWatchAlerts } from "@/lib/watch-notify";
 import { tapFeel } from "@/lib/haptics";
 import { useWx } from "@/hooks/weather";
-import { fetchTideRise, latDatumM, tideRiseAt, toLatM } from "@/lib/tides";
+import { fetchTideRise, latDatumM, tideRiseAt, toLatM, type TideRise } from "@/lib/tides";
+
+/** Tide curves fetched while setting the anchor, kept for half an hour. */
+const tideCache = new Map<string, { at: number; d: TideRise }>();
 import type { SeaState } from "@/lib/weather";
 import { AnchorWxCard } from "@/components/helm/weather";
 import { NightCheckCard } from "@/components/helm/night-check-card";
 import { useHelm } from "@/store/helm";
 import {
+  formatDepth,
   depthSuffix,
   depthWheel,
   formatLength,
@@ -134,6 +138,7 @@ export function BottomDock() {
     <nav className="pointer-events-none absolute inset-x-0 bottom-0 z-20 p-2 pb-[max(0.5rem,var(--safe-area-inset-bottom,env(safe-area-inset-bottom)))]">
       <div className="pointer-events-auto mx-auto grid max-w-lg grid-cols-3 gap-0.5 rounded-xl border border-border bg-card p-1 shadow-[var(--shadow-border)]">
         <DockBtn
+          tour="navigation"
           active={panel === "passages" || panel === "rename"}
           label="Navigation"
           onClick={() => toggle("passages")}
@@ -141,6 +146,7 @@ export function BottomDock() {
           <Compass />
         </DockBtn>
         <DockBtn
+          tour="route"
           active={panel === "route"}
           label="Route"
           onClick={() => {
@@ -152,6 +158,7 @@ export function BottomDock() {
           <RouteIcon />
         </DockBtn>
         <DockBtn
+          tour="anchor"
           active={panel === "anchor"}
           label={breach ? "Alarm" : watching ? "Watch" : "Anchor"}
           // Filled only while the watch runs (red on alarm), so the dock shows the watch state.
@@ -182,7 +189,9 @@ function DockBtn({
   onClick,
   emphasize,
   danger,
+  tour,
 }: {
+  tour?: string;
   active: boolean;
   label: string;
   children: ReactNode;
@@ -193,6 +202,7 @@ function DockBtn({
   return (
     <Button
       variant={danger ? "danger" : active || emphasize ? "default" : "ghost"}
+      data-tour={tour}
       onClick={onClick}
       className="h-14 flex-col gap-1 rounded-lg px-1 text-t13 font-semibold [&_svg]:size-5"
     >
@@ -220,23 +230,25 @@ function AnchorSetBar() {
   const math = rodeMath(rode, gpsReachM(hull));
   const astern =
     boat?.heading != null ? Math.round((boat.heading + 180) % 360) : null;
+  // The tide curve for here, so the rise to the next high water is worked out from the tide
+  // NOW, every time. (It used to be fetched once and kept, so it could be hours out of date.)
   const tideKey =
-    boat && (step === "depth" || step === "chain") && !rode.tideManual && !rode.tideHighAt
-      ? `${boat.lat.toFixed(2)},${boat.lng.toFixed(2)}`
-      : null;
+    boat && (step === "depth" || step === "chain") && !rode.tideManual ? `${boat.lat.toFixed(2)},${boat.lng.toFixed(2)}` : null;
+  const [tide, setTide] = useState<TideRise | null>(null);
   useEffect(() => {
     if (!tideKey) return;
     const [lat, lng] = tideKey.split(",").map(Number);
     if (lat == null || lng == null) return;
+    const hit = tideCache.get(tideKey);
+    if (hit && Date.now() - hit.at < 30 * 60_000) {
+      setTide(hit.d);
+      return;
+    }
     let stop = false;
     fetchTideRise(lat, lng)
       .then((d) => {
-        if (stop || !d.highAt) return;
-        useHelm.getState().setRode({
-          tideRiseM: d.riseM,
-          tideHighAt: d.highAt,
-          tideManual: false,
-        });
+        tideCache.set(tideKey, { at: Date.now(), d });
+        if (!stop) setTide(d);
       })
       .catch(() => {
         /* no signal: keep the tide the skipper entered */
@@ -245,6 +257,18 @@ function AnchorSetBar() {
       stop = true;
     };
   }, [tideKey]);
+  const live = tide && !rode.tideManual ? tideRiseAt(tide.turns, tide.hours, Date.now()) : null;
+  const liveRise = live?.high ? live.riseM : null;
+  const liveHighAt = live?.high?.at ?? null;
+  useEffect(() => {
+    if (liveRise == null || liveHighAt == null) return;
+    const r = useHelm.getState().rode;
+    if (Math.abs(r.tideRiseM - liveRise) > 0.05 || r.tideHighAt !== liveHighAt) {
+      useHelm.getState().setRode({ tideRiseM: liveRise, tideHighAt: liveHighAt, tideManual: false });
+    }
+  }, [liveRise, liveHighAt]);
+  // A rise saved for a high water that has already passed means nothing now.
+  const staleRise = !live && !rode.tideManual && rode.tideHighAt != null && rode.tideHighAt < Date.now();
 
   return (
     <div className="pointer-events-none absolute inset-x-0 bottom-0 z-30 p-2 pb-[max(0.5rem,var(--safe-area-inset-bottom,env(safe-area-inset-bottom)))]">
@@ -262,9 +286,12 @@ function AnchorSetBar() {
             chain={rode.chainM}
             scope={rode.scopeTarget}
             bowM={rode.bowM}
-            tideM={rode.tideRiseM}
-            highAt={rode.tideHighAt}
+            tideM={staleRise ? 0 : rode.tideRiseM}
+            highAt={staleRise ? null : rode.tideHighAt}
+            tideNowM={live?.nowM ?? null}
+            highM={live?.high?.m ?? null}
             draftM={hull.draftM}
+            sounderM={sounderOffset(hull)}
             onCancel={cancel}
             onOk={(depthM, chainM, scopeTarget) => {
               setRode({ depthM, chainM, scopeTarget });
@@ -352,16 +379,23 @@ function RodeDials({
   bowM,
   tideM,
   highAt,
+  tideNowM,
+  highM,
   draftM,
+  sounderM,
   onOk,
   onCancel,
 }: {
+  /** Added to the sounder reading for the depth of water (0 = sounder reads from the surface). */
+  sounderM: number;
   depth: number;
   chain: number;
   scope: number;
   bowM: number;
   tideM: number;
   highAt: number | null;
+  tideNowM: number | null;
+  highM: number | null;
   draftM: number;
   onOk: (depthM: number, chainM: number, scope: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10) => void;
   onCancel: () => void;
@@ -374,10 +408,11 @@ function RodeDials({
   const depths = useMemo(() => wheelValues(dw.min, dw.max, dw.step), [dw.min, dw.max, dw.step]);
   const chains = useMemo(() => wheelValues(lw.min, lw.max, lw.step), [lw.min, lw.max, lw.step]);
   const scopes = useMemo(() => wheelValues(1, 10, 1), []);
-  const [depthV, setDepthV] = useState(() => nearest(depths, toDepth(depth, depthUnit)));
+  // The depth wheel is the sounder reading; the water depth is the reading plus the offset.
+  const [depthV, setDepthV] = useState(() => nearest(depths, toDepth(Math.max(0, depth - sounderM), depthUnit)));
   const [chainV, setChainV] = useState(() => nearest(chains, toLength(chain, lengthUnit)));
   const [scopeN, setScopeN] = useState(() => nearest(scopes, scope));
-  const depthM = fromDepth(depthV, depthUnit);
+  const depthM = fromDepth(depthV, depthUnit) + sounderM;
   const chainM = fromLength(chainV, lengthUnit);
   const rise = Math.max(0, tideM);
   const need = Math.ceil(scopeN * (depthM + bowM + rise));
@@ -401,7 +436,7 @@ function RodeDials({
           onChange={setChainV}
         />
         <Wheel
-          label="Depth"
+          label={sounderM > 0 ? "Sounder" : "Depth"}
           value={depthV}
           values={depths}
           step={dw.step}
@@ -410,9 +445,26 @@ function RodeDials({
           onChange={setDepthV}
         />
       </div>
-      <p className={`mt-2 text-center text-sm font-medium ${enough ? "text-emerald-300" : "text-destructive"}`}>
+      {sounderM > 0 ? (
+        <p className="mt-2 text-center text-t14 text-foreground">
+          Sounder {formatDepth(depthM - sounderM)} + {formatDepth(sounderM)} {hullSounderWord(sounderM, draftM)} = {formatDepth(depthM)} of water
+        </p>
+      ) : null}
+      {/* The next high tide, and how much the water will rise from now. */}
+      {tideNowM != null && highM != null ? (
+        <p className="mt-2 text-center text-t14 text-foreground">
+          Tide now {formatDepth(tideNowM)} · next high {formatDepth(highM)}
+          {highWhen(highAt)}: water rises {formatDepth(rise)}
+        </p>
+      ) : rise <= 0.05 ? (
+        <p className="mt-2 text-center text-t13 text-muted-foreground">Tide not known here (no signal): allow for the rise yourself.</p>
+      ) : null}
+      <p className={`mt-1 text-center text-t15 font-semibold ${enough ? "text-emerald-300" : "text-destructive"}`}>
         {enough ? "Enough" : "Short"} · {formatLength(need)} for {scopeN}:1
-        {rise > 0.05 ? ` at high water${highWhen(highAt)}` : ""}
+        {rise > 0.05 ? ` at high water` : ""}
+      </p>
+      <p className="text-center text-t12 text-muted-foreground tabular-nums">
+        ({formatDepth(depthM)} depth{rise > 0.05 ? ` + ${formatDepth(rise)} rise` : ""} + {formatDepth(bowM)} bow) × {scopeN} = {formatLength(need)}
       </p>
       <Row
         cancel="Cancel"
@@ -422,6 +474,10 @@ function RodeDials({
       />
     </div>
   );
+}
+
+function hullSounderWord(offsetM: number, draftM: number) {
+  return Math.abs(offsetM - draftM) < 0.01 ? "keel" : "offset";
 }
 
 function tideAboveLat(sea: SeaState | null): number | null {

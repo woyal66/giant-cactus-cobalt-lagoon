@@ -10,7 +10,18 @@ export type BoatSetup = {
   gpsFromBowM: number;
   /** Metres to starboard of the centreline. */
   gpsFromCenterM: number;
+  /**
+   * Where the depth sounder measures from: the surface (true depth), below the keel (add the
+   * draft), or a set offset (e.g. a transducer 0.5 m below the waterline).
+   */
+  sounder: "surface" | "keel" | "offset";
+  sounderOffsetM: number;
 };
+
+/** Metres to add to the sounder reading to get the depth of water from the surface. */
+export function sounderOffset(b: Pick<BoatSetup, "sounder" | "sounderOffsetM" | "draftM">): number {
+  return b.sounder === "keel" ? b.draftM : b.sounder === "offset" ? b.sounderOffsetM : 0;
+}
 
 export type GpsStationId = "bow" | "helm" | "cabin" | "stern";
 
@@ -21,6 +32,8 @@ export const DEFAULT_BOAT: BoatSetup = {
   bowM: 1.5,
   gpsFromBowM: 0,
   gpsFromCenterM: 0,
+  sounder: "surface",
+  sounderOffsetM: 0,
 };
 
 function n(v: unknown, fallback: number, max = 80) {
@@ -53,6 +66,8 @@ export function clampBoat(
     bowM: bow,
     gpsFromBowM: along,
     gpsFromCenterM: off,
+    sounder: partial.sounder === "keel" || partial.sounder === "offset" || partial.sounder === "surface" ? partial.sounder : (base.sounder ?? "surface"),
+    sounderOffsetM: n(partial.sounderOffsetM, base.sounderOffsetM ?? 0, 10),
   };
 }
 
