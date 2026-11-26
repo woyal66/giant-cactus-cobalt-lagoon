@@ -26,6 +26,8 @@ import {
   ATTR_ESRI,
   ATTR_GOOGLE,
   ATTR_HERE,
+  ATTR_GOV,
+  LICENSED_IMAGERY_ONLY,
   ATTR_MAPBOX,
   ATTR_OPENSEAMAP,
   KEYED,
@@ -500,7 +502,8 @@ function nativeZoom(id: ImageryId): number {
   if (id === "google" || id === "auto") return 21;
   if (id === "maptiler") return 20;
   if (id === "bing") return 19;
-  if (id === "mapbox" || id === "here") return 20;
+  if (id === "mapbox" || id === "here" || id === "gov") return 20;
+  if (id === "sentinel") return LICENSED_IMAGERY_ONLY ? 15 : 18;
   return 18;
 }
 
@@ -612,7 +615,9 @@ export function MapView() {
                     ? ATTR_MAPBOX
                     : id === "here"
                       ? ATTR_HERE
-                      : ATTR_ESRI;
+                      : id === "gov"
+                        ? ATTR_GOV
+                        : ATTR_ESRI;
         // Auto credits every source it may draw from in this build.
         const attrFor = (id: ImageryId) =>
           id === "auto"

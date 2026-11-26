@@ -9,7 +9,7 @@ import {
 } from "./imagery.ts";
 import { nearestReef } from "./reefs.ts";
 
-export type OfflineSource = "maxar" | "sentinel" | "maptiler";
+export type OfflineSource = "maxar" | "sentinel" | "maptiler" | "gov";
 export type PackQuality = "helm" | "close";
 export type PackZoom = 16 | 17 | 18 | 19 | 20;
 
@@ -56,6 +56,9 @@ function packSources(): OfflineSource[] {
   const out: OfflineSource[] = [];
   if (sourceReady("maptiler")) out.push("maptiler");
   if (!LICENSED_IMAGERY_ONLY) out.push("sentinel", "maxar");
+  // Openly licensed (CC BY 4.0 / public domain), so they may be saved: Sentinel-2 2016 and the
+  // government aerial photos where one covers the area.
+  else out.push("gov", "sentinel");
   return out;
 }
 const SOURCES: OfflineSource[] = packSources();
@@ -65,7 +68,7 @@ export const PACK_ZOOMS: PackZoom[] = [16, 17, 18, 19, 20];
  * which shows the level one deeper than the map zoom; it is only saved where the source
  * really has it, so packs don't fill with stretched copies.
  */
-export const SOURCE_MAX_Z: Record<OfflineSource, number> = { maptiler: 20, maxar: 19, sentinel: 19 };
+export const SOURCE_MAX_Z: Record<OfflineSource, number> = { maptiler: 20, maxar: 19, sentinel: LICENSED_IMAGERY_ONLY ? 15 : 19, gov: 19 };
 
 let abort: AbortController | null = null;
 
@@ -218,6 +221,7 @@ export function tileKey(source: OfflineSource, z: number, x: number, y: number) 
 
 export function tileUrl(source: OfflineSource, z: number, x: number, y: number) {
   if (source === "maptiler") return satTileUrl("maptiler", x, y, z);
+  if (source === "gov") return satTileUrl("gov", x, y, z);
   const t = source === "maxar" ? ESRI_URL : SENTINEL_URL;
   return t
     .replace("{z}", String(z))
@@ -347,6 +351,8 @@ export async function downloadPack(
       const r = tileRange(b, z);
       for (let x = r.x0; x <= r.x1; x += 1) {
         for (let y = r.y0; y <= r.y1; y += 1) {
+          // No free government service here: nothing to save for that source.
+          if (source === "gov" && !tileUrl(source, z, x, y)) continue;
           jobs.push({ source, z, x, y });
         }
       }

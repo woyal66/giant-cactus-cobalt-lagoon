@@ -37,6 +37,12 @@ export function Privacy() {
             unless you set it up, and turning it off stops all sending.
           </p>
           <p>
+            If you choose to share a track to the online track library, its points, name, location
+            label and comment are published for other users to find and save. Your name and contact
+            details are not sent. Shared tracks are stored with Supabase, and only the phone that
+            shared a track can remove it. Nothing is shared unless you tap Share.
+          </p>
+          <p>
             Backups are files you save yourself, for example to iCloud Drive or Google Drive. They
             contain your tracks and settings, not your anchor watch.
           </p>

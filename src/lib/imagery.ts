@@ -12,7 +12,12 @@
  *   VITE_AZURE_MAPS_KEY           Microsoft (Bing) aerial through Azure Maps
  *   VITE_MAPBOX_TOKEN             Mapbox Satellite
  *   VITE_HERE_KEY                 HERE satellite
+ *   VITE_LINZ_KEY                 New Zealand aerial (free LINZ Basemaps key)
  *   VITE_LICENSED_IMAGERY_ONLY=1  hides every source above without a licence
+ * Free and open, always offered (and saved in offline packs):
+ *   sentinel (store build)  - EOX Sentinel-2 cloudless 2016, CC BY 4.0 (the 2018+ years are non-commercial)
+ *   gov                     - government aerial photos: NSW Spatial Services and Queensland (CC BY 4.0),
+ *                             LINZ New Zealand (CC BY 4.0, needs VITE_LINZ_KEY), USGS (public domain)
  * The four keyed online services above are never saved in offline packs (their terms don't
  * allow bulk saving); they are kept only in the short in-memory tile cache while viewing.
  */
@@ -23,6 +28,7 @@ const GOOGLE_KEY = ENV.VITE_GOOGLE_TILES_KEY || "";
 const AZURE_KEY = ENV.VITE_AZURE_MAPS_KEY || "";
 const MAPBOX_TOKEN = ENV.VITE_MAPBOX_TOKEN || "";
 const HERE_KEY = ENV.VITE_HERE_KEY || "";
+const LINZ_KEY = ENV.VITE_LINZ_KEY || "";
 export const LICENSED_IMAGERY_ONLY = ENV.VITE_LICENSED_IMAGERY_ONLY === "1";
 
 export type ImageryId =
@@ -34,7 +40,8 @@ export type ImageryId =
   | "sentinel"
   | "maptiler"
   | "mapbox"
-  | "here";
+  | "here"
+  | "gov";
 
 export const IMAGERY: {
   id: ImageryId;
@@ -113,8 +120,16 @@ export const IMAGERY: {
     markFg: "#0b1f1e",
   },
   {
+    id: "gov",
+    name: "Government aerial (free)",
+    detail: "Sharp free aerial photos where a government publishes them: NSW, Queensland, New Zealand and the USA. Elsewhere another photo fills in.",
+    mark: "F",
+    markBg: "#7c3aed",
+    markFg: "#ffffff",
+  },
+  {
     id: "sentinel",
-    name: "Sentinel-2 cloudless",
+    name: ENV.VITE_LICENSED_IMAGERY_ONLY === "1" ? "Sentinel-2 (2016, free)" : "Sentinel-2 cloudless",
     detail: "10 m colour of the whole ocean. Soft on purpose — the reef shapes stay, the bommies do not.",
     mark: "S",
     markBg: "#3d5a80",
@@ -127,7 +142,14 @@ export const ESRI_URL =
 export const CLARITY_URL =
   "https://clarity.maptiles.arcgis.com/arcgis/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}";
 export const SENTINEL_URL =
-  "https://tiles.maps.eox.at/wmts/1.0.0/s2cloudless-2024_3857/default/g/{z}/{y}/{x}.jpg";
+  ENV.VITE_LICENSED_IMAGERY_ONLY === "1"
+    ? "https://tiles.maps.eox.at/wmts/1.0.0/s2cloudless_3857/default/g/{z}/{y}/{x}.jpg"
+    : "https://tiles.maps.eox.at/wmts/1.0.0/s2cloudless-2024_3857/default/g/{z}/{y}/{x}.jpg";
+/** Free government aerial services, chosen by where the tile is. */
+export const NSW_URL = "https://maps.six.nsw.gov.au/arcgis/rest/services/public/NSW_Imagery/MapServer/tile/{z}/{y}/{x}";
+export const QLD_IMAGE_SERVER = "https://spatial-img.information.qld.gov.au/arcgis/rest/services/Basemaps/LatestStateProgram_AllUsers/ImageServer";
+export const USGS_URL = "https://basemap.nationalmap.gov/arcgis/rest/services/USGSImageryOnly/MapServer/tile/{z}/{y}/{x}";
+export const LINZ_URL = "https://basemaps.linz.govt.nz/v1/tiles/aerial/WebMercatorQuad/{z}/{x}/{y}.webp";
 export const GOOGLE_URL =
   "https://mt{s}.google.com/vt/lyrs=s&x={x}&y={y}&z={z}";
 export const LABELS_URL =
@@ -167,7 +189,12 @@ export const GARMIN_SDK_REQUEST_URL =
   "https://www.garmin.com/en-US/forms/navionics-mobile-sdk/";
 
 export const ATTR_ESRI = "Maxar © Esri, Maxar, Earthstar Geographics";
-export const ATTR_SENTINEL = "Sentinel-2 cloudless © EOX / Copernicus";
+export const ATTR_SENTINEL =
+  ENV.VITE_LICENSED_IMAGERY_ONLY === "1"
+    ? "Sentinel-2 cloudless 2016 by EOX IT Services GmbH (modified Copernicus Sentinel data 2016 & 2017), CC BY 4.0"
+    : "Sentinel-2 cloudless © EOX / Copernicus";
+export const ATTR_GOV =
+  "Aerial: © Spatial Services NSW, © State of Queensland, © LINZ (CC BY 4.0); USGS (public domain)";
 export const ATTR_GOOGLE = "Imagery © Google";
 export const ATTR_BING = AZURE_KEY ? "© Microsoft Azure Maps, imagery © Microsoft and its providers" : "Aerial © Microsoft";
 export const ATTR_MAPBOX = "© Mapbox © Maxar © OpenStreetMap contributors";
@@ -197,6 +224,9 @@ export function sourceReady(id: SatSource): boolean {
   if (id === "maptiler") return Boolean(MAPTILER_KEY);
   if (id === "mapbox") return Boolean(MAPBOX_TOKEN);
   if (id === "here") return Boolean(HERE_KEY);
+  if (id === "gov") return true;
+  // The store build shows the 2016 Sentinel-2 mosaic, which is CC BY 4.0.
+  if (id === "sentinel" && LICENSED_IMAGERY_ONLY) return true;
   if (id === "google" && GOOGLE_KEY) return true;
   if (id === "bing" && AZURE_KEY) return true;
   if (!LICENSED_IMAGERY_ONLY) return true;
@@ -314,6 +344,7 @@ export function bingTileUrl(x: number, y: number, z: number): string {
 export function isImageryId(v: unknown): v is ImageryId {
   return (
     v === "mapbox" ||
+    v === "gov" ||
     v === "here" ||
     v === "auto" ||
     v === "google" ||
@@ -336,6 +367,7 @@ export function imageryShort(id: ImageryId): string {
   if (id === "maptiler") return "MapTiler";
   if (id === "mapbox") return "Mapbox";
   if (id === "here") return "HERE";
+  if (id === "gov") return "Gov aerial";
   return "Sentinel";
 }
 
@@ -352,6 +384,7 @@ export function satTileUrl(id: SatSource, x: number, y: number, z: number): stri
   if (id === "bing" && AZURE_KEY) return azureUrl(x, y, z);
   if (id === "mapbox") return `${fill(MAPBOX_URL, x, y, z)}?access_token=${MAPBOX_TOKEN}`;
   if (id === "here") return `${fill(HERE_URL, x, y, z)}?style=satellite.day&apiKey=${HERE_KEY}`;
+  if (id === "gov") return govTileUrl(x, y, z);
   if (id === "maxar" && ESRI_KEY) return `${fill(ESRI_KEYED_URL, x, y, z)}?token=${ESRI_KEY}`;
   if (id === "bing") return bingTileUrl(x, y, z);
   if (id === "google") {
@@ -363,6 +396,39 @@ export function satTileUrl(id: SatSource, x: number, y: number, z: number): stri
     .replace("{z}", String(z))
     .replace("{y}", String(y))
     .replace("{x}", String(x));
+}
+
+/** Which government aerial service covers a tile, by its centre. */
+export function govRegion(x: number, y: number, z: number): "nsw" | "qld" | "nz" | "usa" | null {
+  const n = 2 ** z;
+  const lng = ((x + 0.5) / n) * 360 - 180;
+  const lat = (Math.atan(Math.sinh(Math.PI * (1 - (2 * (y + 0.5)) / n))) * 180) / Math.PI;
+  if (lat > -48 && lat < -34 && lng > 165.5 && lng < 179) return "nz";
+  if (lat > -37.6 && lat < -28.16 && lng > 140.9 && lng < 154) return "nsw";
+  if (lat > -29.2 && lat < -9 && lng > 137.9 && lng < 154) return "qld";
+  if (lat > 24.3 && lat < 49.5 && lng > -125 && lng < -66.5) return "usa";
+  return null;
+}
+
+/** Tile edges in Web Mercator metres (for ArcGIS ImageServer exportImage). */
+function tileBox3857(x: number, y: number, z: number): [number, number, number, number] {
+  const size = (2 * Math.PI * 6378137) / 2 ** z;
+  const west = -Math.PI * 6378137 + x * size;
+  const north = Math.PI * 6378137 - y * size;
+  return [west, north - size, west + size, north];
+}
+
+/** Government aerial tile URL, or "" where no free service covers the tile (another source fills in). */
+export function govTileUrl(x: number, y: number, z: number): string {
+  const r = govRegion(x, y, z);
+  if (r === "nsw" && z <= 20) return fill(NSW_URL, x, y, z);
+  if (r === "qld" && z <= 20) {
+    const b = tileBox3857(x, y, z).map((v) => v.toFixed(2)).join(",");
+    return `${QLD_IMAGE_SERVER}/exportImage?bbox=${b}&bboxSR=3857&imageSR=3857&size=256,256&format=jpg&f=image`;
+  }
+  if (r === "nz" && LINZ_KEY && z <= 21) return `${fill(LINZ_URL, x, y, z)}?api=${LINZ_KEY}`;
+  if (r === "usa" && z <= 16) return fill(USGS_URL, x, y, z);
+  return "";
 }
 
 function azureUrl(x: number, y: number, z: number): string {
@@ -377,9 +443,9 @@ function azureUrl(x: number, y: number, z: number): string {
 export function autoSatOrder(z: number): SatSource[] {
   const order: SatSource[] =
     z >= 18
-      ? ["google", "maptiler", "mapbox", "bing", "here", "clarity", "maxar", "sentinel"]
+      ? ["google", "maptiler", "mapbox", "gov", "bing", "here", "clarity", "maxar", "sentinel"]
       : z >= 14
-        ? ["clarity", "maptiler", "mapbox", "google", "bing", "here", "maxar", "sentinel"]
+        ? ["clarity", "maptiler", "mapbox", "gov", "google", "bing", "here", "maxar", "sentinel"]
         : ["sentinel", "maptiler", "mapbox", "clarity", "google", "bing", "here", "maxar"];
   return order.filter((id) => sourceReady(id) && !(id === "google" && GOOGLE_KEY));
 }
@@ -392,7 +458,7 @@ export function satTileTemplate(id: SatSource): string | null {
   if (id === "bing" && AZURE_KEY) return azureUrl(0, 0, 0).replace("zoom=0&x=0&y=0", "zoom={z}&x={x}&y={y}");
   if (id === "mapbox") return `${MAPBOX_URL}?access_token=${MAPBOX_TOKEN}`;
   if (id === "here") return `${HERE_URL}?style=satellite.day&apiKey=${HERE_KEY}`;
-  if (id === "bing") return null;
+  if (id === "bing" || id === "gov") return null;
   if (id === "google") return "https://mt0.google.com/vt/lyrs=s&x={x}&y={y}&z={z}";
   if (id === "maptiler") return `${MAPTILER_URL}?key=${MAPTILER_KEY}`;
   if (id === "maxar" && ESRI_KEY) return `${ESRI_KEYED_URL}?token=${ESRI_KEY}`;
