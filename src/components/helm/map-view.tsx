@@ -56,6 +56,7 @@ import { squareFromCorners } from "@/lib/offline-tiles";
 import { toast } from "sonner";
 import { measure } from "@/lib/measure";
 import { createRadar } from "@/components/helm/radar-layer";
+import { createPlacesLayer } from "@/components/helm/places-layer";
 import { createWxLive } from "@/components/helm/wx-live";
 import type { RainNow } from "@/components/helm/rain-now";
 import { radarAvailable } from "@/lib/radar";
@@ -64,7 +65,7 @@ import { createAnchorageLayer } from "@/components/helm/anchorage-layer";
 import { createLandLayer } from "@/components/helm/land-layer";
 import { speedColor } from "@/lib/trip";
 import { createHazardLayer } from "@/components/helm/hazard-layer";
-import { OFFICIAL_CHARTS } from "@/lib/official-charts";
+import { OFFICIAL_CHARTS, arcgisTileUrl } from "@/lib/official-charts";
 import { createWxLayer } from "@/components/helm/wx-layer";
 import { setViewField } from "@/lib/wx-view";
 import { createChartLayer } from "@/components/helm/chart-layer";
@@ -725,6 +726,11 @@ export function MapView() {
         const reefs = createHazardLayer(L, MAX_ZOOM);
         // Other skippers' shared anchorages (online library), once zoomed in.
         const anchorages = createAnchorageLayer(L, map);
+        const placesLayer = createPlacesLayer(L, map);
+        const onPlaceShared = (e: Event) => placesLayer.add((e as CustomEvent).detail);
+        const onPlaceRemoved = (e: Event) => placesLayer.remove((e as CustomEvent<string>).detail);
+        window.addEventListener("helm:place-shared", onPlaceShared);
+        window.addEventListener("helm:place-removed", onPlaceRemoved);
         // Land heights: hill shading and height lines (free worldwide terrain tiles).
         const land = createLandLayer(L, MAX_ZOOM);
         const onShared = (e: Event) => anchorages.add((e as CustomEvent).detail);
@@ -735,8 +741,23 @@ export function MapView() {
         // is requested outside it. Under the reef outlines and seamarks.
         const official = L.layerGroup(
           OFFICIAL_CHARTS.flatMap((c) =>
-            c.boxes.map(([w, s, e, n]) =>
-              L.tileLayer.wms(c.url, {
+            c.boxes.map(([w, s, e, n]) => {
+              if (c.kind === "arcgis-image") {
+                const Arc = L.TileLayer.extend({
+                  getTileUrl(this: TileLayer, t: { x: number; y: number; z: number }) {
+                    return arcgisTileUrl(c.url, t.z, t.x, t.y);
+                  },
+                });
+                return new (Arc as unknown as new (url: string, o: import("leaflet").TileLayerOptions) => TileLayer)("", {
+                  maxZoom: MAX_ZOOM,
+                  minZoom: c.minZoom,
+                  bounds: L.latLngBounds([s, w], [n, e]),
+                  pane: "chartOverlay",
+                  attribution: c.attribution,
+                  zIndex: 0,
+                });
+              }
+              return L.tileLayer.wms(c.url, {
                 layers: c.layers,
                 format: "image/png",
                 transparent: true,
@@ -747,8 +768,8 @@ export function MapView() {
                 pane: "chartOverlay",
                 attribution: c.attribution,
                 zIndex: 0,
-              }),
-            ),
+              });
+            }),
           ),
         );
         let officialOn = false;
@@ -845,6 +866,9 @@ export function MapView() {
           wxLayer.destroy();
           wxLive.destroy();
           anchorages.destroy();
+          placesLayer.destroy();
+          window.removeEventListener("helm:place-shared", onPlaceShared);
+          window.removeEventListener("helm:place-removed", onPlaceRemoved);
           window.removeEventListener("helm:anchorage-shared", onShared);
           window.removeEventListener("helm:anchorage-removed", onRemoved);
         };
@@ -1567,6 +1591,7 @@ export function MapView() {
           }
           radar.set(s.radar && radarAvailable());
           anchorages.set(s.sharedAnchorages);
+          placesLayer.set(s.places, s.placeKinds.join(","));
           if (s.landHeights && !map.hasLayer(land)) land.addTo(map);
           else if (!s.landHeights && map.hasLayer(land)) map.removeLayer(land);
           if (s.wxMapLayer !== "off") wxLoad();

@@ -1,6 +1,7 @@
 import type { LayerGroup, Map as LeafletMap } from "leaflet";
 import { anchoragesInView, anchoragesOn, type SharedAnchorage } from "@/lib/anchorage-library";
 import { useHelm } from "@/store/helm";
+import { cachedInView, remember } from "@/lib/library-cache";
 
 type LeafletNS = typeof import("leaflet");
 
@@ -54,11 +55,16 @@ export function createAnchorageLayer(L: LeafletNS, map: LeafletMap) {
       void anchoragesInView(box)
         .then((list) => {
           for (const a of list) seen.set(a.id, a);
+          void remember("anchorages", box, list, list.length < 200);
           draw();
         })
         .catch(() => {
-          // No signal: try this view again next time the map settles.
+          // No signal: show what's saved on the phone, and try online again next time.
           lastBox = "";
+          void cachedInView<SharedAnchorage>("anchorages", box).then((list) => {
+            for (const a of list) seen.set(a.id, a);
+            draw();
+          });
         });
     }, 700);
   };

@@ -16,6 +16,7 @@ import { isTopic } from "@/lib/remote-watch";
 import type { DriftPoint } from "@/lib/mob";
 import type { CellTrend } from "@/lib/radar";
 import { WX_MAP_LAYERS, type WxMapLayer } from "@/lib/wx-map";
+import { PLACE_KINDS, type PlaceKind } from "@/lib/place-library";
 import { readBoatType, type BoatPerf, type BoatType, type PolarTune } from "@/lib/routing/polar";
 import { EMPTY_LEARNED, readLearned, type LearnedPolar, type PerfLive } from "@/lib/routing/learned";
 import { DEFAULT_LIMITS, DEFAULT_RULES, type Limits, type RouteRules } from "@/lib/routing/router";
@@ -281,6 +282,14 @@ export type HelmState = {
   /** Phone low and not charging: animations step down (see useBatterySaver). Not persisted. */
   lowBattery: boolean;
   /** The shared anchorage tapped on the chart. */
+  /** Places on the chart (moorings, ramps, marinas...): on, and which kinds. */
+  places: boolean;
+  placeKinds: import("@/lib/place-library").PlaceKind[];
+  /** Tapped place, and where "Add a place" was started (not saved). */
+  placeCard: import("@/lib/place-library").SharedPlace | null;
+  addPlaceAt: LatLng | null;
+  /** Places this phone shared, with the secret that removes them. */
+  myPlaces: Array<{ id: string; secret: string; lat: number; lng: number }>;
   anchorageCard: import("@/lib/anchorage-library").SharedAnchorage | null;
   /** Anchorages shared from this phone, with the secret that removes each. */
   mySharedAnchorages: Array<{ id: string; secret: string; lat: number; lng: number }>;
@@ -613,6 +622,9 @@ function persistSig(state: Record<string, unknown>): string {
     state.usePace,
     state.keepScreenOn,
     state.mySharedAnchorages,
+    state.places,
+    state.placeKinds,
+    state.myPlaces,
     state.look,
     state.autoNight,
     state.depthUnit,
@@ -974,6 +986,11 @@ export const useHelm = create<HelmState & HelmActions>()(
       keepScreenOn: true,
       lowBattery: false,
       anchorageCard: null,
+      places: true,
+      placeKinds: [...PLACE_KINDS],
+      placeCard: null,
+      addPlaceAt: null,
+      myPlaces: [],
       mySharedAnchorages: [],
       gpsDenied: false,
       tapMode: "none",
@@ -1855,6 +1872,9 @@ export const useHelm = create<HelmState & HelmActions>()(
         usePace: s.usePace,
         keepScreenOn: s.keepScreenOn,
         mySharedAnchorages: s.mySharedAnchorages,
+        places: s.places,
+        placeKinds: s.placeKinds,
+        myPlaces: s.myPlaces,
         drafts: s.drafts,
         lastFix: s.lastFix,
         rode: s.rode,
@@ -1946,6 +1966,18 @@ export const useHelm = create<HelmState & HelmActions>()(
             : current.trips,
           usePace: p.usePace === true,
           keepScreenOn: p.keepScreenOn !== false,
+          places: p.places !== false,
+          placeKinds: Array.isArray(p.placeKinds)
+            ? (p.placeKinds as unknown[]).filter((k): k is PlaceKind => (PLACE_KINDS as readonly unknown[]).includes(k))
+            : current.placeKinds,
+          myPlaces: Array.isArray(p.myPlaces)
+            ? (p.myPlaces as unknown[])
+                .filter((x): x is { id: string; secret: string; lat: number; lng: number } => {
+                  const o = x as { id?: unknown; secret?: unknown; lat?: unknown; lng?: unknown } | null;
+                  return Boolean(o) && typeof o!.id === "string" && typeof o!.secret === "string" && Number.isFinite(o!.lat) && Number.isFinite(o!.lng);
+                })
+                .slice(0, 300)
+            : current.myPlaces,
           mySharedAnchorages: Array.isArray(p.mySharedAnchorages)
             ? p.mySharedAnchorages
                 .filter((x: unknown): x is { id: string; secret: string; lat: number; lng: number } =>

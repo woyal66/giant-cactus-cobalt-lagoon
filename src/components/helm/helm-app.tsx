@@ -26,6 +26,7 @@ import { DepthChip } from "@/components/helm/depth-chip";
 import { WxMapBar, WxProbeCard } from "@/components/helm/wx-map-bar";
 import { PinCard } from "@/components/helm/pin-card";
 import { AnchorageCard } from "@/components/helm/anchorage-cards";
+import { AddPlaceCard, PlaceCard } from "@/components/helm/place-cards";
 import { PerfChip } from "@/components/helm/perf-chip";
 import { WebNotice } from "@/components/helm/web-notice";
 import { usePolarMonitor } from "@/hooks/polar-monitor";
@@ -152,6 +153,8 @@ export function HelmApp() {
       <WxProbeCard />
       <PinCard />
       <AnchorageCard />
+      <PlaceCard />
+      <AddPlaceCard />
       <PerfChip />
       <WebNotice />
       <PassageHud />

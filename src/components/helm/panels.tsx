@@ -54,6 +54,7 @@ import { MoonCard } from "@/components/helm/moon-card";
 import { RemoteWatchCard } from "@/components/helm/remote-watch-card";
 import { NightCheckCard } from "@/components/helm/night-check-card";
 import { ShareAnchorageCard } from "@/components/helm/anchorage-cards";
+import { PLACE_CHIP, PLACE_KINDS } from "@/lib/place-library";
 import { anchoragesOn } from "@/lib/anchorage-library";
 import { formatDepth, formatLength } from "@/lib/units";
 import { criticalAlerts, type CriticalStatus } from "@/lib/critical-alert";
@@ -416,6 +417,29 @@ export function AnchorPanel() {
   );
 }
 
+/** Which kinds of place show on the chart. */
+function PlaceKindChips() {
+  const kinds = useHelm((s) => s.placeKinds);
+  return (
+    <div className="-mt-0.5 mb-1 flex flex-wrap gap-1 pl-1" role="group" aria-label="Kinds of place">
+      {PLACE_KINDS.map((k) => {
+        const on = kinds.includes(k);
+        return (
+          <button
+            key={k}
+            type="button"
+            aria-pressed={on}
+            onClick={() => useHelm.setState({ placeKinds: on ? kinds.filter((x) => x !== k) : [...kinds, k] })}
+            className={`h-10 rounded-lg px-2.5 text-t13 font-semibold ${on ? "bg-primary text-primary-foreground" : "border border-border bg-background text-foreground"}`}
+          >
+            {PLACE_CHIP[k]}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 export function LayersPanel() {
   const imagery = useHelm((s) => s.imagery);
   const setImagery = useHelm((s) => s.setImagery);
@@ -442,6 +466,7 @@ export function LayersPanel() {
   const reefDepthLook = useHelm((s) => s.reefDepthLook);
   const setReefDepthLook = useHelm((s) => s.setReefDepthLook);
   const sharedAnchorages = useHelm((s) => s.sharedAnchorages);
+  const places = useHelm((s) => s.places);
   const landHeights = useHelm((s) => s.landHeights);
   const setRadar = useHelm((s) => s.setRadar);
   const setPanel = useHelm((s) => s.setPanel);
@@ -503,14 +528,20 @@ export function LayersPanel() {
         <ToggleRow label="Land heights (hill shading and height lines)" on={landHeights} onChange={(v) => useHelm.setState({ landHeights: v })} />
         {anchoragesOn() ? (
           <ToggleRow
-            label="Shared anchorages (other skippers, zoom in, needs signal)"
+            label="Shared anchorages (other skippers, zoom in; saved with offline areas)"
             on={sharedAnchorages}
             onChange={(v) => useHelm.setState({ sharedAnchorages: v, anchorageCard: v ? useHelm.getState().anchorageCard : null })}
           />
         ) : null}
+        <ToggleRow
+          label="Places: moorings, ramps, marinas, fuel, rescue (zoom in)"
+          on={places}
+          onChange={(v) => useHelm.setState({ places: v, placeCard: v ? useHelm.getState().placeCard : null })}
+        />
+        {places ? <PlaceKindChips /> : null}
         <ToggleRow label="Marine park zones (GBR)" on={parkZones} onChange={setParkZones} />
         {parkZones ? <ZoneLegend /> : null}
-        <ToggleRow label="Official charts where free (USA: NOAA)" on={officialCharts} onChange={setOfficialCharts} />
+        <ToggleRow label="Official charts (Australia: AHO, USA: NOAA)" on={officialCharts} onChange={setOfficialCharts} />
         <ToggleRow label="Seamarks" on={seamarks} onChange={setSeamarks} />
         <ToggleRow label="Depth contours" on={depths} onChange={setDepths} />
         {radarAvailable() ? <ToggleRow label="Rain radar (needs signal)" on={radar} onChange={setRadar} /> : null}
