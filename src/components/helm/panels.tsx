@@ -441,6 +441,7 @@ export function LayersPanel() {
   const reefDepthLook = useHelm((s) => s.reefDepthLook);
   const setReefDepthLook = useHelm((s) => s.setReefDepthLook);
   const sharedAnchorages = useHelm((s) => s.sharedAnchorages);
+  const landHeights = useHelm((s) => s.landHeights);
   const setRadar = useHelm((s) => s.setRadar);
   const setPanel = useHelm((s) => s.setPanel);
 
@@ -498,6 +499,7 @@ export function LayersPanel() {
       <div className="mb-2 grid gap-1.5">
         <DepthRow />
         <ToggleRow label="Reefs, rocks and cays (GBR, offline)" on={reefOutlines} onChange={setReefOutlines} />
+        <ToggleRow label="Land heights (hill shading and height lines)" on={landHeights} onChange={(v) => useHelm.setState({ landHeights: v })} />
         {anchoragesOn() ? (
           <ToggleRow
             label="Shared anchorages (other skippers, zoom in, needs signal)"
@@ -523,7 +525,7 @@ export function LayersPanel() {
       </div>
       <div className="mb-2 grid grid-cols-2 gap-2">
         <Button variant="outline" className="h-11" onClick={() => useHelm.setState({ reef3d: true, panel: null })}>
-          3D reef view
+          3D view
         </Button>
         <Button variant="outline" className="h-11" onClick={() => setPanel("legend")}>
           Colour guide

@@ -233,6 +233,8 @@ export type HelmState = {
   libraryPreview: LatLng[] | null;
   /** Show other skippers' shared anchorages on the chart (needs signal and the library). */
   sharedAnchorages: boolean;
+  /** Land heights on the chart: hill shading and height lines. */
+  landHeights: boolean;
   /** The shared anchorage tapped on the chart. */
   anchorageCard: import("@/lib/anchorage-library").SharedAnchorage | null;
   /** Anchorages shared from this phone, with the secret that removes each. */
@@ -552,6 +554,7 @@ function persistSig(state: Record<string, unknown>): string {
     state.reefClarity,
     state.reefDepthLook,
     state.sharedAnchorages,
+    state.landHeights,
     state.mySharedAnchorages,
     state.look,
     state.autoNight,
@@ -895,6 +898,7 @@ export const useHelm = create<HelmState & HelmActions>()(
       renameTrackId: null,
       libraryPreview: null,
       sharedAnchorages: true,
+      landHeights: false,
       anchorageCard: null,
       mySharedAnchorages: [],
       gpsDenied: false,
@@ -1769,6 +1773,7 @@ export const useHelm = create<HelmState & HelmActions>()(
         reefClarity: s.reefClarity,
         reefDepthLook: s.reefDepthLook,
         sharedAnchorages: s.sharedAnchorages,
+        landHeights: s.landHeights,
         mySharedAnchorages: s.mySharedAnchorages,
         drafts: s.drafts,
         lastFix: s.lastFix,
@@ -1851,6 +1856,7 @@ export const useHelm = create<HelmState & HelmActions>()(
           reefClarity: typeof p.reefClarity === "boolean" ? p.reefClarity : current.reefClarity,
           reefDepthLook: typeof p.reefDepthLook === "boolean" ? p.reefDepthLook : current.reefDepthLook,
           sharedAnchorages: typeof p.sharedAnchorages === "boolean" ? p.sharedAnchorages : current.sharedAnchorages,
+          landHeights: typeof p.landHeights === "boolean" ? p.landHeights : current.landHeights,
           mySharedAnchorages: Array.isArray(p.mySharedAnchorages)
             ? p.mySharedAnchorages
                 .filter((x: unknown): x is { id: string; secret: string; lat: number; lng: number } =>

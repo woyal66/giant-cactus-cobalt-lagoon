@@ -59,6 +59,7 @@ import { createRadar } from "@/components/helm/radar-layer";
 import { radarAvailable } from "@/lib/radar";
 import { createDepthLayer, type DepthLook } from "@/components/helm/depth-layer";
 import { createAnchorageLayer } from "@/components/helm/anchorage-layer";
+import { createLandLayer } from "@/components/helm/land-layer";
 import { createHazardLayer } from "@/components/helm/hazard-layer";
 import { OFFICIAL_CHARTS } from "@/lib/official-charts";
 import { createWxLayer } from "@/components/helm/wx-layer";
@@ -721,6 +722,8 @@ export function MapView() {
         const reefs = createHazardLayer(L, MAX_ZOOM);
         // Other skippers' shared anchorages (online library), once zoomed in.
         const anchorages = createAnchorageLayer(L, map);
+        // Land heights: hill shading and height lines (free worldwide terrain tiles).
+        const land = createLandLayer(L, MAX_ZOOM);
         const onShared = (e: Event) => anchorages.add((e as CustomEvent).detail);
         const onRemoved = (e: Event) => anchorages.remove((e as CustomEvent<string>).detail);
         window.addEventListener("helm:anchorage-shared", onShared);
@@ -1544,6 +1547,8 @@ export function MapView() {
           }
           radar.set(s.radar && radarAvailable());
           anchorages.set(s.sharedAnchorages);
+          if (s.landHeights && !map.hasLayer(land)) land.addTo(map);
+          else if (!s.landHeights && map.hasLayer(land)) map.removeLayer(land);
           if (s.wxMapLayer !== "off") wxLoad();
           wxLayer.set({ layer: s.wxMapLayer, style: s.wxMapStyle, at: s.wxMapAt, field: wxField });
           // The tapped weather spot: a draggable pin, only while the weather map is on.
