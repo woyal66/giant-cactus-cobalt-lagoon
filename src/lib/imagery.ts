@@ -121,7 +121,7 @@ export const IMAGERY: {
   },
   {
     id: "gov",
-    name: "Government aerial (free)",
+    name: "Gov aerial: NSW, Qld, NZ, USA (free)",
     detail: "Sharp free aerial photos where a government publishes them: NSW, Queensland, New Zealand and the USA. Elsewhere another photo fills in.",
     mark: "F",
     markBg: "#7c3aed",

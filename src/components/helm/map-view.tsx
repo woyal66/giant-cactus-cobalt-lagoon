@@ -489,13 +489,18 @@ function satLayer(
 }
 
 function tileChoice(id: SatSource, coords: Coords) {
-  return [
-    {
-      id,
-      url: satTileUrl(id, coords.x, coords.y, coords.z),
-      cacheKey: `${id}/${coords.z}/${coords.x}/${coords.y}`,
-    },
-  ];
+  const first = {
+    id,
+    url: satTileUrl(id, coords.x, coords.y, coords.z),
+    cacheKey: `${id}/${coords.z}/${coords.x}/${coords.y}`,
+  };
+  // Government aerial only covers some places (NSW, Queensland, NZ, USA): elsewhere, and
+  // past its deepest zoom, fill in from the other photos instead of leaving the chart blank.
+  if (id !== "gov") return [first];
+  const rest = autoSatOrder(coords.z)
+    .filter((src) => src !== "gov")
+    .map((src) => ({ id: src, url: satTileUrl(src, coords.x, coords.y, coords.z), cacheKey: `${src}/${coords.z}/${coords.x}/${coords.y}` }));
+  return first.url ? [first, ...rest] : rest;
 }
 
 function nativeZoom(id: ImageryId): number {
