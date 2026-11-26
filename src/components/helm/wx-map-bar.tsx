@@ -441,7 +441,7 @@ export function WxProbeCard() {
   if (p.capeJkg != null && p.capeJkg >= 300) rows.push(["Thunder", p.capeJkg >= 2000 ? "high risk" : p.capeJkg >= 1000 ? "possible" : "low risk"]);
   if (p.pressureHpa != null) rows.push(["hPa", String(Math.round(p.pressureHpa))]);
   return (
-    <div className="pointer-events-auto absolute top-[calc(max(0.4rem,var(--safe-area-inset-top,env(safe-area-inset-top)))+3.6rem)] right-2 z-40 w-[min(17rem,calc(100vw-6.5rem))] rounded-xl border border-border bg-card/95 p-2 shadow-[var(--shadow-border)]">
+    <div className="pointer-events-auto absolute top-[calc(max(0.4rem,var(--safe-area-inset-top,env(safe-area-inset-top)))+3.6rem)] right-2 z-40 w-max max-w-[calc(100vw-6.5rem)] rounded-xl border border-border bg-card/95 p-2 shadow-[var(--shadow-border)]">
       <div className="flex items-start justify-between gap-2">
         <p className="text-t12 text-muted-foreground tabular-nums">
           This spot · {new Date(at).toLocaleString([], { weekday: "short", hour: "numeric" })}
