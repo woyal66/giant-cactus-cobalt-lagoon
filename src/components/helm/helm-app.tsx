@@ -27,6 +27,9 @@ import { WxMapBar, WxProbeCard } from "@/components/helm/wx-map-bar";
 import { PinCard } from "@/components/helm/pin-card";
 import { AnchorageCard } from "@/components/helm/anchorage-cards";
 import { AddPlaceCard, PlaceCard } from "@/components/helm/place-cards";
+import { AisCard } from "@/components/helm/ais-card";
+import { useAis } from "@/hooks/ais";
+import { useRescueReminder } from "@/hooks/rescue-reminder";
 import { PerfChip } from "@/components/helm/perf-chip";
 import { WebNotice } from "@/components/helm/web-notice";
 import { usePolarMonitor } from "@/hooks/polar-monitor";
@@ -59,6 +62,8 @@ export function HelmApp() {
   useDemoCruise();
   useAnchorWatch();
   useTripRecorder();
+  useAis();
+  useRescueReminder();
   useBatterySaver();
   useWakeLock();
   useMarkMade();
@@ -154,6 +159,7 @@ export function HelmApp() {
       <PinCard />
       <AnchorageCard />
       <PlaceCard />
+      <AisCard />
       <AddPlaceCard />
       <PerfChip />
       <WebNotice />

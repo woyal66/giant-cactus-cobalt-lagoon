@@ -66,6 +66,13 @@
 	</array>
 	<key>UIViewControllerBasedStatusBarAppearance</key>
 	<true/>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+	</dict>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Anchor Mate reads AIS ship positions from a Signal K server on your boat's Wi-Fi, if you set one up.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>Anchor Mate shows your boat on the chart and checks it stays inside the anchor swing.</string>
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>

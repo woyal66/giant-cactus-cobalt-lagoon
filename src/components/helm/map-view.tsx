@@ -57,6 +57,7 @@ import { toast } from "sonner";
 import { measure } from "@/lib/measure";
 import { createRadar } from "@/components/helm/radar-layer";
 import { createPlacesLayer } from "@/components/helm/places-layer";
+import { createAisLayer } from "@/components/helm/ais-layer";
 import { createWxLive } from "@/components/helm/wx-live";
 import type { RainNow } from "@/components/helm/rain-now";
 import { radarAvailable } from "@/lib/radar";
@@ -727,6 +728,7 @@ export function MapView() {
         // Other skippers' shared anchorages (online library), once zoomed in.
         const anchorages = createAnchorageLayer(L, map);
         const placesLayer = createPlacesLayer(L, map);
+        const aisLayer = createAisLayer(L, map);
         const onPlaceShared = (e: Event) => placesLayer.add((e as CustomEvent).detail);
         const onPlaceRemoved = (e: Event) => placesLayer.remove((e as CustomEvent<string>).detail);
         window.addEventListener("helm:place-shared", onPlaceShared);
@@ -867,6 +869,7 @@ export function MapView() {
           wxLive.destroy();
           anchorages.destroy();
           placesLayer.destroy();
+          aisLayer.destroy();
           window.removeEventListener("helm:place-shared", onPlaceShared);
           window.removeEventListener("helm:place-removed", onPlaceRemoved);
           window.removeEventListener("helm:anchorage-shared", onShared);
@@ -1592,6 +1595,7 @@ export function MapView() {
           radar.set(s.radar && radarAvailable());
           anchorages.set(s.sharedAnchorages);
           placesLayer.set(s.places, s.placeKinds.join(","));
+          aisLayer.set(s.aisTargets, s.aisSource !== "off");
           if (s.landHeights && !map.hasLayer(land)) land.addTo(map);
           else if (!s.landHeights && map.hasLayer(land)) map.removeLayer(land);
           if (s.wxMapLayer !== "off") wxLoad();

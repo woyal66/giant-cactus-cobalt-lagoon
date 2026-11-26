@@ -7,7 +7,8 @@ const config: CapacitorConfig = {
   appName: "Anchor Mate",
   webDir: "dist-mobile",
   android: {
-    allowMixedContent: false,
+    // AIS from a Signal K server on the boat's Wi-Fi is plain ws:// on the local network.
+    allowMixedContent: true,
     // Required by @capacitor-community/background-geolocation: without it,
     // location updates stop after about five minutes in the background.
     useLegacyBridge: true,

@@ -37,11 +37,18 @@ export function Privacy() {
             unless you set it up, and turning it off stops all sending.
           </p>
           <p>
-            If you choose to share a track to the online track library, or share an anchorage (its
-            position, depth, bottom, shelter and comment), it is published for other users to find.
+            If you choose to share a track to the online track library, share an anchorage (its
+            position, depth, bottom, shelter and comment) or add a place (its position, kind, name,
+            radio channel, phone and note), it is published for other users to find.
             For a track that is its points, name, location label and comment. Your name and contact
             details are not sent. Shared tracks are stored with Supabase, and only the phone that
             shared a track can remove it. Nothing is shared unless you tap Share.
+          </p>
+          <p>
+            AIS is off unless you turn it on. Online AIS sends aisstream.io your own key and an area of
+            about 80 km around the boat, so it can send back the ships in it; it does not send your
+            boat&apos;s identity. Boat Wi-Fi AIS talks only to the Signal K server on your boat.
+            Marine rescue reminders stay on the phone: the app never contacts marine rescue for you.
           </p>
           <p>
             Backups are files you save yourself, for example to iCloud Drive or Google Drive. They

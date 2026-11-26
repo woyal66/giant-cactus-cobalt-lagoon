@@ -55,6 +55,7 @@ import { RemoteWatchCard } from "@/components/helm/remote-watch-card";
 import { NightCheckCard } from "@/components/helm/night-check-card";
 import { ShareAnchorageCard } from "@/components/helm/anchorage-cards";
 import { PLACE_CHIP, PLACE_KINDS } from "@/lib/place-library";
+import { AisSettings, RescueSettings } from "@/components/helm/safety-settings";
 import { anchoragesOn } from "@/lib/anchorage-library";
 import { formatDepth, formatLength } from "@/lib/units";
 import { criticalAlerts, type CriticalStatus } from "@/lib/critical-alert";
@@ -575,6 +576,7 @@ const SETTINGS_SECTIONS = [
   { id: "units", title: "Units", words: "units feet foot metres meters fathoms depth length distance" },
   { id: "steer", title: "Steering and tracks", words: "steer steering track ear guide sound turn record recording yellow line trail crumb reverse corner" },
   { id: "boat", title: "Boat and GPS", words: "boat hull length draft beam bow gps place position manual" },
+  { id: "safety", title: "Safety: AIS and marine rescue", words: "ais ship ships vessel traffic collision cpa close approach signal k aisstream marine rescue vmr coast guard log on off due back" },
   { id: "help", title: "Help and about", words: "help guide getting started tour about garmin navionics privacy terms licence account subscription sign in" },
 ] as const;
 
@@ -711,6 +713,13 @@ export function SettingsPanel() {
             </Button>
           </div>
           <p className="mt-1 text-t13 leading-snug text-muted-foreground">Place the boat by hand only when there is no GPS, e.g. to plan at home.</p>
+        </>
+      ) : null}
+      {show("safety") ? (
+        <>
+          {head("safety")}
+          <AisSettings />
+          <RescueSettings />
         </>
       ) : null}
       {show("help") ? (

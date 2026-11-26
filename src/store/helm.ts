@@ -282,6 +282,21 @@ export type HelmState = {
   /** Phone low and not charging: animations step down (see useBatterySaver). Not persisted. */
   lowBattery: boolean;
   /** The shared anchorage tapped on the chart. */
+  /**
+   * AIS: where targets come from (off, aisstream.io with the skipper's own key, or a Signal K
+   * server on the boat's Wi-Fi), and the close-approach alarm. The key stays on the phone and is
+   * left out of backup files.
+   */
+  aisSource: "off" | "online" | "signalk";
+  aisKey: string;
+  aisHost: string;
+  aisAlarm: { on: boolean; cpaNm: number; tcpaMin: number };
+  /** Live targets and connection state (not saved). */
+  aisTargets: import("@/lib/ais").AisTarget[];
+  aisStatus: { state: "off" | "connecting" | "live" | "error"; note: string | null; at: number };
+  aisCard: string | null;
+  /** Marine rescue log on / log off: the skipper's base and whether to remind them. */
+  rescue: { on: boolean; name: string; vhf: string; phone: string; returnBy: number | null };
   /** Places on the chart (moorings, ramps, marinas...): on, and which kinds. */
   places: boolean;
   placeKinds: import("@/lib/place-library").PlaceKind[];
@@ -624,6 +639,11 @@ function persistSig(state: Record<string, unknown>): string {
     state.mySharedAnchorages,
     state.places,
     state.placeKinds,
+    state.rescue,
+    state.aisSource,
+    state.aisKey,
+    state.aisHost,
+    state.aisAlarm,
     state.myPlaces,
     state.look,
     state.autoNight,
@@ -986,6 +1006,14 @@ export const useHelm = create<HelmState & HelmActions>()(
       keepScreenOn: true,
       lowBattery: false,
       anchorageCard: null,
+      rescue: { on: true, name: "", vhf: "", phone: "", returnBy: null },
+      aisSource: "off",
+      aisKey: "",
+      aisHost: "",
+      aisAlarm: { on: true, cpaNm: 0.5, tcpaMin: 15 },
+      aisTargets: [],
+      aisStatus: { state: "off", note: null, at: 0 },
+      aisCard: null,
       places: true,
       placeKinds: [...PLACE_KINDS],
       placeCard: null,
@@ -1874,6 +1902,11 @@ export const useHelm = create<HelmState & HelmActions>()(
         mySharedAnchorages: s.mySharedAnchorages,
         places: s.places,
         placeKinds: s.placeKinds,
+        rescue: s.rescue,
+        aisSource: s.aisSource,
+        aisKey: s.aisKey,
+        aisHost: s.aisHost,
+        aisAlarm: s.aisAlarm,
         myPlaces: s.myPlaces,
         drafts: s.drafts,
         lastFix: s.lastFix,
@@ -1967,6 +2000,27 @@ export const useHelm = create<HelmState & HelmActions>()(
           usePace: p.usePace === true,
           keepScreenOn: p.keepScreenOn !== false,
           places: p.places !== false,
+          rescue:
+            p.rescue && typeof p.rescue === "object"
+              ? {
+                  on: (p.rescue as { on?: unknown }).on !== false,
+                  name: String((p.rescue as { name?: unknown }).name ?? "").slice(0, 60),
+                  vhf: String((p.rescue as { vhf?: unknown }).vhf ?? "").slice(0, 20),
+                  phone: String((p.rescue as { phone?: unknown }).phone ?? "").slice(0, 24),
+                  returnBy: Number.isFinite((p.rescue as { returnBy?: unknown }).returnBy) ? Number((p.rescue as { returnBy?: unknown }).returnBy) : null,
+                }
+              : current.rescue,
+          aisSource: p.aisSource === "online" || p.aisSource === "signalk" ? p.aisSource : "off",
+          aisKey: typeof p.aisKey === "string" ? p.aisKey.slice(0, 200) : "",
+          aisHost: typeof p.aisHost === "string" ? p.aisHost.slice(0, 120) : "",
+          aisAlarm:
+            p.aisAlarm && typeof p.aisAlarm === "object"
+              ? {
+                  on: (p.aisAlarm as { on?: unknown }).on !== false,
+                  cpaNm: Math.min(5, Math.max(0.1, Number((p.aisAlarm as { cpaNm?: unknown }).cpaNm) || 0.5)),
+                  tcpaMin: Math.min(60, Math.max(3, Number((p.aisAlarm as { tcpaMin?: unknown }).tcpaMin) || 15)),
+                }
+              : current.aisAlarm,
           placeKinds: Array.isArray(p.placeKinds)
             ? (p.placeKinds as unknown[]).filter((k): k is PlaceKind => (PLACE_KINDS as readonly unknown[]).includes(k))
             : current.placeKinds,
