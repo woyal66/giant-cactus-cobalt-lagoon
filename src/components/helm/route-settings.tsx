@@ -1,5 +1,5 @@
 import { Button } from "@/components/ui/button";
-import { formatDepth } from "@/lib/units";
+import { depthSuffix, formatDepth, fromDepth, toDepth } from "@/lib/units";
 import { wantedDepthM } from "@/lib/routing/min-depth";
 import { BOAT_TYPES, defaultTune, type PolarTune } from "@/lib/routing/polar";
 import { BoatTypePicker } from "@/components/helm/boat-type";
@@ -437,19 +437,19 @@ function DepthLimitSettings() {
       <p className={label}>Keep out of water shallower than</p>
       <div className="grid grid-cols-[1fr_8rem] items-center gap-2">
         <span className="text-sm">
-          {prefs.minDepthM == null ? `Draft + 1 m (${formatDepth(want)})` : formatDepth(want)}
+          {prefs.minDepthM == null ? `Draft + ${formatDepth(1)} (${formatDepth(want)})` : formatDepth(want)}
         </span>
         <Stepper
-          label="m"
-          value={want}
-          step={0.5}
+          label={depthSuffix()}
+          value={toDepth(want)}
+          step={depthSuffix() === "m" ? 0.5 : 1}
           show={(v) => v.toFixed(1)}
-          onChange={(v) => setPrefs({ minDepthM: Math.max(0.5, Math.min(50, Math.round(v * 10) / 10)) })}
+          onChange={(v) => setPrefs({ minDepthM: Math.max(0.5, Math.min(50, Math.round(fromDepth(v) * 10) / 10)) })}
         />
       </div>
       {prefs.minDepthM != null ? (
         <Button variant="ghost" size="sm" className="mt-1" onClick={() => setPrefs({ minDepthM: null })}>
-          Back to draft + 1 m
+          Back to draft + {formatDepth(1)}
         </Button>
       ) : null}
       <div className="mt-1.5 grid grid-cols-2 gap-1.5" role="radiogroup" aria-label="Measure the depth at">

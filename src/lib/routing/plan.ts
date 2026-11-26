@@ -41,7 +41,8 @@ export function remainingVia(boat: LatLng, via: LatLng[], finish: LatLng): LatLn
  */
 export function routeVia(input: RouteInput & { via?: LatLng[]; legObstacles?: (Obstacle | undefined)[] }): RouteResult {
   const via = input.via ?? [];
-  if (!via.length) return route(input);
+  // One leg: still use the channel finder's fine check for it when there is one.
+  if (!via.length) return route({ ...input, obstacle: input.legObstacles?.[0] ?? input.obstacle });
   const stops = [input.start, ...via, input.finish];
   let at = input.departAt;
   let joined: Extract<RouteResult, { ok: true }> | null = null;

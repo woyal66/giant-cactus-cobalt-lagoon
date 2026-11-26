@@ -56,7 +56,10 @@ export function createAnchorageLayer(L: LeafletNS, map: LeafletMap) {
           for (const a of list) seen.set(a.id, a);
           draw();
         })
-        .catch(() => undefined);
+        .catch(() => {
+          // No signal: try this view again next time the map settles.
+          lastBox = "";
+        });
     }, 700);
   };
 
@@ -74,6 +77,13 @@ export function createAnchorageLayer(L: LeafletNS, map: LeafletMap) {
       if (want === on) return;
       on = want;
       update();
+    },
+    /** After removing one of yours: take it off the chart now. */
+    remove(id: string) {
+      seen.delete(id);
+      group.clearLayers();
+      drawn.clear();
+      draw();
     },
     /** After sharing: show it straight away. */
     add(a: SharedAnchorage) {

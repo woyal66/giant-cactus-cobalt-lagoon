@@ -722,7 +722,9 @@ export function MapView() {
         // Other skippers' shared anchorages (online library), once zoomed in.
         const anchorages = createAnchorageLayer(L, map);
         const onShared = (e: Event) => anchorages.add((e as CustomEvent).detail);
+        const onRemoved = (e: Event) => anchorages.remove((e as CustomEvent<string>).detail);
         window.addEventListener("helm:anchorage-shared", onShared);
+        window.addEventListener("helm:anchorage-removed", onRemoved);
         // Free official charts (NOAA in the USA): one WMS layer per covered area, so nothing
         // is requested outside it. Under the reef outlines and seamarks.
         const official = L.layerGroup(
@@ -818,6 +820,7 @@ export function MapView() {
           wxLayer.destroy();
           anchorages.destroy();
           window.removeEventListener("helm:anchorage-shared", onShared);
+          window.removeEventListener("helm:anchorage-removed", onRemoved);
         };
         // Allen Coral Atlas sand / coral / seagrass, only when the build names its map service.
         const benthic: TileLayer | null = BENTHIC_WMS

@@ -37,8 +37,6 @@ type PlanContext = {
   models: string[];
 };
 
-/** Under the keel at mean sea level, on top of the draft: the depth model is approximate and tides fall below MSL. */
-
 function when(at: number): string {
   const d = new Date(at);
   const day = d.toLocaleDateString([], { weekday: "short" });
@@ -284,7 +282,11 @@ function PlannerSheet() {
             disabled={Boolean(busy) || distM < 926}
             onClick={() => {
               setBusy("Starting…");
-              findWeatherWindows({
+              const rule = { minDepthM: prefs.minDepthM, depthAt: prefs.depthAt };
+              (rule.depthAt === "low" ? lowestTideAt(start.lat, start.lng) : Promise.resolve(null))
+                .then((low: number | null) => {
+                  const windowDepthM = mslLimitM(rule, hull.draftM, low);
+                  return findWeatherWindows({
                 start,
                 finish,
                 via,
@@ -292,9 +294,10 @@ function PlannerSheet() {
                 limits: prefs.limits,
                 rules: prefs.rules,
                 models: prefs.models,
-                minDepthM: mslLimitM({ minDepthM: prefs.minDepthM, depthAt: "msl" }, hull.draftM, null),
+                minDepthM: windowDepthM,
                 onStatus: setBusy,
-              })
+              });
+                })
                 .then((sc) => {
                   setScan(sc);
                   setView("windows");

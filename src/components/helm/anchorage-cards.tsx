@@ -88,7 +88,8 @@ export function AnchorageCard() {
                   .then(() => {
                     const st = useHelm.getState();
                     useHelm.setState({ mySharedAnchorages: st.mySharedAnchorages.filter((m) => m.id !== own.id), anchorageCard: null });
-                    toast("Removed. It may take a moment to go from the chart.");
+                    window.dispatchEvent(new CustomEvent("helm:anchorage-removed", { detail: own.id }));
+                    toast("Removed from the shared anchorages.");
                   })
                   .catch(() => toast.error("Couldn't reach the library"));
               }}
