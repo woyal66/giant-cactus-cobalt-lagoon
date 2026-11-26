@@ -36,7 +36,7 @@ export function loadOpenPlaces(): Promise<SharedPlace[]> {
 
 /**
  * Places on the chart: moorings, ramps, marinas, fuel, water, pump-out, landings and marine
- * rescue, filtered by the kinds chosen in Chart. Open data is bundled; shared places come
+ * rescue, filtered by the kinds chosen in Map. Open data is bundled; shared places come
  * online and are kept on the phone for offline use.
  */
 export function createPlacesLayer(L: LeafletNS, map: LeafletMap) {

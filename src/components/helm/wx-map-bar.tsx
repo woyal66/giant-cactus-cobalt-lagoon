@@ -1,12 +1,13 @@
-import { useEffect, useMemo } from "react";
-import { Cloud, CloudLightning, CloudRain, Gauge, Navigation, Pause, Play, Waves, Wind, X, Zap } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { Cloud, CloudRain, Gauge, Navigation, Pause, Play, Waves, Wind, X, Zap } from "lucide-react";
 import { RAIN_BANDS } from "@/lib/rain";
 import { Button } from "@/components/ui/button";
 import { formatDepth } from "@/lib/units";
 import { compassPoint } from "@/lib/routing/explain";
 import {
-  CAPE_RAMP,
   CURRENT_RAMP,
+  MODEL_KM,
+  PRESSURE_RAMP,
   WAVE_RAMP,
   WIND_RAMP,
   WX_MAP_LAYERS,
@@ -22,28 +23,29 @@ import { ROUTE_MODELS } from "@/lib/routing/fetch-field";
 import { useHelm, useUnitsKey } from "@/store/helm";
 
 const H = 3_600_000;
+/** How far ahead the timeline runs. */
+const DAYS = 7;
 
 const ICON: Record<WxMapLayer, typeof Wind> = {
   wind: Wind,
   gust: Zap,
-  current: Navigation,
-  waves: Waves,
-  pressure: Gauge,
   rain: CloudRain,
-  storm: CloudLightning,
   cloud: Cloud,
+  waves: Waves,
+  current: Navigation,
+  pressure: Gauge,
 };
 
-/** Layers with a live view: radar for rain and storms, the satellite for cloud. */
-const LIVE_LAYERS = new Set<string>(["rain", "storm", "cloud"]);
+/** Layers with a live view: radar for rain, the satellite for cloud. */
+const LIVE_LAYERS = new Set<string>(["rain", "cloud"]);
 
 /** Legend: colour ramp and the numbers shown under it. */
 const LEGEND: Partial<Record<WxMapLayer, { ramp: Ramp; ticks: number[]; unit: string }>> = {
-  wind: { ramp: WIND_RAMP, ticks: [0, 10, 20, 30, 40], unit: "kn" },
-  gust: { ramp: WIND_RAMP, ticks: [0, 10, 20, 30, 40], unit: "kn" },
+  wind: { ramp: WIND_RAMP, ticks: [0, 10, 20, 30, 40, 50], unit: "kn" },
+  gust: { ramp: WIND_RAMP, ticks: [0, 10, 20, 30, 40, 50], unit: "kn" },
   current: { ramp: CURRENT_RAMP, ticks: [0, 1, 2, 3], unit: "kn" },
   waves: { ramp: WAVE_RAMP, ticks: [0, 1, 2, 4, 6], unit: "m" },
-  storm: { ramp: CAPE_RAMP, ticks: [300, 2000, 3500], unit: "storm energy" },
+  pressure: { ramp: PRESSURE_RAMP, ticks: [1000, 1013, 1024], unit: "hPa" },
 };
 
 function when(at: number): string {
@@ -51,15 +53,50 @@ function when(at: number): string {
   return d.toLocaleString([], { weekday: "short", hour: "numeric" });
 }
 
+/** Show the "tap the chart" hint the first few times only. */
+function useFirstTimes(key: string, n: number): boolean {
+  const [show] = useState(() => {
+    try {
+      const seen = Number(localStorage.getItem(key) ?? 0);
+      localStorage.setItem(key, String(seen + 1));
+      return seen < n;
+    } catch {
+      return false;
+    }
+  });
+  return show;
+}
+
+/** A small on/off pill for an overlay (Isobars, Animation). */
+function Pill({ on, label, onClick, disabled }: { on: boolean; label: string; onClick: () => void; disabled?: boolean }) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={on}
+      disabled={disabled}
+      onClick={onClick}
+      className={`flex h-10 shrink-0 items-center gap-1.5 rounded-full border px-3 text-t12 font-semibold disabled:opacity-60 ${
+        on ? "border-primary bg-primary/20 text-foreground" : "border-border bg-background text-muted-foreground"
+      }`}
+    >
+      <span className={`inline-block size-2.5 rounded-full ${on ? "bg-primary" : "bg-muted-foreground/50"}`} aria-hidden />
+      {label}
+    </button>
+  );
+}
+
 /**
  * Weather on the chart, Windy-style: the bar replaces the dock at the bottom of the screen.
- * Layer buttons, a timeline with day marks and play, and a colour legend. Tap the chart for
- * the forecast at a spot.
+ * Layers and close; live or forecast; one slim timeline with the time on the slider; the legend
+ * with the Isobars and Animation overlays; the model. Problems only when there are any.
  */
 export function WxMapBar() {
   useUnitsKey();
   const layer = useHelm((s) => s.wxMapLayer);
   const style = useHelm((s) => s.wxMapStyle);
+  const isobars = useHelm((s) => s.wxIsobars);
+  const lowBattery = useHelm((s) => s.lowBattery);
   const at = useHelm((s) => s.wxMapAt);
   const info = useHelm((s) => s.wxMapInfo);
   const panel = useHelm((s) => s.panel);
@@ -69,15 +106,17 @@ export function WxMapBar() {
   const liveAt = useHelm((s) => s.wxLiveAt);
   const live = useHelm((s) => s.wxLiveInfo);
   const field = useViewField();
+  const hint = useFirstTimes("wx-tap-hint", 3);
   const liveMode = LIVE_LAYERS.has(layer) && liveAt != null;
   const liveFrames = useMemo(() => (liveMode && live?.status === "ok" ? live.frames : []), [liveMode, live]);
   const times = info?.times ?? [];
   const now = Date.now();
   const first = times.find((t) => t >= now - H) ?? times[0] ?? now;
-  const last = Math.min(times[times.length - 1] ?? now, first + 72 * H);
+  const last = Math.min(times[times.length - 1] ?? now, first + DAYS * 24 * H);
   const hours = Math.max(0, Math.round((last - first) / H));
   const step = Math.max(0, Math.min(hours, Math.round((at - first) / H)));
   const shown = first + step * H;
+  const nowStep = Math.max(0, Math.round((now - first) / H));
 
   useEffect(() => {
     if (!playing || !liveFrames.length) return;
@@ -95,7 +134,7 @@ export function WxMapBar() {
       const s = useHelm.getState();
       const cur = Math.round((s.wxMapAt - first) / H);
       s.setWxMap({ wxMapAt: first + ((cur + 1) % (hours + 1)) * H });
-    }, 900);
+    }, 600);
     return () => window.clearInterval(id);
   }, [playing, hours, first, liveMode]);
 
@@ -111,12 +150,11 @@ export function WxMapBar() {
     return out;
   }, [first, last, hours]);
 
-  // Say so when a layer has nothing to show at this hour (no rain, no storms).
+  // Say so when a layer has nothing to show at this hour.
   const empty = useMemo(() => {
     if (!field || layer === "off" || liveMode) return null;
     const t = layerIndex(field, shown);
-    if (layer === "rain") return layerMax(field.precipMm?.[t]) < 0.1 ? "No rain in view at this hour." : null;
-    if (layer === "storm") return layerMax(field.capeJkg?.[t]) < 300 ? "No storm risk in view at this hour." : null;
+    if (layer === "rain") return layerMax(field.precipMm?.[t]) < 0.1 && layerMax(field.capeJkg?.[t]) < 300 ? "No rain or thunder in view at this hour." : null;
     if (layer === "waves" || layer === "current") {
       return Number.isFinite(layerMax((layer === "waves" ? field.waveM : field.curKn)[t])) ? null : "No sea data for this area (inland or very close inshore).";
     }
@@ -124,24 +162,22 @@ export function WxMapBar() {
   }, [field, layer, shown, liveMode]);
 
   if (layer === "off" || panel) return null;
-  const motion = layer === "wind" || layer === "gust" || layer === "current" || layer === "waves";
   const marine = layer === "waves" || layer === "current";
-  const modelLabel = ROUTE_MODELS.find((m) => m.id === modelId)?.label ?? "ECMWF";
   const legend = LEGEND[layer];
-  const source =
+  const problem =
     info?.source === "loading"
-      ? "Loading…"
+      ? "Loading the forecast…"
       : info?.source === "saved"
-        ? "Saved forecast (no signal)"
+        ? "No signal: showing the saved forecast."
         : info?.source === "passage"
-          ? "Passage forecast (offline)"
+          ? "No signal: showing the passage forecast."
           : info?.source === "kept"
-            ? "Couldn't update for this area: showing the last forecast"
-          : info?.source === "none"
-            ? "No forecast for this area"
-            : marine
-              ? "Open-Meteo marine model (same for every weather model)"
-              : `${modelLabel} model`;
+            ? "Couldn't update this area yet: showing the last forecast. Trying again shortly."
+            : info?.source === "none"
+              ? "No forecast for this area yet."
+              : null;
+  const pct = hours ? (step / hours) * 100 : 0;
+  const close = () => set({ wxMapLayer: "off", wxMapPlaying: false, wxProbe: null, wxLiveAt: null });
 
   return (
     <div className="pointer-events-auto absolute inset-x-0 bottom-0 z-30 mx-auto max-w-2xl rounded-t-2xl border border-b-0 border-border bg-card/97 px-2 pt-2 pb-[max(0.5rem,var(--safe-area-inset-bottom,env(safe-area-inset-bottom)))] shadow-[var(--shadow-border)] rp-glass">
@@ -157,7 +193,7 @@ export function WxMapBar() {
                 role="radio"
                 aria-checked={on}
                 onClick={() => set({ wxMapLayer: l.id, wxLiveAt: LIVE_LAYERS.has(l.id) ? Date.now() : null, wxMapPlaying: false })}
-                className={`flex h-12 min-w-[3.6rem] shrink-0 flex-col items-center justify-center gap-0.5 rounded-lg px-2 text-t12 font-semibold ${on ? "bg-primary text-primary-foreground" : "bg-background text-foreground"}`}
+                className={`flex h-11 shrink-0 items-center gap-1.5 rounded-full px-3 text-t13 font-semibold ${on ? "bg-primary text-primary-foreground" : "bg-background text-foreground"}`}
               >
                 <Icon className="size-4" aria-hidden />
                 {l.label}
@@ -165,24 +201,16 @@ export function WxMapBar() {
             );
           })}
         </div>
-        <div className="flex shrink-0 gap-1">
-          <Button variant="outline" className="h-12 px-2" aria-label="Forecast here, as a graph" onClick={() => {
-            set({ wxMapLayer: "off", wxMapPlaying: false, wxProbe: null });
-            useHelm.getState().setPanel("weather");
-          }}>
-            Forecast
-          </Button>
-          <Button variant="outline" className="h-12 px-2.5" aria-label="Close the weather map" onClick={() => set({ wxMapLayer: "off", wxMapPlaying: false, wxProbe: null })}>
-            Done
-          </Button>
-        </div>
+        <Button variant="outline" className="h-11 w-11 shrink-0 rounded-full p-0" aria-label="Close the weather map" onClick={close}>
+          <X className="size-5" />
+        </Button>
       </div>
 
       {LIVE_LAYERS.has(layer) ? (
-        <div className="mt-2 flex gap-1" role="radiogroup" aria-label="Live or forecast">
+        <div className="mt-1.5 grid grid-cols-2 gap-1 rounded-full bg-background p-0.5" role="radiogroup" aria-label="Live or forecast">
           {[
             { on: liveMode, label: layer === "cloud" ? "Satellite now" : "Radar now + 1 h", pick: () => set({ wxLiveAt: Date.now(), wxMapPlaying: false }) },
-            { on: !liveMode, label: "Forecast, 3 days", pick: () => set({ wxLiveAt: null, wxMapPlaying: false }) },
+            { on: !liveMode, label: `Forecast, ${DAYS} days`, pick: () => set({ wxLiveAt: null, wxMapPlaying: false }) },
           ].map((b) => (
             <button
               key={b.label}
@@ -190,7 +218,7 @@ export function WxMapBar() {
               role="radio"
               aria-checked={b.on}
               onClick={b.pick}
-              className={`h-10 flex-1 rounded-lg px-2 text-t13 font-semibold ${b.on ? "bg-primary text-primary-foreground" : "bg-background text-foreground"}`}
+              className={`h-10 rounded-full px-2 text-t13 font-semibold ${b.on ? "bg-primary text-primary-foreground" : "text-foreground"}`}
             >
               {b.label}
             </button>
@@ -198,121 +226,150 @@ export function WxMapBar() {
         </div>
       ) : null}
 
-      {liveMode ? <LiveStrip /> : (
-      <div className="mt-2 flex items-center gap-2">
-        <Button
-          variant="outline"
-          className="h-11 w-11 shrink-0 p-0"
-          aria-label={playing ? "Pause" : "Play the next 3 days"}
-          disabled={!hours}
-          onClick={() => set({ wxMapPlaying: !playing })}
-        >
-          {playing ? <Pause className="size-5" /> : <Play className="size-5" />}
-        </Button>
-        <div className="relative min-w-0 flex-1">
-          <div className="mb-0.5 flex items-baseline justify-between">
-            <span className="text-t15 font-semibold tabular-nums">{when(shown)}</span>
-            {step !== Math.max(0, Math.round((now - first) / H)) ? (
-              <button type="button" className="text-t13 text-primary underline" onClick={() => set({ wxMapAt: now, wxMapPlaying: false })}>
+      {liveMode ? (
+        <LiveStrip />
+      ) : (
+        <div className="mt-1 flex items-center gap-2">
+          <Button
+            variant="outline"
+            className="h-10 w-10 shrink-0 rounded-full p-0"
+            aria-label={playing ? "Pause" : `Play the next ${DAYS} days`}
+            disabled={!hours}
+            onClick={() => set({ wxMapPlaying: !playing })}
+          >
+            {playing ? <Pause className="size-5" /> : <Play className="size-5" />}
+          </Button>
+          <div className="relative min-w-0 flex-1 pt-6">
+            {/* The time rides on the slider, like Windy's. */}
+            <span
+              className="pointer-events-none absolute top-0 -translate-x-1/2 rounded-md bg-primary px-2 py-0.5 text-t13 font-semibold whitespace-nowrap text-primary-foreground tabular-nums"
+              style={{ left: `clamp(2.6rem, ${pct}%, calc(100% - 2.6rem))` }}
+            >
+              {when(shown)}
+            </span>
+            {step !== nowStep && hours ? (
+              <button type="button" className="absolute top-0 right-0 text-t12 font-semibold text-primary underline" onClick={() => set({ wxMapAt: now, wxMapPlaying: false })}>
                 Now
               </button>
-            ) : (
-              <span className="text-t13 text-muted-foreground">now</span>
-            )}
-          </div>
-          <input
-            type="range"
-            min={0}
-            max={hours}
-            step={1}
-            value={step}
-            disabled={!hours}
-            aria-label="Forecast time"
-            onChange={(e) => set({ wxMapAt: first + Number(e.target.value) * H, wxMapPlaying: false })}
-            className="h-8 w-full accent-[var(--color-primary)]"
-          />
-          <div className="relative h-4 text-t11 text-muted-foreground">
-            {days.map((d) => (
-              <span key={d.pct} className="absolute -translate-x-1/2 border-l border-border pl-1" style={{ left: `${d.pct}%` }}>
-                {d.label}
-              </span>
-            ))}
+            ) : null}
+            <input
+              type="range"
+              min={0}
+              max={hours}
+              step={1}
+              value={step}
+              disabled={!hours}
+              aria-label="Forecast time"
+              aria-valuetext={when(shown)}
+              onChange={(e) => set({ wxMapAt: first + Number(e.target.value) * H, wxMapPlaying: false })}
+              className="h-7 w-full accent-[var(--color-primary)]"
+            />
+            <div className="relative h-4 text-t11 text-muted-foreground">
+              {days.map((d) => (
+                <span key={d.pct} className="absolute border-l border-border pl-1" style={{ left: `${d.pct}%` }}>
+                  {d.label}
+                </span>
+              ))}
+            </div>
           </div>
         </div>
-      </div>
       )}
 
-      <div className="mt-1 flex items-center gap-2">
-        {layer === "rain" || (layer === "storm" && liveMode) ? (
-          <div className="flex min-w-0 flex-1 flex-wrap gap-1" aria-label="Rain intensity">
-            {RAIN_BANDS.map((b, i) => (
-              <span key={b.label} className="flex items-center gap-1 text-t11 text-muted-foreground tabular-nums">
-                <span className="inline-block size-3 rounded-sm" style={{ background: `rgb(${b.color.join(",")})` }} />
-                {b.label} {i < RAIN_BANDS.length - 1 ? `${b.min}–${RAIN_BANDS[i + 1]!.min}` : `${b.min}+`}
-              </span>
-            ))}
-            <span className="text-t11 text-muted-foreground">mm/h{layer === "storm" ? " · ringed = storm core" : ""}</span>
+      <div className="mt-1.5">
+        {layer === "rain" ? (
+          <div aria-label="Rain intensity, mm per hour">
+            <div className="flex h-2 overflow-hidden rounded-full">
+              {RAIN_BANDS.map((b) => (
+                <span key={b.label} className="flex-1" style={{ background: `rgb(${b.color.join(",")})` }} />
+              ))}
+            </div>
+            <div className="flex text-t11 text-muted-foreground">
+              {RAIN_BANDS.map((b, i) => (
+                <span key={b.label} className="flex-1 truncate text-center" title={`${b.min}${i < RAIN_BANDS.length - 1 ? `–${RAIN_BANDS[i + 1]!.min}` : "+"} mm/h`}>
+                  {b.label === "Very heavy" ? "V. heavy" : b.label === "Moderate" ? "Mod." : b.label}
+                </span>
+              ))}
+              <span className="shrink-0 pl-1">{liveMode ? "◯ core" : "⚡ thunder"}</span>
+            </div>
           </div>
         ) : layer === "cloud" ? (
-          <p className="min-w-0 flex-1 text-t12 text-muted-foreground">
-            {liveMode ? "" : "White veil = cloud cover; greyer = low cloud, the kind that hides reefs."}
-          </p>
+          liveMode ? null : (
+            <div>
+              <div className="h-2 rounded-full" style={{ background: "linear-gradient(to right, rgba(170,180,195,0.15), rgb(245,248,252))" }} />
+              <div className="flex justify-between text-t11 text-muted-foreground">
+                <span>Clear</span>
+                <span>greyer = low cloud</span>
+                <span>Overcast</span>
+              </div>
+            </div>
+          )
         ) : legend ? (
-          <div className="min-w-0 flex-1">
-            <div className="h-2.5 rounded-full" style={{ background: rampGradient(legend.ramp) }} />
+          <div>
+            <div className="h-2 rounded-full" style={{ background: rampGradient(legend.ramp) }} />
             <div className="relative h-4 text-t11 text-muted-foreground tabular-nums">
-              {legend.ticks.map((v) => {
+              {legend.ticks.map((v, i) => {
                 const lo = legend.ramp[0]![0];
                 const hi = legend.ramp[legend.ramp.length - 1]![0];
-                const pct = Math.max(0, Math.min(100, ((v - lo) / (hi - lo)) * 100));
+                const at2 = Math.max(0, Math.min(100, ((v - lo) / (hi - lo)) * 100));
+                const unit = layer === "waves" ? formatDepth(1).replace(/^[\d.,\s]+/, "") : legend.unit;
+                const text = layer === "waves" ? formatDepth(v).replace(/\s*[a-z]+$/i, "").replace(/\.0$/, "") : String(v);
                 return (
-                  <span key={v} className="absolute -translate-x-1/2" style={{ left: `${Math.max(4, Math.min(96, pct))}%` }}>
-                    {layer === "waves" ? formatDepth(v).replace(/\s*[a-z]+$/i, "").replace(/\.0$/, "") : v}
+                  <span key={v} className="absolute -translate-x-1/2 whitespace-nowrap" style={{ left: `${Math.max(5, Math.min(92, at2))}%` }}>
+                    {i === legend.ticks.length - 1 ? `${text} ${unit}` : text}
                   </span>
                 );
               })}
             </div>
           </div>
-        ) : (
-          <p className="min-w-0 flex-1 text-t12 text-muted-foreground">Isobars (hPa) · H high, L low · close lines = strong wind</p>
-        )}
-        {legend && !(layer === "storm" && liveMode) ? (
-          <span className="shrink-0 text-t12 text-muted-foreground">{layer === "waves" ? formatDepth(1).replace(/^[\d.,\s]+/, "") : legend.unit}</span>
-        ) : null}
-        {motion ? (
-          <Button variant="outline" className="h-10 shrink-0 px-2.5" onClick={() => set({ wxMapStyle: style === "arrows" ? "particles" : "arrows" })}>
-            {style === "arrows" ? "Moving" : "Arrows"}
-          </Button>
         ) : null}
       </div>
-      <div className={`mt-1 flex items-center gap-1.5 ${liveMode ? "hidden" : ""}`}>
-        <span className="shrink-0 text-t12 text-muted-foreground">Model</span>
-        <div className="flex min-w-0 gap-1 overflow-x-auto" role="radiogroup" aria-label="Weather model">
-          {ROUTE_MODELS.map((m) => {
-            const on = modelId === m.id;
-            return (
-              <button
-                key={m.id}
-                type="button"
-                role="radio"
-                aria-checked={on}
-                onClick={() => set({ wxMapModel: m.id })}
-                className={`h-9 shrink-0 rounded-lg px-2.5 text-t12 font-semibold ${on ? "bg-primary text-primary-foreground" : "bg-background text-foreground"}`}
-              >
-                {m.label}
-              </button>
-            );
-          })}
+
+      {!liveMode ? (
+        <div className="mt-1 flex items-center gap-1 overflow-x-auto pb-0.5">
+          <Pill on={isobars || layer === "pressure"} disabled={layer === "pressure"} label="Isobars" onClick={() => set({ wxIsobars: !isobars })} />
+          <Pill
+            on={style === "particles" && !lowBattery}
+            disabled={lowBattery}
+            label={lowBattery ? "Animation (battery low)" : "Animation"}
+            onClick={() => set({ wxMapStyle: style === "arrows" ? "particles" : "arrows" })}
+          />
+          <span className="mx-0.5 h-6 w-px shrink-0 bg-border" aria-hidden />
+          {marine ? (
+            <span className="shrink-0 text-t12 text-muted-foreground">Open-Meteo marine model</span>
+          ) : (
+            <div className="flex gap-1" role="radiogroup" aria-label="Weather model">
+              {ROUTE_MODELS.map((m) => {
+                const on = modelId === m.id;
+                return (
+                  <button
+                    key={m.id}
+                    type="button"
+                    role="radio"
+                    aria-checked={on}
+                    onClick={() => set({ wxMapModel: m.id })}
+                    className={`h-10 shrink-0 rounded-full px-3 text-t12 font-semibold ${on ? "bg-primary text-primary-foreground" : "bg-background text-foreground"}`}
+                  >
+                    {m.label}
+                    <span className={`ml-1 font-normal ${on ? "" : "text-muted-foreground"}`}>{MODEL_KM[m.id] ?? ""} km</span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
         </div>
-      </div>
-      <p className="text-t12 text-muted-foreground">
-        {empty ? <span className="font-semibold text-foreground">{empty} </span> : null}
-        {liveMode
-          ? layer === "cloud"
-            ? "Satellite: NASA GIBS (Himawari, GOES)"
-            : "Radar © RainViewer · the outlook moves today's rain along its track; new showers can still pop up"
-          : `Tap the chart for the forecast at a spot · ${source}`}
-      </p>
+      ) : null}
+      {problem || empty || (hint && !liveMode) ? (
+        <p className="mt-1 text-t12 text-muted-foreground">
+          {problem ? <span className="font-semibold text-amber-200">{problem} </span> : null}
+          {empty ? <span className="font-semibold text-foreground">{empty} </span> : null}
+          {hint && !liveMode ? "Tap the chart for the forecast at a spot." : null}
+        </p>
+      ) : null}
+      {liveMode ? (
+        <p className="mt-1 text-t12 text-muted-foreground">
+          {layer === "cloud" ? "Satellite: NASA GIBS (Himawari, GOES)" : "Radar © RainViewer · the outlook moves the rain along its track; new showers can still pop up"}
+        </p>
+      ) : null}
     </div>
   );
 }
@@ -403,7 +460,7 @@ export function WxProbeCard() {
   if (p.curKn != null && p.curKn >= 0.1) rows.push(["Current", `${p.curKn.toFixed(1)} kn toward${dir(p.curToward)}`]);
   if (p.rainMm != null) rows.push(["Rain", p.rainMm < 0.1 ? "none" : `${p.rainMm.toFixed(1)} mm/h`]);
   if (p.cloudPct != null) rows.push(["Cloud", `${Math.round(p.cloudPct)}%${p.lowCloudPct != null ? `, low ${Math.round(p.lowCloudPct)}%` : ""}`]);
-  if (p.capeJkg != null && p.capeJkg >= 300) rows.push(["Storms", p.capeJkg >= 2000 ? "high risk" : p.capeJkg >= 1000 ? "possible" : "low risk"]);
+  if (p.capeJkg != null && p.capeJkg >= 300) rows.push(["Thunder", p.capeJkg >= 2000 ? "high risk" : p.capeJkg >= 1000 ? "possible" : "low risk"]);
   if (p.pressureHpa != null) rows.push(["Pressure", `${Math.round(p.pressureHpa)} hPa`]);
   return (
     <div className="pointer-events-auto absolute inset-x-2 top-[calc(max(0.4rem,var(--safe-area-inset-top,env(safe-area-inset-top)))+3.6rem)] z-40 mx-auto max-w-sm rounded-xl border border-border bg-card/97 p-2.5 shadow-[var(--shadow-border)]">

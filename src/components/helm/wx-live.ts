@@ -170,12 +170,12 @@ export function createWxLive(L: LeafletNS, map: LeafletMap, onRain: (r: RainNow 
     /** Call on every store change. */
     set(layer: string, liveAt: number | null) {
       const want: "radar" | "sat" | null =
-        liveAt == null ? null : layer === "rain" || layer === "storm" ? (radarAvailable() ? "radar" : null) : layer === "cloud" ? (satCloudAvailable() ? "sat" : null) : null;
+        liveAt == null ? null : layer === "rain" ? (radarAvailable() ? "radar" : null) : layer === "cloud" ? (satCloudAvailable() ? "sat" : null) : null;
       if (want !== kind) {
         stop();
         kind = want;
         if (!want) {
-          if (liveAt != null && (layer === "rain" || layer === "storm" || layer === "cloud")) {
+          if (liveAt != null && (layer === "rain" || layer === "cloud")) {
             publish({ kind: layer === "cloud" ? "sat" : "radar", status: "none", note: "Not available in this build." });
           } else if (useHelm.getState().wxLiveInfo) useHelm.getState().setWxMap({ wxLiveInfo: null });
           return;

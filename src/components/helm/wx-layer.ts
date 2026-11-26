@@ -4,9 +4,9 @@ import { thunderRisk } from "@/lib/routing/storm";
 import { RAIN_BANDS, rainBandIndex, rainRateFromDbz, stormCells } from "@/lib/rain";
 import { latLngOfWorld, type RainNow } from "@/components/helm/rain-now";
 import {
-  CAPE_RAMP,
   CLOUD_RAMP,
   CURRENT_RAMP,
+  PRESSURE_RAMP,
   WAVE_RAMP,
   WIND_RAMP,
   contourSegments,
@@ -18,6 +18,7 @@ import {
   smoothLines,
   upsample,
   valueAt,
+  valueAtEdge,
   vectorAt,
   type Ramp,
   type WxMapLayer,
@@ -30,9 +31,29 @@ export type WxLayerState = {
   style: "particles" | "arrows";
   at: number;
   field: WeatherField | null;
-  /** Live radar frame to draw instead of the model's rain (Rain and Storms layers). */
+  /** Isobars over any layer (always on the Pressure layer). */
+  isobars?: boolean;
+  /** Live radar frame to draw instead of the model's rain (Rain & thunder layer). */
   live?: { rain: RainNow; at: number } | null;
 };
+
+/** Natural Earth 1:50m coastline and borders, loaded the first time the weather map is drawn. */
+let coast: { coast: Array<Array<[number, number]>>; borders: Array<Array<[number, number]>> } | null = null;
+let coastLoading: Promise<void> | null = null;
+function loadCoast(): Promise<void> {
+  coastLoading ??= Promise.all([import("topojson-client"), import("world-atlas/countries-50m.json")])
+    .then(([{ mesh }, topo]) => {
+      const t = ((topo as { default?: unknown }).default ?? topo) as Parameters<typeof mesh>[0];
+      const objs = (t as unknown as { objects: Record<string, Parameters<typeof mesh>[1]> }).objects;
+      const land = mesh(t, objs.land!);
+      const border = mesh(t, objs.countries!, (a, b) => a !== b);
+      coast = { coast: land.coordinates as Array<Array<[number, number]>>, borders: border.coordinates as Array<Array<[number, number]>> };
+    })
+    .catch(() => {
+      coast = { coast: [], borders: [] };
+    });
+  return coastLoading;
+}
 
 const PAD = 0.3; // extra canvas around the view so heading-up rotation never shows bare corners
 
@@ -145,6 +166,128 @@ export function createWxLayer(L: LeafletNS, map: LeafletMap) {
     }
   }
 
+  /** Isobars with pressure labels, and H / L at the centres. Strong on the Pressure layer. */
+  function drawIsobars(g: CanvasRenderingContext2D, f: WeatherField, t: number, strong: boolean) {
+    if (!f.pressureHpa) return;
+      const raw = f.pressureHpa[t]!;
+      // Smooth the coarse grid so isobars are curves, not polygons; spacing adapts to the view.
+      const up = upsample(f, raw, 4);
+      const pg = up.grid;
+      const p = up.values;
+      const stepHpa = isobarStep(raw);
+      g.font = "600 13px system-ui";
+      g.textAlign = "center";
+      g.textBaseline = "middle";
+      for (const level of isobarLevels(p, stepHpa)) {
+        const lines = smoothLines(contourSegments(pg, p, level));
+        const path = new Path2D();
+        for (const line of lines) {
+          line.forEach((q, i) => {
+            const pq = toPx(q.lat, q.lng);
+            if (i === 0) path.moveTo(pq.x, pq.y);
+            else path.lineTo(pq.x, pq.y);
+          });
+        }
+        g.lineJoin = "round";
+        g.lineCap = "round";
+        const major = level % (stepHpa * 2) === 0;
+        g.lineWidth = strong ? (major ? 4.5 : 3.5) : major ? 3.5 : 2.5;
+        g.strokeStyle = "rgba(0,0,0,0.55)";
+        g.stroke(path);
+        g.lineWidth = strong ? (major ? 2.2 : 1.4) : major ? 1.6 : 1;
+        g.strokeStyle = strong ? "rgba(255,255,255,0.95)" : "rgba(255,255,255,0.8)";
+        g.stroke(path);
+        // Spread labels: each level labels a different part of its line.
+        const longest = lines.reduce<(typeof lines)[number] | undefined>((m, l) => (!m || l.length > m.length ? l : m), undefined);
+        const mid = longest?.[Math.floor((longest.length * (((level / stepHpa) % 5) + 0.5)) / 5.5)];
+        if (mid) {
+          const pm = toPx(mid.lat, mid.lng);
+          g.lineWidth = 3.5;
+          g.strokeStyle = "rgba(0,0,0,0.8)";
+          g.strokeText(String(level), pm.x, pm.y);
+          g.fillStyle = "#fff";
+          g.fillText(String(level), pm.x, pm.y);
+        }
+      }
+      g.font = "700 28px system-ui";
+      for (const e of extremesSmooth(f, raw, 4)) {
+        const pe = toPx(e.lat, e.lng);
+        g.lineWidth = 4;
+        g.strokeStyle = "rgba(0,0,0,0.75)";
+        g.strokeText(e.kind, pe.x, pe.y);
+        g.fillStyle = e.kind === "H" ? "#7dd3fc" : "#fca5a5";
+        g.fillText(e.kind, pe.x, pe.y);
+      }
+  }
+
+  /** A lightning bolt at each grid point where the model gives a thunderstorm risk. */
+  function drawThunder(g: CanvasRenderingContext2D, f: WeatherField, t: number) {
+    g.textAlign = "center";
+    g.textBaseline = "middle";
+    for (let j = 0; j < f.ny; j++) {
+      for (let i = 0; i < f.nx; i++) {
+        const k = j * f.nx + i;
+        const r = thunderRisk({
+          capeJkg: f.capeJkg![t]![k]!,
+          liftedIndex: f.liftedIndex ? f.liftedIndex[t]![k]! : NaN,
+          cinJkg: f.cinJkg ? f.cinJkg[t]![k]! : NaN,
+          precipMm: f.precipMm ? f.precipMm[t]![k]! : 0,
+          code: f.code ? Math.round(f.code[t]![k]!) : 0,
+          gustKn: f.gustKn[t]![k]!,
+          tempC: f.tempC ? f.tempC[t]![k]! : 25,
+        });
+        if (r < 1) continue;
+        const p = toPx(f.lat0 + j * f.dLat, f.lng0 + i * f.dLng);
+        g.font = `700 ${r >= 2 ? 22 : 15}px system-ui`;
+        g.lineWidth = 4;
+        g.strokeStyle = "rgba(0,0,0,0.7)";
+        g.strokeText("⚡", p.x, p.y);
+        g.fillStyle = r >= 3 ? "#fde047" : r >= 2 ? "#fef08a" : "rgba(254,240,138,0.75)";
+        g.fillText("⚡", p.x, p.y);
+      }
+    }
+  }
+
+  /** Coastlines and borders over the colour (zoomed out), so the map reads like Windy's. */
+  function drawCoast(g: CanvasRenderingContext2D, w: number, h: number) {
+    if (map.getZoom() > 9) return;
+    if (!coast) {
+      void loadCoast().then(() => draw(true));
+      return;
+    }
+    const b = map.getBounds().pad(0.5);
+    const path = new Path2D();
+    const borders = new Path2D();
+    const add = (pp: Path2D, line: Array<[number, number]>) => {
+      let started = false;
+      for (const [lng, lat] of line) {
+        if (lat < b.getSouth() - 2 || lat > b.getNorth() + 2) {
+          started = false;
+          continue;
+        }
+        const q = toPx(lat, lng);
+        if (q.x < -w || q.x > 2 * w || q.y < -h || q.y > 2 * h) {
+          started = false;
+          continue;
+        }
+        if (!started) pp.moveTo(q.x, q.y);
+        else pp.lineTo(q.x, q.y);
+        started = true;
+      }
+    };
+    for (const line of coast.coast) add(path, line);
+    for (const line of coast.borders) add(borders, line);
+    g.lineJoin = "round";
+    g.lineWidth = 1.2;
+    g.strokeStyle = "rgba(255,255,255,0.75)";
+    g.stroke(path);
+    g.lineWidth = 0.8;
+    g.setLineDash([4, 3]);
+    g.strokeStyle = "rgba(255,255,255,0.45)";
+    g.stroke(borders);
+    g.setLineDash([]);
+  }
+
   function draw(keep = false) {
     stop(!keep);
     const { w, h } = frame();
@@ -162,7 +305,7 @@ export function createWxLayer(L: LeafletNS, map: LeafletMap) {
     g.clearRect(0, 0, w, h);
     const f = state.field;
     if (state.layer === "off") return;
-    const live = state.live && (state.layer === "rain" || state.layer === "storm") ? state.live : null;
+    const live = state.live && state.layer === "rain" ? state.live : null;
     if (live) drawRadar(g, live.rain, live.at);
     if (!f) return;
     const t = layerIndex(f, state.at);
@@ -193,108 +336,50 @@ export function createWxLayer(L: LeafletNS, map: LeafletMap) {
       g.imageSmoothingQuality = "high";
       g.drawImage(off, 0, 0, cw * step, ch * step);
     };
-    const fill = (layer: Float32Array | undefined, ramp: Ramp, alpha: number, min = -Infinity) => {
+    // Colour carried just past the grid's edge and faded, so it reaches the screen edge.
+    const fill = (layer: Float32Array | undefined, ramp: Ramp, alpha: number) => {
       if (!layer) return;
       shade(6, (la, lo) => {
-        const v = valueAt(f, layer, la, lo);
-        if (!Number.isFinite(v) || v < min) return null;
-        const c = rampColor(ramp, v);
-        return [c[0], c[1], c[2], alpha];
+        const e = valueAtEdge(f, layer, la, lo);
+        if (!Number.isFinite(e.v)) return null;
+        const c = rampColor(ramp, e.v);
+        return [c[0], c[1], c[2], Math.round(alpha * e.a)];
       });
     };
     const L1 = state.layer;
-    if (L1 === "wind") fill(f.windKn[t], WIND_RAMP, 110);
-    else if (L1 === "gust") fill(f.gustKn[t], WIND_RAMP, 130);
-    else if (L1 === "current") fill(f.curKn[t], CURRENT_RAMP, 95);
-    else if (L1 === "waves") fill(f.waveM[t], WAVE_RAMP, 125);
+    if (L1 === "wind") fill(f.windKn[t], WIND_RAMP, 205);
+    else if (L1 === "gust") fill(f.gustKn[t], WIND_RAMP, 205);
+    else if (L1 === "current") fill(f.curKn[t], CURRENT_RAMP, 190);
+    else if (L1 === "waves") fill(f.waveM[t], WAVE_RAMP, 200);
+    else if (L1 === "pressure") fill(f.pressureHpa?.[t], PRESSURE_RAMP, 185);
     else if (L1 === "rain" && !live && f.precipMm) {
-      // Rain by intensity band. The model grid is coarse (about 10 km), so it is smoothed into
-      // rounded areas; the live radar shows the real detail.
+      // Rain by intensity band. The model grid is coarse (about 10–25 km), so it is smoothed
+      // into rounded areas; the live radar shows the real detail.
       const up = upsample(f, f.precipMm[t]!, 4);
       const ug = up.grid as unknown as WeatherField;
       shade(4, (la, lo) => {
-        const k = rainBandIndex(valueAt(ug, up.values, la, lo));
+        const e = valueAtEdge(ug, up.values, la, lo, 10);
+        const k = rainBandIndex(e.v);
         if (k < 0) return null;
         const c = RAIN_BANDS[k]!.color;
-        return [c[0], c[1], c[2], k === 0 ? 120 : 170];
+        return [c[0], c[1], c[2], Math.round((k === 0 ? 150 : 200) * e.a)];
       });
     } else if (L1 === "cloud" && f.cloudPct) {
       // Cloud: a veil as thick as the cover; low cloud (the kind that hides reefs) greyer.
       shade(6, (la, lo) => {
-        const tot = valueAt(f, f.cloudPct![t]!, la, lo);
+        const e = valueAtEdge(f, f.cloudPct![t]!, la, lo);
+        const tot = e.v;
         if (!Number.isFinite(tot) || tot < 8) return null;
         const low = f.lowCloudPct ? valueAt(f, f.lowCloudPct[t]!, la, lo) : NaN;
         const share = Number.isFinite(low) && tot > 0 ? Math.min(1, low / tot) : 0;
         const c = rampColor(CLOUD_RAMP, 100 - share * 45);
-        return [c[0], c[1], c[2], Math.round(25 + tot * 1.5)];
+        return [c[0], c[1], c[2], Math.round((30 + tot * 1.6) * e.a)];
       });
-    } else if (L1 === "storm" && !live && f.capeJkg) {
-      shade(6, (la, lo) => {
-        const cape = valueAt(f, f.capeJkg![t]!, la, lo);
-        const r = thunderRisk({
-          capeJkg: cape,
-          liftedIndex: f.liftedIndex ? valueAt(f, f.liftedIndex[t]!, la, lo) : NaN,
-          cinJkg: f.cinJkg ? valueAt(f, f.cinJkg[t]!, la, lo) : NaN,
-          precipMm: f.precipMm ? valueAt(f, f.precipMm[t]!, la, lo) : 0,
-          code: f.code ? Math.round(valueAt(f, f.code[t]!, la, lo)) : 0,
-          gustKn: valueAt(f, f.gustKn[t]!, la, lo),
-          tempC: f.tempC ? valueAt(f, f.tempC[t]!, la, lo) : 25,
-        });
-        if (!r) return null;
-        const c = rampColor(CAPE_RAMP, Math.max(cape, [0, 600, 1500, 2800][r]!));
-        return [c[0], c[1], c[2], 90 + 35 * r];
-      });
-    } else if (L1 === "pressure" && f.pressureHpa) {
-      const raw = f.pressureHpa[t]!;
-      // Smooth the coarse grid so isobars are curves, not polygons; spacing adapts to the view.
-      const up = upsample(f, raw, 4);
-      const pg = up.grid;
-      const p = up.values;
-      const stepHpa = isobarStep(raw);
-      g.font = "600 13px system-ui";
-      g.textAlign = "center";
-      g.textBaseline = "middle";
-      for (const level of isobarLevels(p, stepHpa)) {
-        const lines = smoothLines(contourSegments(pg, p, level));
-        const path = new Path2D();
-        for (const line of lines) {
-          line.forEach((q, i) => {
-            const pq = toPx(q.lat, q.lng);
-            if (i === 0) path.moveTo(pq.x, pq.y);
-            else path.lineTo(pq.x, pq.y);
-          });
-        }
-        g.lineJoin = "round";
-        g.lineCap = "round";
-        const major = level % (stepHpa * 2) === 0;
-        g.lineWidth = major ? 4.5 : 3.5;
-        g.strokeStyle = "rgba(0,0,0,0.55)";
-        g.stroke(path);
-        g.lineWidth = major ? 2.2 : 1.4;
-        g.strokeStyle = "rgba(255,255,255,0.95)";
-        g.stroke(path);
-        // Spread labels: each level labels a different part of its line.
-        const longest = lines.reduce<(typeof lines)[number] | undefined>((m, l) => (!m || l.length > m.length ? l : m), undefined);
-        const mid = longest?.[Math.floor((longest.length * (((level / stepHpa) % 5) + 0.5)) / 5.5)];
-        if (mid) {
-          const pm = toPx(mid.lat, mid.lng);
-          g.lineWidth = 3.5;
-          g.strokeStyle = "rgba(0,0,0,0.8)";
-          g.strokeText(String(level), pm.x, pm.y);
-          g.fillStyle = "#fff";
-          g.fillText(String(level), pm.x, pm.y);
-        }
-      }
-      g.font = "700 28px system-ui";
-      for (const e of extremesSmooth(f, raw, 4)) {
-        const pe = toPx(e.lat, e.lng);
-        g.lineWidth = 4;
-        g.strokeStyle = "rgba(0,0,0,0.75)";
-        g.strokeText(e.kind, pe.x, pe.y);
-        g.fillStyle = e.kind === "H" ? "#7dd3fc" : "#fca5a5";
-        g.fillText(e.kind, pe.x, pe.y);
-      }
     }
+    drawCoast(g, w, h);
+    // Thunder on the rain layer: a bolt where storms are possible (model; live radar rings cores).
+    if (L1 === "rain" && !live && f.capeJkg) drawThunder(g, f, t);
+    if (L1 === "pressure" || state.isobars) drawIsobars(g, f, t, L1 === "pressure");
     // Motion: every layer moves. Wind, gust and current follow their own flow; waves drift along
     // the direction they travel; pressure, rain and storm show the wind beneath them, fainter.
     const waves = L1 === "waves";
@@ -348,7 +433,7 @@ export function createWxLayer(L: LeafletNS, map: LeafletMap) {
       }
     }
     flowGrid = { step, cols, rows, u, v, kn };
-    const n = Math.min(own ? 1600 : 900, Math.round((w * h) / (own ? 1900 : 3200)));
+    const n = Math.min(own ? 1300 : 700, Math.round((w * h) / (own ? 2400 : 4200)));
     // Keep the particles when only the time or data changed, so the slider never restarts them.
     if (!keep || particles.length !== n || w !== lastW || h !== lastH) {
       particles = Array.from({ length: n }, () => ({ x: Math.random() * w, y: Math.random() * h, age: Math.floor(Math.random() * 80) }));
@@ -358,7 +443,7 @@ export function createWxLayer(L: LeafletNS, map: LeafletMap) {
     // Pixels a frame per unit: currents are slow, so they get a bigger scale to be seen moving;
     // waves (metres) drift at a steady pace that grows with height.
     const speed = L1 === "current" ? 3.2 : waves ? 1.3 : 0.22;
-    const color = L1 === "current" ? "rgba(235,225,255,0.92)" : waves ? "rgba(220,240,255,0.9)" : own ? "rgba(255,255,255,0.88)" : "rgba(255,255,255,0.5)";
+    const color = L1 === "current" ? "rgba(235,225,255,0.7)" : waves ? "rgba(220,240,255,0.7)" : own ? "rgba(255,255,255,0.62)" : "rgba(255,255,255,0.38)";
     animate(w, h, dpr, speed, color, waves);
   }
 
@@ -438,15 +523,15 @@ export function createWxLayer(L: LeafletNS, map: LeafletMap) {
       const k = lastT ? Math.min(3, (now - lastT) / 16.7) : 1;
       lastT = now;
       g.globalCompositeOperation = "destination-in";
-      g.fillStyle = `rgba(0,0,0,${Math.pow(0.9, k).toFixed(3)})`;
+      g.fillStyle = `rgba(0,0,0,${Math.pow(0.86, k).toFixed(3)})`;
       g.fillRect(0, 0, w, h);
       g.globalCompositeOperation = "source-over";
-      g.lineWidth = 1.6;
+      g.lineWidth = 1.1;
       g.strokeStyle = color;
       g.beginPath();
       for (const p of particles) {
         const s = sample(p.x, p.y);
-        if (!Number.isFinite(s.kn) || p.age > 90) {
+        if (!Number.isFinite(s.kn) || p.age > 75) {
           p.x = Math.random() * w;
           p.y = Math.random() * h;
           p.age = 0;
@@ -477,7 +562,7 @@ export function createWxLayer(L: LeafletNS, map: LeafletMap) {
 
   return {
     set(next: WxLayerState) {
-      const restart = next.layer !== state.layer || next.style !== state.style;
+      const restart = next.layer !== state.layer || next.style !== state.style || Boolean(next.isobars) !== Boolean(state.isobars);
       const changed = restart || next.at !== state.at || next.field !== state.field || next.live?.rain !== state.live?.rain || next.live?.at !== state.live?.at;
       state = next;
       if (!changed) return;

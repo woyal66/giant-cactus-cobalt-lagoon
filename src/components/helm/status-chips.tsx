@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { WifiOff } from "lucide-react";
 import { useWx } from "@/hooks/weather";
-import { formatMeters } from "@/lib/geo";
+import { formatLat, formatLng, formatMeters } from "@/lib/geo";
+import { Button } from "@/components/ui/button";
 import { useHelm, useUnitsKey } from "@/store/helm";
 
 /**
@@ -32,6 +33,7 @@ export function StatusChips() {
   useUnitsKey();
   const boat = useHelm((s) => s.boat);
   const lowBattery = useHelm((s) => s.lowBattery);
+  const gpsDenied = useHelm((s) => s.gpsDenied);
   const wx = useWx();
   const [online, setOnline] = useState(() => (typeof navigator === "undefined" ? true : navigator.onLine));
   const [now, setNow] = useState(() => Date.now());
@@ -51,7 +53,7 @@ export function StatusChips() {
 
   const q = gpsQuality(boat?.source, boat?.accuracy, boat ? now - boat.at : Infinity);
   const gpsText =
-    q === "none" ? "No GPS" : q === "manual" ? "Placed" : q === "stale" ? "GPS old" : boat?.accuracy != null ? `±${formatMeters(boat.accuracy)}` : "GPS";
+    q === "none" ? (gpsDenied ? "GPS off" : "Finding GPS") : q === "manual" ? "Placed" : q === "stale" ? "GPS old" : boat?.accuracy != null ? `±${formatMeters(boat.accuracy)}` : "GPS";
   const gpsTone = q === "good" ? "ok" : q === "fair" || q === "manual" ? "warn" : "bad";
   const saved = (wx.data as { savedAt?: number } | undefined)?.savedAt;
   const wxAt = saved ?? (wx.dataUpdatedAt || 0);
@@ -107,6 +109,25 @@ export function StatusChips() {
                 ? "Fine for passage making; the anchor alarm ignores fixes too vague for its circle."
                 : "Go on deck or near a window, and check location is allowed for Anchor Mate."}
           </p>
+          {boat ? (
+            <p className="mt-1 font-semibold tabular-nums">
+              {formatLat(boat.lat)} {formatLng(boat.lng)}
+            </p>
+          ) : null}
+          {q === "none" || q === "stale" ? (
+            <Button
+              variant="outline"
+              size="sm"
+              className="mt-1.5 w-full"
+              onClick={() => {
+                setOpen(false);
+                useHelm.getState().setTapMode("place-boat");
+                useHelm.getState().setPanel(null);
+              }}
+            >
+              Place boat by hand
+            </Button>
+          ) : null}
           <p className="mt-1.5 font-semibold">{online ? "Signal: online" : "Signal: none"}</p>
           <p className="text-muted-foreground">
             {online ? "Maps, forecasts and tides update." : "Saved maps, tides and the last forecast are used. The anchor alarm works without signal."}

@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { setReturnBy } from "@/hooks/rescue-reminder";
 import { signalKUrl } from "@/lib/ais";
+import { radarAvailable } from "@/lib/radar";
 import { nearestPlace } from "@/lib/place-library";
 import { cachedInView } from "@/lib/library-cache";
 import { hhmm, nextAt } from "@/lib/rescue";
@@ -116,6 +117,21 @@ export function AisSettings() {
           </p>
         </>
       ) : null}
+    </div>
+  );
+}
+
+/** Squall alert: watches the rain radar for a heavy cell closing on the boat. */
+export function SquallSettings() {
+  const on = useHelm((s) => s.radar);
+  if (!radarAvailable()) return null;
+  return (
+    <div className="mt-3 grid gap-1">
+      <label className="flex min-h-11 items-center justify-between gap-2 text-t14 font-semibold">
+        <span>Squall alert (heavy rain closing on the boat)</span>
+        <input type="checkbox" className="size-6 accent-[var(--color-primary)]" checked={on} onChange={(e) => useHelm.getState().setRadar(e.target.checked)} />
+      </label>
+      <p className="text-t12 leading-snug text-muted-foreground">Checks the rain radar every 5 minutes while the app is open (needs signal). The radar picture is in Weather → Rain & thunder.</p>
     </div>
   );
 }

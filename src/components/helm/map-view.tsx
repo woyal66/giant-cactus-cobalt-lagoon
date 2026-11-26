@@ -813,6 +813,7 @@ export function MapView() {
           style: s.lowBattery ? ("arrows" as const) : s.wxMapStyle,
           at: s.wxMapAt,
           field: wxField,
+          isobars: s.wxIsobars,
           live: liveRain && s.wxLiveAt != null ? { rain: liveRain, at: s.wxLiveAt } : null,
         });
         const wxLive = createWxLive(L, map, (r) => {
@@ -836,6 +837,13 @@ export function MapView() {
           wxField
             ? { source: "kept" as const, fetchedAt: wxField.fetchedAt ?? null, times: wxField.times }
             : { source: "none" as const, fetchedAt: null, times: [] };
+        // A failed download (no signal, or the forecast service's per-minute limit) tries once
+        // more after half a minute, without the skipper having to pan.
+        let wxRetry = 0;
+        const retryWx = () => {
+          window.clearTimeout(wxRetry);
+          wxRetry = window.setTimeout(() => wxLoad(), 30_000);
+        };
         const wxLoad = () => {
           const st = useHelm.getState();
           if (!map || st.wxMapLayer === "off" || wxLoading || (wxCovers(wxField) && wxFieldModel === st.wxMapModel)) return;
@@ -853,10 +861,14 @@ export function MapView() {
                   ? { source: r.source, fetchedAt: r.field.fetchedAt ?? null, times: r.field.times }
                   : keptInfo(),
               });
+              if (!r || r.source !== "live") retryWx();
             })
             // A failed download (no signal, or the forecast service's per-minute limit) must not
             // leave the time slider with no hours: keep the forecast already on screen.
-            .catch(() => useHelm.getState().setWxMap({ wxMapInfo: keptInfo() }))
+            .catch(() => {
+              useHelm.getState().setWxMap({ wxMapInfo: keptInfo() });
+              retryWx();
+            })
             .finally(() => {
               wxLoading = false;
               wxLayer.set(wxState(useHelm.getState()));
@@ -865,6 +877,7 @@ export function MapView() {
         map.on("moveend", wxLoad);
         stopWx = () => {
           map?.off("moveend", wxLoad);
+          window.clearTimeout(wxRetry);
           wxLayer.destroy();
           wxLive.destroy();
           anchorages.destroy();
@@ -890,9 +903,7 @@ export function MapView() {
           : null;
         stopRadar = () => radar.destroy();
 
-        L.control
-          .scale({ metric: true, imperial: false, position: "bottomright" })
-          .addTo(map);
+        // One scale only: the nautical one on the rail (the Leaflet km bar was a duplicate).
 
         const boatIcon = (
           heading: number,
@@ -1593,7 +1604,7 @@ export function MapView() {
             zonesOn = false;
           }
           radar.set(s.radar && radarAvailable());
-          anchorages.set(s.sharedAnchorages);
+          anchorages.set(s.places && s.sharedAnchorages);
           placesLayer.set(s.places, s.placeKinds.join(","));
           aisLayer.set(s.aisTargets, s.aisSource !== "off");
           if (s.landHeights && !map.hasLayer(land)) land.addTo(map);

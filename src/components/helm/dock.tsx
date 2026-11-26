@@ -3,7 +3,6 @@ import type { ReactNode } from "react";
 import {
   Anchor,
   Compass,
-  Pencil,
   Route as RouteIcon,
   Square,
   Undo2,
@@ -133,7 +132,7 @@ export function BottomDock() {
   if (wxOn) return null;
   return (
     <nav className="pointer-events-none absolute inset-x-0 bottom-0 z-20 p-2 pb-[max(0.5rem,var(--safe-area-inset-bottom,env(safe-area-inset-bottom)))]">
-      <div className="pointer-events-auto mx-auto grid max-w-lg grid-cols-4 gap-0.5 rounded-xl border border-border bg-card p-1 shadow-[var(--shadow-border)]">
+      <div className="pointer-events-auto mx-auto grid max-w-lg grid-cols-3 gap-0.5 rounded-xl border border-border bg-card p-1 shadow-[var(--shadow-border)]">
         <DockBtn
           active={panel === "passages" || panel === "rename"}
           label="Navigation"
@@ -170,16 +169,6 @@ export function BottomDock() {
           }}
         >
           <Anchor />
-        </DockBtn>
-        <DockBtn
-          active={false}
-          label="Draw"
-          onClick={() => {
-            useHelm.getState().setDraft([]);
-            setDrawMode("draw");
-          }}
-        >
-          <Pencil />
         </DockBtn>
       </div>
     </nav>

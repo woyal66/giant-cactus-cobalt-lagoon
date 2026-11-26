@@ -361,6 +361,8 @@ export type HelmState = {
   /** Weather drawn on the chart, its style, and the hour shown (hour not saved). */
   wxMapLayer: WxMapLayer | "off";
   wxMapStyle: "particles" | "arrows";
+  /** Isobars over any weather layer (always shown on Pressure). */
+  wxIsobars: boolean;
   /** Weather map model (ECMWF, GFS, ICON, UKMO); waves and current always from the marine model. */
   wxMapModel: string;
   wxMapAt: number;
@@ -508,7 +510,7 @@ type HelmActions = {
   setSharpTiles: (v: boolean) => void;
   setDepthLayer: (v: "off" | "depth" | "lines" | "shallow") => void;
   setWxMap: (
-    p: Partial<Pick<HelmState, "wxMapLayer" | "wxMapStyle" | "wxMapAt" | "wxMapInfo" | "wxMapPlaying" | "wxProbe" | "wxMapModel" | "wxLiveAt" | "wxLiveInfo">>,
+    p: Partial<Pick<HelmState, "wxMapLayer" | "wxMapStyle" | "wxMapAt" | "wxMapInfo" | "wxMapPlaying" | "wxProbe" | "wxMapModel" | "wxLiveAt" | "wxLiveInfo" | "wxIsobars">>,
   ) => void;
   setTideNowMsl: (v: number | null) => void;
   setBenthic: (v: boolean) => void;
@@ -626,6 +628,7 @@ function persistSig(state: Record<string, unknown>): string {
     state.wxMapLayer,
     state.baseMap,
     state.wxMapModel,
+    state.wxIsobars,
     state.benthic,
     state.textSize,
     state.reefClarity,
@@ -1052,6 +1055,7 @@ export const useHelm = create<HelmState & HelmActions>()(
       baseMap: "photo",
       wxMapLayer: "off",
       wxMapStyle: "particles",
+      wxIsobars: false,
       wxMapModel: "ecmwf",
       wxMapAt: Date.now(),
       wxMapPlaying: false,
@@ -1889,6 +1893,7 @@ export const useHelm = create<HelmState & HelmActions>()(
         baseMap: s.baseMap,
         wxMapLayer: s.wxMapLayer,
         wxMapModel: s.wxMapModel,
+        wxIsobars: s.wxIsobars,
         benthic: s.benthic,
         textSize: s.textSize,
         reefClarity: s.reefClarity,
@@ -1950,7 +1955,8 @@ export const useHelm = create<HelmState & HelmActions>()(
           ...p,
           imagery: isImageryId(p.imagery) ? usableImagery(p.imagery) : current.imagery,
           prevImagery: isImageryId(p.prevImagery) ? usableImagery(p.prevImagery) : null,
-          depths: typeof p.depths === "boolean" ? p.depths : current.depths,
+          // The OpenSeaMap depth layer was merged into the seabed depth lines.
+          depths: false,
           reefOutlines:
             typeof p.reefOutlines === "boolean" ? p.reefOutlines : current.reefOutlines,
           officialCharts:
@@ -1973,9 +1979,12 @@ export const useHelm = create<HelmState & HelmActions>()(
               ? { topic: p.remoteWatch.topic, boatName: p.remoteWatch.boatName.slice(0, 40) }
               : null,
           lengthUnit: applyLengthUnit(p.lengthUnit, current.lengthUnit),
-          sharpTiles: typeof p.sharpTiles === "boolean" ? p.sharpTiles : current.sharpTiles,
+          // Sharp photos follow the screen (on for high-density screens); no longer a switch.
+          sharpTiles: current.sharpTiles,
           depthLayer: p.depthLayer === "depth" || p.depthLayer === "shallow" || p.depthLayer === "lines" ? p.depthLayer : "off",
-          wxMapLayer: WX_MAP_LAYERS.some((l) => l.id === p.wxMapLayer) ? (p.wxMapLayer as WxMapLayer) : "off",
+          // "storm" was its own layer before Rain & thunder merged them.
+          wxMapLayer: (p.wxMapLayer as string) === "storm" ? "rain" : WX_MAP_LAYERS.some((l) => l.id === p.wxMapLayer) ? (p.wxMapLayer as WxMapLayer) : "off",
+          wxIsobars: p.wxIsobars === true,
           // Always opens moving (arrows are one tap away); the model choice is remembered.
           wxMapStyle: "particles",
           wxMapModel: ["ecmwf", "gfs", "icon", "ukmo"].includes(p.wxMapModel as string) ? (p.wxMapModel as string) : "ecmwf",

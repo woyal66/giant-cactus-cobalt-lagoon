@@ -93,6 +93,7 @@ export function HelmApp() {
   const clarity = useHelm((s) => s.reefClarity);
   const reefDepthLook = useHelm((s) => s.reefDepthLook);
   const chartBase = useHelm((s) => s.baseMap === "chart");
+  const wxDim = useHelm((s) => s.wxMapLayer !== "off");
   const reef3d = useHelm((s) => s.reef3d);
   const plannerOn = useHelm((s) => s.panel === "route" || s.tapMode === "route-start" || s.tapMode === "route-finish");
   const textSize = useHelm((s) => s.textSize);
@@ -108,7 +109,7 @@ export function HelmApp() {
     <div
       className={`relative h-dvh w-full overflow-hidden bg-background text-foreground${
         look === "sunlight" ? " rp-sunlight" : look === "night" ? " rp-night" : ""
-      }${clarity && look === "normal" ? " rp-clarity" : ""}${reefDepthLook && look === "normal" ? " rp-reefdepth" : ""}${chartBase ? " rp-chart" : ""}`}
+      }${clarity && look === "normal" ? " rp-clarity" : ""}${reefDepthLook && look === "normal" ? " rp-reefdepth" : ""}${chartBase ? " rp-chart" : ""}${wxDim ? " rp-wxdim" : ""}`}
       data-sun-punch={look === "sunlight" ? String(sunPunch) : undefined}
     >
       {/* Reef depth photo filter: lift the greens and blues of shallow water, deepen dark water. */}

@@ -23,6 +23,8 @@ const LOOP_MS = 700;
 const REFRESH_MS = 5 * 60_000;
 const ALERT_COOLDOWN_MS = 20 * 60_000;
 const SQUALL_NOTICE_ID = 800;
+/** Draw the radar tiles on the chart (off: the weather map's Rain & thunder layer shows them). */
+const DRAW = false;
 const COMPASS = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"];
 
 /**
@@ -42,6 +44,12 @@ export function createRadar(L: LeafletNS, map: LeafletMap, maxZoom: number) {
 
   const show = (i: number) => {
     if (i === shown || !frames[i]) return;
+    // The radar picture is on the weather map now (Rain & thunder); this only watches for squalls.
+    if (!DRAW) {
+      shown = i;
+      publish();
+      return;
+    }
     const f = frames[i];
     let layer = layers.get(f.path);
     if (!layer) {

@@ -759,3 +759,11 @@ svg[aria-label] text {
   background: color-mix(in oklab, var(--color-card) 94%, transparent);
   box-shadow: var(--shadow-border);
 }
+
+/* Weather map open: the photo or chart steps back so the weather colours read cleanly. */
+.rp-wxdim.rp-wxdim.rp-wxdim .leaflet-tile-pane,
+.rp-wxdim.rp-wxdim.rp-wxdim .leaflet-satOverlay-pane,
+.rp-wxdim.rp-wxdim.rp-wxdim .leaflet-satHi-pane,
+.rp-wxdim.rp-wxdim.rp-wxdim .leaflet-chartOverlay-pane {
+  filter: brightness(0.42) saturate(0.35);
+}
