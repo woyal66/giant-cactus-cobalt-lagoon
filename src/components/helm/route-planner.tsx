@@ -545,15 +545,15 @@ function PickedActions({ picked, ctx, shelter }: { picked: Choice; ctx: PlanCont
           onClick={() => {
             const d = asDraft(title, r.points);
             const s = useHelm.getState();
-            // At anchor, following a route would start the off-track alarm: ask first.
+            // At anchor, following a route would start steering cues: ask first.
             if (
               s.anchor?.radiusLocked &&
               !window.confirm(
-                "You're on anchor watch. Following now starts steering cues and the off-track alarm while you're still at anchor. Follow anyway? (Choose Cancel to keep it saved for when you leave.)",
+                "You're on anchor watch. Following now starts steering cues while you're still at anchor. Follow anyway? (Choose Cancel to keep it saved for when you leave.)",
               )
             ) {
               useHelm.setState({ drafts: [d, ...s.drafts].slice(0, 40) });
-              toast.success("Saved to Tracks. Follow it from Tracks when you weigh anchor.");
+              toast.success("Saved to My tracks. Follow it from Navigation when you weigh anchor.");
               return;
             }
             useHelm.setState({ drafts: [d, ...s.drafts].slice(0, 40) });
@@ -575,7 +575,7 @@ function PickedActions({ picked, ctx, shelter }: { picked: Choice; ctx: PlanCont
             const s = useHelm.getState();
             useHelm.setState({ drafts: [d, ...s.drafts].slice(0, 40) });
             keepOffline(d.localId);
-            toast.success("Saved to Tracks, with its forecast for offline use");
+            toast.success("Saved to My tracks, with its forecast for offline use");
           }}
         >
           Save

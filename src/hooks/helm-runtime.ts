@@ -439,7 +439,7 @@ export function useAnchorWatch() {
       const leg = boat && pts.length >= 1 ? markNav(boat, pts, s.pinnedMark, s.courseMark) : null;
       const cue =
         boat && pts.length >= 2
-          ? steerCue(boat, pts, s.steerSense, s.xteAlarmM, leg ? steerLegIndex(boat, pts, leg.index) : undefined)
+          ? steerCue(boat, pts, s.steerSense, 0, leg ? steerLegIndex(boat, pts, leg.index) : undefined)
           : null;
       // With lock-screen GPS running the page is not frozen when hidden, so the
       // guard can (and must) still raise "GPS lost" with the screen off.
@@ -449,7 +449,8 @@ export function useAnchorWatch() {
         goodFix,
         fixAt: boat?.at,
         dragging: dragging && goodFix,
-        offTrack: Boolean(cue?.offTrack) && goodFix && fresh,
+        // The off-track alarm was removed (a distraction); steering cues stay.
+        offTrack: false,
         armed: watchOn,
       });
       guard.current = state;

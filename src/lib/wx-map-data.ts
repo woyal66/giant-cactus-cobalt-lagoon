@@ -68,14 +68,15 @@ function covers(f: WeatherField, b: BBox): boolean {
  * download is kept on the phone so the layers still play offline. With no signal, falls back
  * to a saved download for the area, then to the saved passage's forecast.
  */
-export async function loadViewField(b: BBox): Promise<ViewField | null> {
+export async function loadViewField(b: BBox, modelId = "ecmwf"): Promise<ViewField | null> {
   const grid = viewGrid(b);
-  const key = `wx:view:${grid.key}`;
+  const model = ROUTE_MODELS.find((m) => m.id === modelId) ?? ROUTE_MODELS[0]!;
+  const key = `wx:view:${model.id === "ecmwf" ? "" : `${model.id}:`}${grid.key}`;
   const now = Date.now();
   const hit = mem.get(key);
   if (hit && now - (hit.fetchedAt ?? 0) < FRESH_MS) return { field: hit, source: "live" };
   try {
-    const field = await fetchField(grid, ROUTE_MODELS[0]!, 3);
+    const field = await fetchField(grid, model, 3);
     mem.set(key, field);
     void kvSet(key, field)
       .then(() => remember(key, field))

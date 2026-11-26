@@ -17,7 +17,7 @@ const STEPS = [
     icon: ShieldCheck,
     kicker: "Setting a watch",
     title: "Three steps at the anchorage",
-    body: "1. Tap Anchor and set depth, chain and scope.\n2. Check the swing circle on the satellite; drag it to fit.\n3. Tap Set alarm. The top shows WATCH ON. Lock the phone and rest.",
+    body: "1. Tap Anchor and set depth, chain and scope.\n2. Check the swing circle on the satellite; drag it to fit.\n3. Go through the Ready for the night list, then tap Set alarm. The card at the bottom shows how far you are from the hook. Lock the phone and rest.",
   },
   {
     icon: BellRing,

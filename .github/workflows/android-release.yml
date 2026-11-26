@@ -50,6 +50,14 @@ jobs:
           VITE_LICENSED_IMAGERY_ONLY: "1"
           VITE_MAPTILER_KEY: ${{ secrets.VITE_MAPTILER_KEY || vars.VITE_MAPTILER_KEY }}
           VITE_ESRI_KEY: ${{ secrets.VITE_ESRI_KEY || vars.VITE_ESRI_KEY }}
+          # Online-only licensed imagery (docs/imagery-keys.md); each is off when unset.
+          VITE_GOOGLE_TILES_KEY: ${{ secrets.VITE_GOOGLE_TILES_KEY || vars.VITE_GOOGLE_TILES_KEY }}
+          VITE_AZURE_MAPS_KEY: ${{ secrets.VITE_AZURE_MAPS_KEY || vars.VITE_AZURE_MAPS_KEY }}
+          VITE_MAPBOX_TOKEN: ${{ secrets.VITE_MAPBOX_TOKEN || vars.VITE_MAPBOX_TOKEN }}
+          VITE_HERE_KEY: ${{ secrets.VITE_HERE_KEY || vars.VITE_HERE_KEY }}
+          # Online track library (docs/track-library.md); off when unset.
+          VITE_TRACK_LIBRARY_URL: ${{ vars.VITE_TRACK_LIBRARY_URL }}
+          VITE_TRACK_LIBRARY_KEY: ${{ vars.VITE_TRACK_LIBRARY_KEY }}
           # GBR 30 m depth tiles, published to GitHub Pages by legal-pages.yml (override with a variable).
           VITE_DEPTH_TILES: ${{ vars.VITE_DEPTH_TILES || format('https://{0}.github.io/{1}/depth/{{z}}/{{x}}/{{y}}.png', github.repository_owner, github.event.repository.name) }}
           VITE_DEPTH_GLOBAL_TILES: ${{ vars.VITE_DEPTH_GLOBAL_TILES || format('https://{0}.github.io/{1}/depth-world/{{z}}/{{x}}/{{y}}.png', github.repository_owner, github.event.repository.name) }}

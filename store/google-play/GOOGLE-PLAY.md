@@ -118,7 +118,7 @@ ANCHOR WATCH
 REEF PILOTAGE
 • Sharp satellite photos, with a quick compare between photo sources.
 • Plan a safe track into a lagoon by tapping waypoints, then follow it with turn-by-turn calls
-  ("In 40 m turn 90° starboard"), cross-track and an off-track alarm.
+  ("In 40 m turn 90° starboard") and cross-track.
 • Record your way in and reverse it to get back out on the same water.
 • Reef outlines and Great Barrier Reef marine park zones.
 • Approximate seabed depth, with a "too shallow for my keel at this tide" view.
@@ -169,7 +169,7 @@ the official forecast.
   Choose *"User-initiated location sharing / Navigation"* style task and explain:
   > "Anchor drag alarm and navigation. While the user has set an anchor watch, is recording
   > a track or following a route, the app tracks the boat's position with the screen off and
-  > sounds an alarm if the boat drags outside the swing circle or goes off track. A
+  > sounds an alarm if the boat drags outside the swing circle, and gives steering cues on a route. A
   > notification is shown the whole time and the service stops when the watch ends."
 
   Google asks for a short **video** (a phone screen recording is fine, 30–60 s): set an

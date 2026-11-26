@@ -431,6 +431,19 @@ export function formatLng(lng: number): string {
   return `${d}° ${m.toFixed(3)}′ ${hem}`;
 }
 
+/**
+ * A round distance for a scale bar about `targetPx` wide: 1, 2 or 5 × 10ⁿ metres, and the bar's
+ * width in pixels for it.
+ */
+export function scaleBar(lat: number, zoom: number, targetPx = 56): { metres: number; px: number } {
+  const mPerPx = (40075016.686 * Math.cos((lat * Math.PI) / 180)) / (256 * 2 ** zoom);
+  const raw = mPerPx * targetPx;
+  const p = 10 ** Math.floor(Math.log10(raw));
+  const n = raw / p;
+  const metres = (n >= 5 ? 5 : n >= 2 ? 2 : 1) * p;
+  return { metres, px: Math.round(metres / mPerPx) };
+}
+
 export function formatGroundScale(lat: number, zoom: number): string {
   const mPerPx =
     (40075016.686 * Math.cos((lat * Math.PI) / 180)) / (256 * 2 ** zoom);

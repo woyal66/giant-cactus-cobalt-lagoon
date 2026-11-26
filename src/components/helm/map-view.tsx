@@ -25,7 +25,12 @@ import {
   ATTR_BING,
   ATTR_ESRI,
   ATTR_GOOGLE,
+  ATTR_HERE,
+  ATTR_MAPBOX,
   ATTR_OPENSEAMAP,
+  KEYED,
+  ensureGoogleSession,
+  googleCopyright,
   ATTR_SENTINEL,
   CLOSE_ZOOM,
   DEPTH_WMS_LAYERS,
@@ -263,7 +268,7 @@ async function fetchRealTile(
     }
   }
   try {
-    if (signal?.aborted) return null;
+    if (signal?.aborted || !url) return null;
     const r = await fetch(url, { mode: "cors", signal });
     if (!r.ok) return null;
     const blob = await r.blob();
@@ -495,6 +500,7 @@ function nativeZoom(id: ImageryId): number {
   if (id === "google" || id === "auto") return 21;
   if (id === "maptiler") return 20;
   if (id === "bing") return 19;
+  if (id === "mapbox" || id === "here") return 20;
   return 18;
 }
 
@@ -602,7 +608,11 @@ export function MapView() {
                 ? ATTR_SENTINEL
                 : id === "maptiler"
                   ? ATTR_MAPTILER
-                  : ATTR_ESRI;
+                  : id === "mapbox"
+                    ? ATTR_MAPBOX
+                    : id === "here"
+                      ? ATTR_HERE
+                      : ATTR_ESRI;
         // Auto credits every source it may draw from in this build.
         const attrFor = (id: ImageryId) =>
           id === "auto"
@@ -624,6 +634,42 @@ export function MapView() {
           hd: activeHd,
         });
         photo.addTo(map);
+        // Licensed Google tiles need a session first; redraw once it exists.
+        if (KEYED.google && activeImagery === "google") {
+          void ensureGoogleSession().then((ok) => {
+            if (ok && map && activeImagery === "google") photo.redraw();
+          });
+        }
+        // Google asks for the copyright of the area in view; refresh it after each move.
+        let googleCredit = "";
+        let creditTimer = 0;
+        const refreshGoogleCredit = () => {
+          window.clearTimeout(creditTimer);
+          creditTimer = window.setTimeout(() => {
+            if (!map) return;
+            const ctl = map.attributionControl;
+            const clear = () => {
+              if (googleCredit && ctl) ctl.removeAttribution(googleCredit);
+              googleCredit = "";
+            };
+            if (!KEYED.google || activeImagery !== "google") {
+              clear();
+              return;
+            }
+            const b = map.getBounds();
+            void googleCopyright(map.getZoom(), { south: b.getSouth(), west: b.getWest(), north: b.getNorth(), east: b.getEast() }).then((c) => {
+              if (!map || activeImagery !== "google") return;
+              const next = c ? `Google · ${c}` : "";
+              if (next === googleCredit) return;
+              clear();
+              if (next && ctl) {
+                ctl.addAttribution(next);
+                googleCredit = next;
+              }
+            });
+          }, 600);
+        };
+        map.on("moveend zoomend", refreshGoogleCredit);
         let incoming: TileLayer | null = null;
         const labels: TileLayer = L.tileLayer(LABELS_URL, {
           maxZoom: MAX_ZOOM,
@@ -704,6 +750,7 @@ export function MapView() {
         const wxLayer = createWxLayer(L, map);
         let wxField: WeatherField | null = null;
         let wxLoading = false;
+        let wxFieldModel = "";
         let wxProbeMarker: import("leaflet").Marker | null = null;
         const wxCovers = (f: WeatherField | null) => {
           if (!f || !map) return false;
@@ -717,13 +764,15 @@ export function MapView() {
         };
         const wxLoad = () => {
           const st = useHelm.getState();
-          if (!map || st.wxMapLayer === "off" || wxLoading || wxCovers(wxField)) return;
+          if (!map || st.wxMapLayer === "off" || wxLoading || (wxCovers(wxField) && wxFieldModel === st.wxMapModel)) return;
+          const model = st.wxMapModel;
           wxLoading = true;
           st.setWxMap({ wxMapInfo: { source: "loading", fetchedAt: null, times: wxField?.times ?? [] } });
           const b = map.getBounds();
-          void loadViewField({ south: b.getSouth(), west: b.getWest(), north: b.getNorth(), east: b.getEast() })
+          void loadViewField({ south: b.getSouth(), west: b.getWest(), north: b.getNorth(), east: b.getEast() }, model)
             .then((r) => {
               wxField = r?.field ?? wxField;
+              if (r) wxFieldModel = model;
               setViewField(wxField);
               useHelm.getState().setWxMap({
                 wxMapInfo: r
@@ -929,6 +978,17 @@ export function MapView() {
           lineJoin: "round",
         });
         // Passage planner: suggested route plus start (green) and finish (chequered) marks.
+        // A library track being previewed before it is saved: dashed, so it never looks like
+        // the track being followed.
+        const libLine: Polyline = L.polyline([], {
+          color: "#c4b5fd",
+          weight: 4,
+          opacity: 0.95,
+          dashArray: "10 8",
+          lineJoin: "round",
+          interactive: false,
+        });
+        let libStamp: Array<{ lat: number; lng: number }> | null = null;
         const planLine: Polyline = L.polyline([], {
           color: "#f0c14a",
           weight: 4,
@@ -1217,10 +1277,13 @@ export function MapView() {
             getBearing?: () => number;
           };
           if (typeof m.setBearing !== "function") return;
-          const cur = m.getBearing?.() ?? 0;
+          // `deg` is the compass direction that should point up the screen (the heading in
+          // head-up). leaflet-rotate turns the map clockwise by its bearing, which brings the
+          // direction 360 − bearing to the top, so it gets the opposite angle.
+          const cur = (360 - (m.getBearing?.() ?? 0)) % 360;
           const d = ((deg - cur + 540) % 360) - 180;
-          if (Math.abs(d) < 0.35 && !(deg === 0 && Math.abs(cur) > 0.35)) return;
-          m.setBearing(deg);
+          if (Math.abs(d) < 0.35 && !(deg === 0 && Math.abs(cur) > 0.35 && Math.abs(cur - 360) > 0.35)) return;
+          m.setBearing((360 - deg) % 360);
         };
 
         const applyImagery = (id: ImageryId, hd: boolean) => {
@@ -1246,6 +1309,12 @@ export function MapView() {
             activeImagery = id;
             activeHd = hd;
             incoming = null;
+            if (id === "google" && KEYED.google) {
+              void ensureGoogleSession().then((ok) => {
+                if (ok && map && activeImagery === "google") photo.redraw();
+              });
+            }
+            refreshGoogleCredit();
           };
           next.once("load", commit);
           window.setTimeout(() => {
@@ -1691,6 +1760,12 @@ export function MapView() {
             }
           }
           const pStamp = `${s.routeStart?.lat},${s.routeStart?.lng}|${s.routeFinish?.lat},${s.routeFinish?.lng}|${s.routePreview?.length ?? 0}|${s.routePreview?.[1]?.lat ?? ""}`;
+          if (s.libraryPreview !== libStamp) {
+            libStamp = s.libraryPreview;
+            libLine.setLatLngs((s.libraryPreview ?? []).map((p) => [p.lat, p.lng] as [number, number]));
+            if (s.libraryPreview && !map.hasLayer(libLine)) libLine.addTo(map);
+            else if (!s.libraryPreview && map.hasLayer(libLine)) map.removeLayer(libLine);
+          }
           if (pStamp !== planStamp) {
             planStamp = pStamp;
             planLine.setLatLngs((s.routePreview ?? []).map((p) => [p.lat, p.lng] as [number, number]));
@@ -1926,8 +2001,9 @@ export function MapView() {
             if (!hookDragging) {
               anchorMarker.setLatLng([s.anchor.lat, s.anchor.lng]);
             }
-            if (s.anchor.radiusLocked) anchorMarker.dragging?.disable();
-            else anchorMarker.dragging?.enable();
+            // While the watch is on, the hook and circle stay where they were set; they move only
+            // on purpose, with Move hook or Swing size in the anchor panel.
+            anchorMarker.dragging?.disable();
             if (!anchorOn) {
               anchorCircle.addTo(map);
               anchorMarker.addTo(map);
@@ -1942,7 +2018,8 @@ export function MapView() {
               alarmShown = false;
             }
 
-            if (!rimDragging && !fenced) {
+            const rimEditable = s.tapMode === "resize-swing";
+            if (!rimDragging && !fenced && rimEditable) {
               const brg = s.boat
                 ? bearingDegrees(s.anchor, s.boat)
                 : 0;
@@ -1953,7 +2030,7 @@ export function MapView() {
                 rimHandle.addTo(map);
                 rimOn = true;
               }
-            } else if (fenced && rimOn) {
+            } else if ((fenced || !rimEditable) && rimOn && !rimDragging) {
               map.removeLayer(rimHandle);
               rimOn = false;
             }

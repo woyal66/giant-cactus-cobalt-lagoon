@@ -34,7 +34,7 @@ export function WebNotice() {
       <p className="text-t15 font-semibold">Anchor Mate on the web</p>
       <p className="mt-0.5 text-t14 leading-snug text-muted-foreground">
         Plan passages, check weather, tides, depths and reef hazards, and save offline areas. For the anchor alarm with
-        the screen locked, use the phone app. Move plans to the phone with Tracks → GPX or a backup file.
+        the screen locked, use the phone app. Move plans to the phone with Navigation → My tracks → Export GPX or a backup file.
       </p>
       <button
         type="button"

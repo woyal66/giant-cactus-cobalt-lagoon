@@ -20,7 +20,7 @@ satellite imagery; on arrival, load it and be guided in (and back out).
 5. **Marks advance by themselves:** a mark counts as made within 12 m, or as soon as the
    boat is further along the route than it, so passing wide still moves on. Passed marks
    never rewind; a mark can be pinned to steer for it specifically.
-6. **Off-track alarm:** optional, 1–5 m. Cross-track and the alarm stay measured on the
+6. **Off-track alarm:** removed (it was a distraction); cross-track is still shown. It was optional, 1–5 m. Cross-track and the alarm stay measured on the
    leg into a corner until the turn is made, so neither cuts the corner nor false-alarms.
 
 ## Changed in this review

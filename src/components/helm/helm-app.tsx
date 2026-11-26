@@ -11,10 +11,11 @@ import {
 } from "@/components/helm/overlays";
 import {
   AnchorPanel,
-  AtlasPanel,
   LayersPanel,
+  SettingsPanel,
   LegendPanel,
-  PassagesPanel,
+  NavigationPanel,
+  RenameTrackPanel,
   SavePanel,
 } from "@/components/helm/panels";
 import { BoatPanel } from "@/components/helm/boat-panel";
@@ -40,8 +41,8 @@ import {
 } from "@/hooks/helm-runtime";
 import { getPublicPassage } from "@/lib/passages";
 import { listPacks } from "@/lib/offline-tiles";
-import { useHelm, useUnitsKey } from "@/store/helm";
-import { formatMeters, haversineMeters } from "@/lib/geo";
+import { AnchorStatusCard } from "@/components/helm/anchor-status-card";
+import { useHelm } from "@/store/helm";
 
 // The passage planner (and its settings, graph and window finder) loads when first opened.
 // The 3D view (MapLibre, ~1 MB) only loads when opened.
@@ -104,19 +105,20 @@ export function HelmApp() {
             breach ? "text-destructive" : "text-primary"
           }`}
         >
-          <WatchBadge breach={breach} gpsLost={gpsLost} />
         </div>
       ) : null}
+      <AnchorStatusCard />
       <TopHud />
       <MobHud />
       <SteerOverlay />
       <NavRibbon />
-      <AtlasPanel />
-      <PassagesPanel />
+      <NavigationPanel />
+      <RenameTrackPanel />
       <AnchorPanel />
       <BoatPanel />
       <LegendPanel />
       <LayersPanel />
+      <SettingsPanel />
       <SavePanel />
       <WeatherPanel />
       <WxStrip />
@@ -159,29 +161,3 @@ export function HelmApp() {
  * Always-visible anchor watch status, so the skipper can plan, read the forecast
  * or use any other tool while the watch runs. Tap to open the anchor sheet.
  */
-function WatchBadge({ breach, gpsLost }: { breach: boolean; gpsLost: boolean }) {
-  const boat = useHelm((s) => s.boat);
-  const anchor = useHelm((s) => s.anchor);
-  useUnitsKey();
-  const dist = boat && anchor ? haversineMeters(boat, anchor) : null;
-  const fresh = boat ? Date.now() - boat.at < 60_000 && boat.source !== "placed" : false;
-  const text = breach
-    ? gpsLost
-      ? "Alarm · GPS lost"
-      : "Alarm · dragging"
-    : dist != null && anchor
-      ? `Watch on · ${formatMeters(dist)} / ${formatMeters(anchor.radiusM)}${fresh ? "" : " · no fix"}`
-      : "Watch on";
-  return (
-    <button
-      type="button"
-      aria-label="Anchor watch status. Opens the anchor settings."
-      onClick={() => useHelm.getState().setPanel("anchor")}
-      className={`pointer-events-auto absolute top-[calc(max(0.4rem,var(--safe-area-inset-top,env(safe-area-inset-top)))+4.1rem)] left-1/2 min-h-8 -translate-x-1/2 rounded-full px-3 py-1 text-t13 font-semibold whitespace-nowrap tabular-nums shadow-[var(--shadow-border)] ${
-        breach ? "bg-destructive text-white" : "bg-card/95 text-primary"
-      }`}
-    >
-      {text}
-    </button>
-  );
-}

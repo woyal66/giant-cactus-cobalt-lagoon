@@ -15,7 +15,12 @@ import {
 } from "@/lib/anchor";
 import { bowFromGps, gpsReachM, gpsStationLabel } from "@/lib/boat";
 import { formatDuration, routeSummary } from "@/lib/measure";
-import { searchPlaces } from "@/lib/place-search";
+import { nearestPlaceName, searchPlaces, zoomToFit, type Place } from "@/lib/place-search";
+import { loadHazards } from "@/lib/hazards";
+import { LIMITS, libraryConfig, removeFromLibrary, shareToLibrary } from "@/lib/track-library";
+import { LibraryTab } from "@/components/helm/library-tab";
+import { tapFeel } from "@/lib/haptics";
+import { Radio } from "lucide-react";
 import { formatMeters, haversineMeters, pathLengthMeters, trackInView, TRACK_CHORD_PRESETS, TRACK_TURN_PRESETS } from "@/lib/geo";
 import { BENTHIC_WMS, GARMIN_SDK_URL, PARK_ZONES, availableImagery, imageryShort, isImageryId } from "@/lib/imagery";
 import { centreTileSource, getChartBounds } from "@/components/helm/map-view";
@@ -34,17 +39,9 @@ import {
   PACK_ZOOMS,
   type PackZoom,
 } from "@/lib/offline-tiles";
-import {
-  deletePassage,
-  listMyPassages,
-  listPublicPassages,
-  savePassage,
-  setPublished,
-  type Passage,
-} from "@/lib/passages";
-import { REEFS } from "@/lib/reefs";
+import type { Passage } from "@/lib/passages";
 import { fetchTideRise } from "@/lib/tides";
-import { STEER_PRESETS, XTE_ALARM_PRESETS } from "@/lib/steer";
+import { STEER_PRESETS } from "@/lib/steer";
 import { SignedIn, SignedOut, UserButton } from "@/lib/auth/gates";
 import { isNativeApp } from "@/lib/native";
 import { shareGpx } from "@/lib/share-gpx";
@@ -54,15 +51,15 @@ import { mergeTracks } from "@/lib/backup";
 import { UnitStepField } from "@/components/helm/unit-field";
 import { MoonCard } from "@/components/helm/moon-card";
 import { RemoteWatchCard } from "@/components/helm/remote-watch-card";
+import { NightCheckCard } from "@/components/helm/night-check-card";
 import { formatDepth, formatLength } from "@/lib/units";
 import { criticalAlerts, type CriticalStatus } from "@/lib/critical-alert";
 import { openLocationSettings } from "@/lib/background-gps";
 import { isFreeApp, isPreview } from "@/lib/subscription";
 import { radarAvailable } from "@/lib/radar";
 import { SubscriptionRow } from "@/components/subscription";
-import { useCurrentUserState } from "@/lib/auth/use-current-user";
-import { simulateAnchorDrag, startMusgraveDemo, unlockAlarmAudio } from "@/hooks/helm-runtime";
-import { useHelm, useUnitsKey, type LocalDraft, type PanelId } from "@/store/helm";
+import { simulateAnchorDrag, unlockAlarmAudio } from "@/hooks/helm-runtime";
+import { nextTrackName, useHelm, useUnitsKey, type LocalDraft, type PanelId } from "@/store/helm";
 
 export function Sheet({
   id,
@@ -256,6 +253,7 @@ export function AnchorPanel() {
           </Button>
         )
       ) : null}
+      {anchor?.radiusLocked ? <NightCheckCard radiusM={anchor.radiusM} compact /> : null}
       <div className="mb-2 grid grid-cols-2 gap-2">
         <UnitStepField label="Depth" kind="depth" valueM={rode.depthM} steps={{ m: 0.2, ft: 1, fm: 0.5 }} onChange={(n) => setRode({ depthM: n })} />
         <UnitStepField label="Chain out" kind="length" valueM={rode.chainM} steps={{ m: 5, ft: 10 }} onChange={(n) => setRode({ chainM: n })} />
@@ -414,54 +412,6 @@ export function AnchorPanel() {
   );
 }
 
-export function AtlasPanel() {
-  const reefId = useHelm((s) => s.reefId);
-  const setReef = useHelm((s) => s.setReef);
-  const packs = useHelm((s) => s.offlinePacks);
-  return (
-    <Sheet
-      id="atlas"
-      title="Places"
-      kicker="Search reefs, harbours and your tracks"
-      help="Search works offline. Reefs in green are saved on the phone. Dark water is deep, brown is coral, pale is sand."
-    >
-      <PlaceSearch />
-      <Button className="mb-3 w-full" onClick={startMusgraveDemo}>
-        Run Lady Musgrave entrance
-      </Button>
-      <ul className="grid gap-2">
-        {REEFS.map((r) => {
-          const onPhone = Boolean(packOnPhone(packs, r.lat, r.lng));
-          return (
-            <li key={r.id}>
-              <button
-                type="button"
-                onClick={() => setReef(r.id)}
-                className={`w-full rounded-lg border px-3 py-3 text-left ${
-                  reefId === r.id ? "border-primary bg-primary/10" : "border-border bg-background"
-                }`}
-              >
-                <div className="flex items-center justify-between gap-2">
-                  <p className="font-display text-lg leading-none font-semibold">{r.name}</p>
-                  {onPhone ? (
-                    <span className="shrink-0 rounded-full bg-emerald-500/20 px-2 py-0.5 text-t12 font-semibold text-emerald-400">
-                      On phone
-                    </span>
-                  ) : null}
-                </div>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  {r.region} · {r.country}
-                </p>
-                <p className="mt-2 text-sm text-pretty text-muted-foreground">{r.blurb}</p>
-              </button>
-            </li>
-          );
-        })}
-      </ul>
-    </Sheet>
-  );
-}
-
 export function LayersPanel() {
   const imagery = useHelm((s) => s.imagery);
   const setImagery = useHelm((s) => s.setImagery);
@@ -486,40 +436,12 @@ export function LayersPanel() {
   const reefClarity = useHelm((s) => s.reefClarity);
   const setReefClarity = useHelm((s) => s.setReefClarity);
   const setRadar = useHelm((s) => s.setRadar);
-  const crumbOn = useHelm((s) => s.crumbOn);
-  const setCrumbOn = useHelm((s) => s.setCrumbOn);
-  const crumb = useHelm((s) => s.crumb);
-  const clearCrumb = useHelm((s) => s.clearCrumb);
-  const reverseTrack = useHelm((s) => s.reverseTrack);
-  const look = useHelm((s) => s.look);
-  const setLook = useHelm((s) => s.setLook);
-  const autoNight = useHelm((s) => s.autoNight);
-  const setAutoNight = useHelm((s) => s.setAutoNight);
-  const sunPunch = useHelm((s) => s.sunPunch);
-  const setSunPunch = useHelm((s) => s.setSunPunch);
-  const tapMode = useHelm((s) => s.tapMode);
-  const setTapMode = useHelm((s) => s.setTapMode);
   const setPanel = useHelm((s) => s.setPanel);
 
   return (
-    <Sheet id="layers" title="View" kicker="Map stays up">
-      <div className="mb-2 flex items-center justify-between gap-2">
-        {isNativeApp() || isPreview() ? (
-          isFreeApp() ? null : <SubscriptionRow />
-        ) : (
-          <>
-            <SignedIn>
-              <UserButton />
-            </SignedIn>
-            <SignedOut>
-              <Button asChild variant="outline" size="sm">
-                <Link to="/login">Sign in</Link>
-              </Button>
-            </SignedOut>
-          </>
-        )}
-      </div>
-      <div className="mb-1.5 grid grid-cols-3 gap-1.5" role="radiogroup" aria-label="Base map">
+    <Sheet id="layers" title="Chart" kicker="What the map shows">
+      <p className="mb-1 text-t13 text-muted-foreground">Base map</p>
+      <div className="mb-2 grid grid-cols-3 gap-1.5" role="radiogroup" aria-label="Base map">
         {(
           [
             ["photo", "Photo"],
@@ -539,6 +461,7 @@ export function LayersPanel() {
           </Button>
         ))}
       </div>
+      <p className="mb-1 text-t13 text-muted-foreground">Satellite photo</p>
       {/* Compact picker: tap to flip between photos and compare. */}
       <div className="mb-2 grid grid-cols-3 gap-1.5" role="radiogroup" aria-label="Satellite photo">
         {availableImagery().map((im) => (
@@ -565,115 +488,212 @@ export function LayersPanel() {
         ))}
       </div>
       <OfflinePacks />
-      <TrackSteerSettings />
-      <div className="mb-2 grid grid-cols-2 gap-2">
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => {
-            setTapMode(tapMode === "place-boat" ? "none" : "place-boat");
-            setPanel(null);
-          }}
-        >
-          Place boat
-        </Button>
-        <Button variant="outline" size="sm" onClick={() => setPanel("boat")}>
-          Boat
-        </Button>
-        <Button variant="outline" size="sm" onClick={() => setPanel("legend")}>
-          Colour guide
-        </Button>
-      </div>
+      <p className="mb-1 text-t13 text-muted-foreground">On the chart</p>
       <div className="mb-2 grid gap-1.5">
+        <DepthRow />
+        <ToggleRow label="Reefs, rocks and cays (GBR, offline)" on={reefOutlines} onChange={setReefOutlines} />
+        <ToggleRow label="Marine park zones (GBR)" on={parkZones} onChange={setParkZones} />
+        {parkZones ? <ZoneLegend /> : null}
+        <ToggleRow label="Official charts where free (USA: NOAA)" on={officialCharts} onChange={setOfficialCharts} />
+        <ToggleRow label="Seamarks" on={seamarks} onChange={setSeamarks} />
+        <ToggleRow label="Depth contours" on={depths} onChange={setDepths} />
+        {radarAvailable() ? <ToggleRow label="Rain radar (needs signal)" on={radar} onChange={setRadar} /> : null}
+        <ToggleRow label="Place names" on={labels} onChange={setLabels} />
+        <ToggleRow label="Lat / long lines" on={graticule} onChange={setGraticule} />
+      </div>
+      <p className="mb-1 text-t13 text-muted-foreground">Photo quality</p>
+      <div className="mb-2 grid gap-1.5">
+        <ToggleRow label="Sharp photos (HD, about 4× the data)" on={sharpTiles} onChange={setSharpTiles} />
+        <ToggleRow label="Reef clarity (more contrast to read depth)" on={reefClarity} onChange={setReefClarity} />
+        <PhotoInfoRow />
+      </div>
+      <div className="mb-2 grid grid-cols-2 gap-2">
         <Button variant="outline" className="h-11" onClick={() => useHelm.setState({ reef3d: true, panel: null })}>
           3D reef view
         </Button>
-        <DepthRow />
-        <TextSizeRow />
-        <PhotoInfoRow />
-        <ToggleRow label="Sharp photos (HD, about 4× the data)" on={sharpTiles} onChange={setSharpTiles} />
-        <ToggleRow label="Reef clarity (more contrast to read depth)" on={reefClarity} onChange={setReefClarity} />
-        <ToggleRow label="Place names" on={labels} onChange={setLabels} />
-        <ToggleRow label="Lat / long lines" on={graticule} onChange={setGraticule} />
-        <ToggleRow label="Seamarks" on={seamarks} onChange={setSeamarks} />
-        <ToggleRow label="Depth contours" on={depths} onChange={setDepths} />
-        <ToggleRow label="Reefs, rocks and cays (GBR, offline)" on={reefOutlines} onChange={setReefOutlines} />
-        <ToggleRow label="Official charts where free (USA: NOAA)" on={officialCharts} onChange={setOfficialCharts} />
-        <ToggleRow label="Marine park zones (GBR)" on={parkZones} onChange={setParkZones} />
-        {parkZones ? <ZoneLegend /> : null}
-        {radarAvailable() ? <ToggleRow label="Rain radar (needs signal)" on={radar} onChange={setRadar} /> : null}
-        <ToggleRow label="Yellow line while recording" on={crumbOn} onChange={setCrumbOn} />
-      </div>
-      {crumb.length >= 2 ? (
-        <div className="mb-2 grid grid-cols-2 gap-2">
-          <Button variant="outline" size="sm" onClick={() => reverseTrack()}>
-            Reverse trail
-          </Button>
-          <Button variant="ghost" size="sm" onClick={() => clearCrumb()}>
-            Clear trail
-          </Button>
-        </div>
-      ) : null}
-      <p className="mb-1.5 text-t12 text-muted-foreground">Look</p>
-      <div className="mb-2 grid grid-cols-4 gap-2">
-        <Button
-          variant={autoNight ? "default" : "outline"}
-          size="sm"
-          onClick={() => setAutoNight(!autoNight)}
-          aria-pressed={autoNight}
-        >
-          Auto
+        <Button variant="outline" className="h-11" onClick={() => setPanel("legend")}>
+          Colour guide
         </Button>
-        {([
-          ["normal", "Normal"],
-          ["sunlight", "Sun"],
-          ["night", "Night"],
-        ] as const).map(([id, label]) => (
+      </div>
+      <Button variant="ghost" className="w-full" onClick={() => setPanel("settings")}>
+        Settings: look, text size, units, steering…
+      </Button>
+    </Sheet>
+  );
+}
+
+const SETTINGS_SECTIONS = [
+  { id: "display", title: "Look and text", words: "look night red dark sun sunlight bright contrast punch text size font bigger larger auto" },
+  { id: "units", title: "Units", words: "units feet foot metres meters fathoms depth length distance" },
+  { id: "steer", title: "Steering and tracks", words: "steer steering track ear guide sound turn record recording yellow line trail crumb reverse corner" },
+  { id: "boat", title: "Boat and GPS", words: "boat hull length draft beam bow gps place position manual" },
+  { id: "help", title: "Help and about", words: "help guide getting started tour about garmin navionics privacy terms licence account subscription sign in" },
+] as const;
+
+/** Everything that isn't the chart itself, in sections, with a search box. */
+export function SettingsPanel() {
+  const crumbOn = useHelm((s) => s.crumbOn);
+  const setCrumbOn = useHelm((s) => s.setCrumbOn);
+  const crumb = useHelm((s) => s.crumb);
+  const clearCrumb = useHelm((s) => s.clearCrumb);
+  const reverseTrack = useHelm((s) => s.reverseTrack);
+  const look = useHelm((s) => s.look);
+  const setLook = useHelm((s) => s.setLook);
+  const autoNight = useHelm((s) => s.autoNight);
+  const setAutoNight = useHelm((s) => s.setAutoNight);
+  const sunPunch = useHelm((s) => s.sunPunch);
+  const setSunPunch = useHelm((s) => s.setSunPunch);
+  const tapMode = useHelm((s) => s.tapMode);
+  const setTapMode = useHelm((s) => s.setTapMode);
+  const setPanel = useHelm((s) => s.setPanel);
+  const [q, setQ] = useState("");
+  const words = q.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  const show = (id: (typeof SETTINGS_SECTIONS)[number]["id"]) => {
+    if (!words.length) return true;
+    const sec = SETTINGS_SECTIONS.find((x) => x.id === id)!;
+    const hay = `${sec.title} ${sec.words}`.toLowerCase();
+    return words.every((w) => hay.includes(w));
+  };
+  const head = (id: (typeof SETTINGS_SECTIONS)[number]["id"]) => (
+    <p className="mt-3 mb-1.5 text-t15 font-semibold">{SETTINGS_SECTIONS.find((x) => x.id === id)!.title}</p>
+  );
+  const none = SETTINGS_SECTIONS.every((x) => !show(x.id));
+
+  return (
+    <Sheet id="settings" title="Settings" kicker="Look, units, steering and help">
+      <Input
+        value={q}
+        onChange={(e) => setQ(e.target.value)}
+        placeholder="Search settings, e.g. night or feet"
+        aria-label="Search settings"
+        className="mb-1 h-11 text-base"
+        type="search"
+      />
+      {none ? <p className="mt-2 text-t14 text-muted-foreground">No setting matches “{q.trim()}”.</p> : null}
+      {show("display") ? (
+        <>
+          {head("display")}
+          <div className="mb-2 grid grid-cols-4 gap-2">
+            <Button variant={autoNight ? "default" : "outline"} size="sm" onClick={() => setAutoNight(!autoNight)} aria-pressed={autoNight}>
+              Auto
+            </Button>
+            {([
+              ["normal", "Normal"],
+              ["sunlight", "Sun"],
+              ["night", "Night"],
+            ] as const).map(([id, label]) => (
+              <Button
+                key={id}
+                variant={!autoNight && look === id ? "default" : "outline"}
+                size="sm"
+                onClick={() => {
+                  setAutoNight(false);
+                  setLook(id);
+                  if (id === "sunlight") {
+                    void document.documentElement.requestFullscreen?.().catch(() => {});
+                  } else if (document.fullscreenElement) {
+                    void document.exitFullscreen?.().catch(() => {});
+                  }
+                }}
+              >
+                {label}
+              </Button>
+            ))}
+          </div>
+          <p className="mb-2 text-t13 leading-snug text-muted-foreground">Auto: night (red) after sunset, normal by day. Sun: extra contrast for bright light.</p>
+          {look === "sunlight" ? (
+            <div className="mb-2 grid grid-cols-3 gap-2">
+              {([1, 2, 3] as const).map((n) => (
+                <Button key={n} variant={sunPunch === n ? "default" : "outline"} size="sm" onClick={() => setSunPunch(n)}>
+                  Contrast {n}
+                </Button>
+              ))}
+            </div>
+          ) : null}
+          <TextSizeRow />
+        </>
+      ) : null}
+      {show("units") ? (
+        <>
+          {head("units")}
+          <UnitsPicker />
+        </>
+      ) : null}
+      {show("steer") ? (
+        <>
+          {head("steer")}
+          <TrackSteerSettings />
+          <ToggleRow label="Yellow line while recording" on={crumbOn} onChange={setCrumbOn} />
+          {crumb.length >= 2 ? (
+            <div className="mt-2 grid grid-cols-2 gap-2">
+              <Button variant="outline" size="sm" onClick={() => reverseTrack()}>
+                Reverse trail
+              </Button>
+              <Button variant="ghost" size="sm" onClick={() => clearCrumb()}>
+                Clear trail
+              </Button>
+            </div>
+          ) : null}
+        </>
+      ) : null}
+      {show("boat") ? (
+        <>
+          {head("boat")}
+          <div className="grid grid-cols-2 gap-2">
+            <Button variant="outline" className="h-11" onClick={() => setPanel("boat")}>
+              Boat size and type
+            </Button>
+            <Button
+              variant="outline"
+              className="h-11"
+              onClick={() => {
+                setTapMode(tapMode === "place-boat" ? "none" : "place-boat");
+                setPanel(null);
+              }}
+            >
+              Place boat by hand
+            </Button>
+          </div>
+          <p className="mt-1 text-t13 leading-snug text-muted-foreground">Place the boat by hand only when there is no GPS, e.g. to plan at home.</p>
+        </>
+      ) : null}
+      {show("help") ? (
+        <>
+          {head("help")}
+          <div className="mb-2 flex items-center justify-between gap-2">
+            {isNativeApp() || isPreview() ? (
+              isFreeApp() ? null : <SubscriptionRow />
+            ) : (
+              <>
+                <SignedIn>
+                  <UserButton />
+                </SignedIn>
+                <SignedOut>
+                  <Button asChild variant="outline" size="sm">
+                    <Link to="/login">Sign in</Link>
+                  </Button>
+                </SignedOut>
+              </>
+            )}
+          </div>
           <Button
-            key={id}
-            variant={!autoNight && look === id ? "default" : "outline"}
-            size="sm"
+            variant="outline"
+            className="mb-2 h-11 w-full"
             onClick={() => {
-              setAutoNight(false);
-              setLook(id);
-              if (id === "sunlight") {
-                void document.documentElement.requestFullscreen?.().catch(() => {});
-              } else if (document.fullscreenElement) {
-                void document.exitFullscreen?.().catch(() => {});
-              }
+              setPanel(null);
+              useHelm.getState().setGuideDone(false);
             }}
           >
-            {label}
+            Show the getting-started guide
           </Button>
-        ))}
-      </div>
-      <UnitsPicker />
-      <Button
-        variant="outline"
-        size="sm"
-        className="mb-2 w-full"
-        onClick={() => {
-          setPanel(null);
-          useHelm.getState().setGuideDone(false);
-        }}
-      >
-        Show the getting-started guide
-      </Button>
-      {look === "sunlight" ? (
-        <div className="mb-2 grid grid-cols-3 gap-2">
-          {([1, 2, 3] as const).map((n) => (
-            <Button key={n} variant={sunPunch === n ? "default" : "outline"} size="sm" onClick={() => setSunPunch(n)}>
-              Punch {n}
-            </Button>
-          ))}
-        </div>
+          <p className="text-t13 leading-snug text-muted-foreground">
+            Seamarks and depth contours from OpenSeaMap sit over the satellite. Navionics charts need Garmin’s native marine SDK, so they can't be shown here.{" "}
+            <a href={GARMIN_SDK_URL} target="_blank" rel="noreferrer" className="underline underline-offset-2">
+              Garmin marine SDK
+            </a>
+          </p>
+        </>
       ) : null}
-      <p className="text-t13 leading-snug text-muted-foreground">
-        OpenSeaMap marks and depth contours sit over the satellite. Official Navionics tiles need Garmin’s native marine SDK — there is no web login that unlocks them here.{" "}
-        <a href={GARMIN_SDK_URL} target="_blank" rel="noreferrer" className="underline underline-offset-2">
-          Garmin marine SDK
-        </a>
-      </p>
     </Sheet>
   );
 }
@@ -760,7 +780,7 @@ function OfflinePacks() {
         )}
       </div>
       <p className="mt-0.5 text-t13 leading-snug text-muted-foreground">
-        Zoom out, then drag a box around the reef. A line will not download. z16 covers a whole cay. Green = this water is in the phone.
+        Save the map for no signal: tap Area on screen, or Draw box and drag around the reef. Green means this water is already on the phone.
       </p>
       <div className="mt-1.5 grid grid-cols-2 gap-1.5">
         <Button variant="outline" size="sm" disabled={busy} onClick={() => startDrawPack()}>
@@ -770,9 +790,17 @@ function OfflinePacks() {
           variant="outline"
           size="sm"
           disabled={busy}
-          onClick={() => pickReef(-23.904, 152.395, "Lady Musgrave", 2200)}
+          onClick={() => {
+            // The area on screen now: centre of the view, half its width (capped at 3 km).
+            const v = getChartBounds();
+            if (!v) return;
+            const lat = (v.north + v.south) / 2;
+            const lng = (v.east + v.west) / 2;
+            const halfM = Math.min(3000, Math.max(300, ((v.east - v.west) * 111_320 * Math.cos((lat * Math.PI) / 180)) / 2));
+            pickReef(lat, lng, "This area", halfM);
+          }}
         >
-          Lady Musgrave
+          Area on screen
         </Button>
       </div>
       {box && est ? (
@@ -784,7 +812,7 @@ function OfflinePacks() {
           <p className="text-t12 text-muted-foreground">Close-up zoom</p>
           <div className="grid grid-cols-5 gap-1">
             {PACK_ZOOMS.map((z) => (
-              <Button key={z} variant={maxZ === z ? "default" : "outline"} size="sm" className="h-8" onClick={() => setMaxZ(z)}>
+              <Button key={z} variant={maxZ === z ? "default" : "outline"} size="sm" className="h-10" onClick={() => setMaxZ(z)}>
                 {z === 20 ? "Max" : `z${z}`}
               </Button>
             ))}
@@ -820,7 +848,7 @@ function OfflinePacks() {
             <p className="text-t13 tabular-nums text-muted-foreground">
               {extraStep ? `Saving ${extraStep.toLowerCase()}…` : `Photos ${progress.done}/${progress.total} · ${formatBytes(progress.bytes)}`}
             </p>
-            <Button variant="ghost" size="sm" className="h-7" onClick={() => cancelPackDownload()}>
+            <Button variant="ghost" size="sm" className="h-9" onClick={() => cancelPackDownload()}>
               Cancel
             </Button>
           </div>
@@ -853,7 +881,7 @@ function OfflinePacks() {
                 <Button
                   variant="ghost"
                   size="sm"
-                  className="h-7 shrink-0"
+                  className="h-9 shrink-0"
                   disabled={busy}
                   onClick={() => {
                     void deletePack(p.id).then(() => {
@@ -876,8 +904,6 @@ function OfflinePacks() {
 function TrackSteerSettings() {
   const sense = useHelm((s) => s.steerSense);
   const setSense = useHelm((s) => s.setSteerSense);
-  const alarmM = useHelm((s) => s.xteAlarmM);
-  const setAlarmM = useHelm((s) => s.setXteAlarmM);
   const ear = useHelm((s) => s.steerEar);
   const setEar = useHelm((s) => s.setSteerEar);
   const turnDeg = useHelm((s) => s.trackTurnDeg);
@@ -919,7 +945,7 @@ function TrackSteerSettings() {
             key={deg}
             variant={turnDeg === deg ? "default" : "outline"}
             size="sm"
-            className="h-8 px-0"
+            className="h-10 px-0"
             onClick={() => setTurnDeg(deg)}
           >
             {deg}°
@@ -935,7 +961,7 @@ function TrackSteerSettings() {
             key={m}
             variant={chordM === m ? "default" : "outline"}
             size="sm"
-            className="h-8 px-0"
+            className="h-10 px-0"
             onClick={() => setChordM(m)}
           >
             {formatLength(m)}
@@ -945,14 +971,6 @@ function TrackSteerSettings() {
       <p className="mt-1 text-t13 leading-snug text-muted-foreground">
         Straights are dropped on save and reverse. A tighter turn or a smaller distance keeps more of the bend.
       </p>
-      <p className="mt-1.5 text-t12 text-muted-foreground">Off-track alarm</p>
-      <div className="mt-1 grid grid-cols-5 gap-1">
-        {XTE_ALARM_PRESETS.map((m) => (
-          <Button key={m} variant={alarmM === m ? "default" : "outline"} size="sm" className="h-8" onClick={() => setAlarmM(m)}>
-            {formatLength(m)}
-          </Button>
-        ))}
-      </div>
     </div>
   );
 }
@@ -987,58 +1005,27 @@ export function LegendPanel() {
 
 export function SavePanel() {
   const draft = useHelm((s) => s.draft);
+  const drafts = useHelm((s) => s.drafts);
   const saveDraft = useHelm((s) => s.saveDraft);
   const setDrawMode = useHelm((s) => s.setDrawMode);
-  const { user } = useCurrentUserState();
-  const [title, setTitle] = useState("Untitled cut");
-  const [region, setRegion] = useState("");
+  const [title, setTitle] = useState("");
   const [notes, setNotes] = useState("");
-  const [kind, setKind] = useState<"passage" | "anchorage">("passage");
-  const [busy, setBusy] = useState(false);
   const len = pathLengthMeters(draft);
   const prefs = useHelm((s) => s.routePrefs);
   const card = routeSummary(draft, prefs.motorKn, prefs.fuelLph);
+  const fallback = nextTrackName(drafts);
 
-  const local = () => {
+  const save = () => {
     const saved: LocalDraft = saveDraft({
-      title: title.trim() || "Untitled cut",
-      region,
-      notes,
-      kind,
+      title: title.trim() || fallback,
+      region: "",
+      notes: notes.trim(),
+      kind: "passage",
       waypoints: draft,
     });
     toast(`Saved ${saved.title}`);
-  };
-
-  const publish = async () => {
-    if (!user) return;
-    setBusy(true);
-    try {
-      await savePassage({
-        data: {
-          title: title.trim() || "Untitled cut",
-          region,
-          notes,
-          kind,
-          published: true,
-          waypoints: draft,
-          authorName: user.displayName || "Skipper",
-        },
-      });
-      saveDraft({
-        title: title.trim() || "Untitled cut",
-        region,
-        notes,
-        kind,
-        waypoints: draft,
-      });
-      toast("Published to the library");
-    } catch {
-      toast("Could not publish — saved on this helm only");
-      local();
-    } finally {
-      setBusy(false);
-    }
+    setTitle("");
+    setNotes("");
   };
 
   return (
@@ -1047,47 +1034,17 @@ export function SavePanel() {
       {draft.length >= 2 ? <HazardCheck points={draft} /> : null}
       <div className="grid gap-3">
         <label className="grid gap-1">
-          <span className="text-t12 text-muted-foreground">Title</span>
-          <Input
-            autoFocus
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            onFocus={(e) => {
-              const el = e.currentTarget;
-              if (el.value !== "Untitled cut") return;
-              requestAnimationFrame(() => el.select());
-            }}
-          />
+          <span className="text-t13 text-muted-foreground">Name</span>
+          <Input autoFocus value={title} placeholder={fallback} onChange={(e) => setTitle(e.target.value.slice(0, LIMITS.title))} className="h-11 text-base" />
         </label>
         <label className="grid gap-1">
-          <span className="text-t12 text-muted-foreground">Region</span>
-          <Input value={region} onChange={(e) => setRegion(e.target.value)} placeholder="Great Barrier Reef" />
+          <span className="text-t13 text-muted-foreground">Comment (optional)</span>
+          <Input value={notes} onChange={(e) => setNotes(e.target.value.slice(0, LIMITS.comment))} className="h-11 text-base" />
         </label>
-        <label className="grid gap-1">
-          <span className="text-t12 text-muted-foreground">Notes</span>
-          <Input value={notes} onChange={(e) => setNotes(e.target.value)} />
-        </label>
-        <div className="grid grid-cols-2 gap-2">
-          <Button variant={kind === "passage" ? "default" : "outline"} onClick={() => setKind("passage")}>
-            Passage
-          </Button>
-          <Button variant={kind === "anchorage" ? "default" : "outline"} onClick={() => setKind("anchorage")}>
-            Anchorage
-          </Button>
-        </div>
-        <Button onClick={local} disabled={draft.length < 1}>
-          Save on this helm
+        <Button onClick={save} disabled={draft.length < 1}>
+          Save to My tracks
         </Button>
-        <SignedIn>
-          <Button variant="outline" disabled={busy || draft.length < 1} onClick={() => void publish()}>
-            {busy ? "Publishing…" : "Publish to library"}
-          </Button>
-        </SignedIn>
-        <SignedOut>
-          <Button asChild variant="outline">
-            <Link to="/login">Sign in to publish</Link>
-          </Button>
-        </SignedOut>
+        <p className="text-t13 text-muted-foreground">Share it to the online library later from Navigation → My tracks.</p>
         <Button variant="ghost" onClick={() => setDrawMode("idle")}>
           Discard
         </Button>
@@ -1096,158 +1053,292 @@ export function SavePanel() {
   );
 }
 
-export function PassagesPanel() {
+/** Navigation: start recording, find a place, your tracks and the online library, in one sheet. */
+export function NavigationPanel() {
   const drafts = useHelm((s) => s.drafts);
   const active = useHelm((s) => s.activePassage);
   const setActive = useHelm((s) => s.setActivePassage);
-  const removeDraft = useHelm((s) => s.removeDraft);
   const reverseTrack = useHelm((s) => s.reverseTrack);
-  const { user } = useCurrentUserState();
-  const pub = useQuery({
-    queryKey: ["passages-public"],
-    queryFn: () => listPublicPassages(),
-    staleTime: 60_000,
-  });
-  const mine = useQuery({
-    queryKey: ["passages-mine", user?.id],
-    queryFn: () => listMyPassages(),
-    enabled: Boolean(user),
-    staleTime: 30_000,
-  });
-
-  const follow = (p: Passage | LocalDraft) => {
-    unlockAlarmAudio();
-    const onChart = trackInView(p.waypoints, getChartBounds());
-    setActive(p);
-    const s = useHelm.getState();
-    s.setChartUp("heading");
-    s.setBoatLow(true);
-    s.setSteerEar(true);
-    if (onChart) s.setFollowBoat(true);
-    s.setPanel(null);
-  };
+  const [tab, setTab] = useState<"mine" | "library">("mine");
+  useUnitsKey();
 
   return (
-    <Sheet id="passages" title="Tracks" kicker="Cuts to follow">
+    <Sheet id="passages" title="Navigation" kicker="Record, find and follow tracks">
+      <Button
+        className="mb-2 h-14 w-full text-t16"
+        onClick={() => {
+          const st = useHelm.getState();
+          st.setDraft([]);
+          st.clearCrumb();
+          st.setDrawMode("record");
+          st.setPanel(null);
+          tapFeel();
+        }}
+      >
+        <Radio className="size-5" />
+        Start recording
+      </Button>
       {active ? (
-        <div className="mb-2 grid grid-cols-2 gap-2">
-          <Button variant="outline" size="sm" onClick={() => reverseTrack()}>
-            Reverse
-          </Button>
-          <Button variant="ghost" size="sm" onClick={() => setActive(null)}>
-            Drop track
-          </Button>
-        </div>
-      ) : null}
-      {drafts.length ? (
-        <div className="mb-3">
-          <p className="mb-1 text-t12 text-muted-foreground">On this helm</p>
-          <ul className="grid gap-1.5">
-            {drafts.map((d) => (
-              <li key={d.localId} className="flex items-center gap-2 rounded-md border border-border px-2 py-1.5">
-                <button type="button" className="min-w-0 flex-1 text-left" onClick={() => follow(d)}>
-                  <p className="truncate text-sm font-medium">{d.title}</p>
-                  <p className="text-t13 text-muted-foreground">{d.waypoints.length} marks</p>
-                </button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-7"
-                  onClick={() => {
-                    shareGpx(d.title, d.waypoints).catch((err: unknown) => {
-                      // Closing the share sheet is not an error.
-                      if (!/cancel/i.test(String(err))) toast.error("Couldn't export the track");
-                    });
-                  }}
-                >
-                  GPX
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-7"
-                  onClick={() => {
-                    if (window.confirm(`Delete "${d.title}"? This can't be undone.`)) {
-                      removeDraft(d.localId);
-                    }
-                  }}
-                >
-                  Del
-                </Button>
-              </li>
-            ))}
-          </ul>
-        </div>
-      ) : null}
-      <SignedIn>
-        {mine.data?.length ? (
-          <div className="mb-3">
-            <p className="mb-1 text-t12 text-muted-foreground">Mine</p>
-            <ul className="grid gap-1.5">
-              {mine.data.map((p) => (
-                <li key={p.id} className="flex items-center gap-2 rounded-md border border-border px-2 py-1.5">
-                  <button type="button" className="min-w-0 flex-1 text-left" onClick={() => follow(p)}>
-                    <p className="truncate text-sm font-medium">{p.title}</p>
-                    <p className="text-t13 text-muted-foreground">{p.published ? "Public" : "Private"}</p>
-                  </button>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-7"
-                    onClick={() => {
-                      void setPublished({ data: { id: p.id, published: !p.published } }).then(() => mine.refetch());
-                    }}
-                  >
-                    {p.published ? "Hide" : "Share"}
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-7"
-                    onClick={() => {
-                      void deletePassage({ data: { id: p.id } }).then(() => mine.refetch());
-                    }}
-                  >
-                    Del
-                  </Button>
-                </li>
-              ))}
-            </ul>
+        <div className="mb-2 rounded-lg border border-primary/50 px-2.5 py-2">
+          <p className="truncate text-t14 font-semibold">Following: {active.title}</p>
+          <div className="mt-1.5 grid grid-cols-2 gap-2">
+            <Button variant="outline" size="sm" onClick={() => reverseTrack()}>
+              Reverse
+            </Button>
+            <Button variant="ghost" size="sm" onClick={() => setActive(null)}>
+              Stop following
+            </Button>
           </div>
-        ) : null}
-      </SignedIn>
-      {!drafts.length && !pub.isLoading && !(pub.data ?? []).length ? (
-        <div className="rounded-lg border border-dashed border-border px-3 py-4 text-center">
+        </div>
+      ) : null}
+      <PlaceSearch />
+      <div className="mb-2 grid grid-cols-2 gap-1 rounded-lg bg-background p-1" role="tablist">
+        {(
+          [
+            ["mine", `My tracks${drafts.length ? ` (${drafts.length})` : ""}`],
+            ["library", "Library"],
+          ] as const
+        ).map(([id, label]) => (
+          <button
+            key={id}
+            type="button"
+            role="tab"
+            aria-selected={tab === id}
+            onClick={() => setTab(id)}
+            className={`h-10 rounded-md text-t14 font-semibold ${tab === id ? "bg-primary text-primary-foreground" : "text-foreground"}`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+      {tab === "mine" ? <MyTracks /> : <LibraryTab />}
+    </Sheet>
+  );
+}
+
+function followTrack(p: Passage | LocalDraft) {
+  unlockAlarmAudio();
+  const onChart = trackInView(p.waypoints, getChartBounds());
+  const s = useHelm.getState();
+  s.setActivePassage(p);
+  s.setChartUp("heading");
+  s.setBoatLow(true);
+  s.setSteerEar(true);
+  if (onChart) s.setFollowBoat(true);
+  else {
+    const fit = zoomToFit(p.waypoints);
+    if (fit) s.fly(fit.lat, fit.lng, fit.zoom);
+  }
+  s.setPanel(null);
+}
+
+function MyTracks() {
+  const drafts = useHelm((s) => s.drafts);
+  const removeDraft = useHelm((s) => s.removeDraft);
+  const [open, setOpen] = useState<string | null>(null);
+  return (
+    <>
+      {drafts.length ? (
+        <ul className="mb-3 grid gap-1.5">
+          {drafts.map((d) => {
+            const isOpen = open === d.localId;
+            return (
+              <li key={d.localId} className="rounded-md border border-border px-2.5 py-2">
+                <button type="button" className="w-full text-left" onClick={() => setOpen(isOpen ? null : d.localId)} aria-expanded={isOpen}>
+                  <div className="flex items-baseline justify-between gap-2">
+                    <p className="min-w-0 truncate text-t15 font-semibold">{d.title}</p>
+                    <span className="shrink-0 text-t13 text-muted-foreground">
+                      {formatMeters(pathLengthMeters(d.waypoints))}
+                      {d.libraryId ? " · shared" : d.fromLibrary ? " · library" : ""}
+                    </span>
+                  </div>
+                  {d.notes || d.region ? (
+                    <p className="mt-0.5 line-clamp-2 text-t13 text-muted-foreground">{[d.region, d.notes].filter(Boolean).join(" · ")}</p>
+                  ) : null}
+                </button>
+                {isOpen ? (
+                  <div className="mt-2 grid grid-cols-2 gap-1.5">
+                    <Button size="sm" className="col-span-2" onClick={() => followTrack(d)}>
+                      Follow
+                    </Button>
+                    <Button variant="outline" size="sm" onClick={() => useHelm.setState({ renameTrackId: d.localId, panel: "rename" })}>
+                      {d.fromLibrary ? "Rename" : d.libraryId ? "Edit / unshare" : "Rename / share"}
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        shareGpx(d.title, d.waypoints).catch((err: unknown) => {
+                          // Closing the share sheet is not an error.
+                          if (!/cancel/i.test(String(err))) toast.error("Couldn't export the track");
+                        });
+                      }}
+                    >
+                      Export GPX
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="col-span-2 text-destructive"
+                      onClick={() => {
+                        if (window.confirm(`Delete "${d.title}" from this phone? This can't be undone.`)) removeDraft(d.localId);
+                      }}
+                    >
+                      Delete from phone
+                    </Button>
+                  </div>
+                ) : null}
+              </li>
+            );
+          })}
+        </ul>
+      ) : (
+        <div className="mb-3 rounded-lg border border-dashed border-border px-3 py-4 text-center">
           <p className="font-display text-base font-semibold">No tracks yet</p>
           <p className="mx-auto mt-1 max-w-xs text-t14 leading-snug text-muted-foreground">
-            Tap <span className="font-semibold text-foreground">Start</span> to record your way in
-            through a cut, or <span className="font-semibold text-foreground">Draw</span> to plan one
-            on the satellite. Saved tracks appear here to follow back out, even at night.
+            Tap <span className="font-semibold text-foreground">Start recording</span> on your way in, or{" "}
+            <span className="font-semibold text-foreground">Draw</span> one on the satellite. Saved tracks stay on the phone
+            to follow back out, even with no signal.
           </p>
         </div>
-      ) : null}
+      )}
       <GpxImportRow />
       <BackupRow />
-      {(pub.data ?? []).length || pub.isLoading ? (
-        <p className="mb-1 text-t12 text-muted-foreground">Library</p>
-      ) : null}
-      {pub.isLoading ? <p className="text-sm text-muted-foreground">Loading cuts…</p> : null}
-      <ul className="grid gap-1.5">
-        {(pub.data ?? []).map((p) => (
-          <li key={p.id}>
-            <button
-              type="button"
-              onClick={() => follow(p)}
-              className="w-full rounded-md border border-border px-2 py-1.5 text-left"
-            >
-              <p className="truncate text-sm font-medium">{p.title}</p>
-              <p className="text-t13 text-muted-foreground">
-                {p.region || p.authorName} · {p.waypoints.length} marks
-              </p>
-            </button>
-          </li>
-        ))}
-      </ul>
+    </>
+  );
+}
+
+/** After Stop (or Rename): name the track, add a comment, and optionally share it. */
+export function RenameTrackPanel() {
+  const id = useHelm((s) => s.renameTrackId);
+  const track = useHelm((s) => s.drafts.find((d) => d.localId === s.renameTrackId) ?? null);
+  const update = useHelm((s) => s.updateDraft);
+  const [title, setTitle] = useState("");
+  const [notes, setNotes] = useState("");
+  const [location, setLocation] = useState("");
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    if (!track) return;
+    setTitle(track.title);
+    setNotes(track.notes);
+    setLocation(track.region);
+    if (track.region || !track.waypoints[0]) return;
+    const first = track.waypoints[0];
+    let live = true;
+    void loadHazards().then((idx) => {
+      if (!live) return;
+      const named = (idx?.items ?? []).filter((h) => h.name).map((h) => ({ name: h.name!, lat: h.c[1], lng: h.c[0] }));
+      const near = nearestPlaceName(first.lat, first.lng, named);
+      if (near) setLocation((cur) => cur || near);
+    });
+    return () => {
+      live = false;
+    };
+    // Only when a different track is opened.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id]);
+  if (!track) return null;
+  const close = () => useHelm.setState({ panel: null, renameTrackId: null });
+  const save = () => {
+    update(track.localId, { title: title.trim() || track.title, notes: notes.trim(), region: location.trim() });
+  };
+  const share = async () => {
+    save();
+    setBusy(true);
+    try {
+      const r = await shareToLibrary({
+        title: title.trim() || track.title,
+        location: location.trim(),
+        comment: notes.trim(),
+        points: track.waypoints,
+        lengthM: pathLengthMeters(track.waypoints),
+      });
+      update(track.localId, { libraryId: r.id, librarySecret: r.secret });
+      toast.success("Shared to the library");
+      close();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Couldn't share the track");
+    } finally {
+      setBusy(false);
+    }
+  };
+  const unshare = async () => {
+    if (!track.libraryId || !track.librarySecret) return;
+    setBusy(true);
+    try {
+      await removeFromLibrary(track.libraryId, track.librarySecret);
+      update(track.localId, { libraryId: undefined, librarySecret: undefined });
+      toast.success("Removed from the library. It stays on this phone.");
+    } catch {
+      toast.error("Couldn't reach the library. Try again with signal.");
+    } finally {
+      setBusy(false);
+    }
+  };
+  const canShare = Boolean(libraryConfig()) && !track.fromLibrary;
+  return (
+    <Sheet id="rename" title="Name this track" kicker={`${formatMeters(pathLengthMeters(track.waypoints))} · ${track.waypoints.length} marks`}>
+      <div className="grid gap-3">
+        <label className="grid gap-1">
+          <span className="text-t13 text-muted-foreground">Name</span>
+          <Input
+            value={title}
+            onChange={(e) => setTitle(e.target.value.slice(0, LIMITS.title))}
+            onFocus={(e) => {
+              const el = e.currentTarget;
+              if (/^Track \d+$/.test(el.value)) requestAnimationFrame(() => el.select());
+            }}
+            className="h-11 text-base"
+          />
+        </label>
+        <label className="grid gap-1">
+          <span className="text-t13 text-muted-foreground">Comment (optional)</span>
+          <Input
+            value={notes}
+            onChange={(e) => setNotes(e.target.value.slice(0, LIMITS.comment))}
+            placeholder="e.g. Half tide or more, keep the bommie to port"
+            className="h-11 text-base"
+          />
+        </label>
+        <Button
+          onClick={() => {
+            save();
+            toast(`Saved ${title.trim() || track.title}`);
+            close();
+          }}
+        >
+          Save
+        </Button>
+        {canShare ? (
+          <div className="rounded-lg border border-border px-2.5 py-2">
+            <p className="text-t14 font-semibold">Share to the online library</p>
+            <p className="mt-0.5 text-t13 leading-snug text-muted-foreground">
+              Other skippers can find it by location and comment and save it to their phone. Shared without your name.
+            </p>
+            <label className="mt-2 grid gap-1">
+              <span className="text-t13 text-muted-foreground">Location</span>
+              <Input
+                value={location}
+                onChange={(e) => setLocation(e.target.value.slice(0, LIMITS.location))}
+                placeholder="e.g. Lady Musgrave lagoon entrance"
+                className="h-11 text-base"
+              />
+            </label>
+            {track.libraryId ? (
+              <Button variant="outline" className="mt-2 w-full" disabled={busy} onClick={() => void unshare()}>
+                {busy ? "Removing…" : "Remove from library"}
+              </Button>
+            ) : (
+              <Button variant="outline" className="mt-2 w-full" disabled={busy || !location.trim()} onClick={() => void share()}>
+                {busy ? "Sharing…" : "Share"}
+              </Button>
+            )}
+          </div>
+        ) : null}
+        <Button variant="ghost" onClick={close}>
+          Not now
+        </Button>
+      </div>
     </Sheet>
   );
 }
@@ -1621,20 +1712,42 @@ function RouteCard({ distM, hours, litres, kn }: { distM: number; hours: number 
   );
 }
 
-/** Search reefs, tide ports and saved tracks (offline); tap a result to go there. */
+/** Search GBRMPA reefs, islands and cays, tide ports and saved tracks (offline); tap a result to go there. */
 function PlaceSearch() {
   const [q, setQ] = useState("");
+  const [named, setNamed] = useState<Place[]>([]);
   const drafts = useHelm((s) => s.drafts);
-  const extra = drafts
-    .filter((d) => d.waypoints.length)
-    .map((d) => ({ name: d.title, detail: "Your track", lat: d.waypoints[0]!.lat, lng: d.waypoints[0]!.lng, zoom: 16, kind: "track" as const }));
+  useEffect(() => {
+    if (q.trim().length < 2 || named.length) return;
+    let live = true;
+    void loadHazards().then((idx) => {
+      if (!live || !idx) return;
+      const seen = new Set<string>();
+      const out: Place[] = [];
+      for (const h of idx.items) {
+        if (!h.name || seen.has(h.name)) continue;
+        seen.add(h.name);
+        out.push({ name: h.name, detail: h.kind === "island" ? "Island" : h.kind === "cay" ? "Cay" : "Reef", lat: h.c[1], lng: h.c[0], zoom: 14, kind: "reef" });
+      }
+      setNamed(out);
+    });
+    return () => {
+      live = false;
+    };
+  }, [q, named.length]);
+  const extra = [
+    ...drafts
+      .filter((d) => d.waypoints.length)
+      .map((d) => ({ name: d.title, detail: "Your track", lat: d.waypoints[0]!.lat, lng: d.waypoints[0]!.lng, zoom: 16, kind: "track" as const })),
+    ...named,
+  ];
   const hits = searchPlaces(q, extra);
   return (
     <div className="mb-3">
       <Input
         value={q}
         onChange={(e) => setQ(e.target.value)}
-        placeholder="Search: reef, harbour or track"
+        placeholder="Find a place: reef, island, harbour or track"
         aria-label="Search places"
         className="h-11 text-base"
         type="search"

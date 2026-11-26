@@ -13,6 +13,7 @@ import {
   isobarStep,
   layerIndex,
   rampColor,
+  smoothLines,
   upsample,
   valueAt,
   vectorAt,
@@ -51,6 +52,9 @@ export function createWxLayer(L: LeafletNS, map: LeafletMap) {
   let raf = 0;
   let flowGrid: { step: number; cols: number; rows: number; u: Float32Array; v: Float32Array; kn: Float32Array } | null = null;
   let particles: { x: number; y: number; age: number }[] = [];
+  let lastW = 0;
+  let lastH = 0;
+  let pending = 0;
 
   const frame = () => {
     const size = map.getSize();
@@ -73,14 +77,14 @@ export function createWxLayer(L: LeafletNS, map: LeafletMap) {
   };
   const toLatLng = (x: number, y: number) => map.layerPointToLatLng(L.point(x + origin.x, y + origin.y));
 
-  function stop() {
+  function stop(clear = true) {
     cancelAnimationFrame(raf);
     raf = 0;
-    moving.getContext("2d")?.clearRect(0, 0, moving.width, moving.height);
+    if (clear) moving.getContext("2d")?.clearRect(0, 0, moving.width, moving.height);
   }
 
-  function draw() {
-    stop();
+  function draw(keep = false) {
+    stop(!keep);
     const { w, h } = frame();
     const dpr = Math.min(2, window.devicePixelRatio || 1);
     for (const c of [still, moving]) {
@@ -166,14 +170,17 @@ export function createWxLayer(L: LeafletNS, map: LeafletMap) {
       g.textAlign = "center";
       g.textBaseline = "middle";
       for (const level of isobarLevels(p, stepHpa)) {
-        const segs = contourSegments(pg, p, level);
+        const lines = smoothLines(contourSegments(pg, p, level));
         const path = new Path2D();
-        for (const [a, b] of segs) {
-          const pa = toPx(a.lat, a.lng);
-          const pb = toPx(b.lat, b.lng);
-          path.moveTo(pa.x, pa.y);
-          path.lineTo(pb.x, pb.y);
+        for (const line of lines) {
+          line.forEach((q, i) => {
+            const pq = toPx(q.lat, q.lng);
+            if (i === 0) path.moveTo(pq.x, pq.y);
+            else path.lineTo(pq.x, pq.y);
+          });
         }
+        g.lineJoin = "round";
+        g.lineCap = "round";
         const major = level % (stepHpa * 2) === 0;
         g.lineWidth = major ? 4.5 : 3.5;
         g.strokeStyle = "rgba(0,0,0,0.55)";
@@ -182,9 +189,10 @@ export function createWxLayer(L: LeafletNS, map: LeafletMap) {
         g.strokeStyle = "rgba(255,255,255,0.95)";
         g.stroke(path);
         // Spread labels: each level labels a different part of its line.
-        const mid = segs[Math.floor((segs.length * (((level / stepHpa) % 5) + 0.5)) / 5.5)];
+        const longest = lines.reduce<(typeof lines)[number] | undefined>((m, l) => (!m || l.length > m.length ? l : m), undefined);
+        const mid = longest?.[Math.floor((longest.length * (((level / stepHpa) % 5) + 0.5)) / 5.5)];
         if (mid) {
-          const pm = toPx(mid[0].lat, mid[0].lng);
+          const pm = toPx(mid.lat, mid.lng);
           g.lineWidth = 3.5;
           g.strokeStyle = "rgba(0,0,0,0.8)";
           g.strokeText(String(level), pm.x, pm.y);
@@ -202,68 +210,71 @@ export function createWxLayer(L: LeafletNS, map: LeafletMap) {
         g.fillText(e.kind, pe.x, pe.y);
       }
     }
-    // Waves: direction arrows on top of the fill.
-    if (L1 === "waves") {
-      const step = 72;
-      for (let y = step / 2; y < h; y += step) {
-        for (let x = step / 2; x < w; x += step) {
-          const ll = toLatLng(x, y);
-          const v = vectorAt(f, f.waveM[t]!, f.waveDir[t]!, ll.lat, ll.lng, false);
-          if (!v) continue;
-          arrow(g, x, y, Math.atan2(v.u, v.v), 12, "#ffffff", `${v.kn.toFixed(1)}`);
-        }
-      }
-    }
-    if (L1 === "wind" || L1 === "gust" || L1 === "current") {
+    // Motion: every layer moves. Wind, gust and current follow their own flow; waves drift along
+    // the direction they travel; pressure, rain and storm show the wind beneath them, fainter.
+    const waves = L1 === "waves";
+    const own = L1 === "wind" || L1 === "gust" || L1 === "current" || waves;
+    const knL = (L1 === "current" ? f.curKn : L1 === "gust" ? f.gustKn : waves ? f.waveM : f.windKn)[t];
+    const dirL = (L1 === "current" ? f.curDir : waves ? f.waveDir : f.windDir)[t];
+    if (!knL || !dirL) return;
+    const vec = (la: number, lo: number) => {
+      if (L1 !== "gust") return vectorAt(f, knL, dirL, la, lo, L1 === "current");
       // Gusts move with the wind but are coloured and sized by gust strength.
-      const knL = (L1 === "current" ? f.curKn : L1 === "gust" ? f.gustKn : f.windKn)[t]!;
-      const dirL = (L1 === "current" ? f.curDir : f.windDir)[t]!;
-      const vec = (la: number, lo: number) => {
-        if (L1 !== "gust") return vectorAt(f, knL, dirL, la, lo, L1 === "current");
-        const wv = vectorAt(f, f.windKn[t]!, dirL, la, lo, false);
-        const gk = valueAt(f, knL, la, lo);
-        if (!wv || !Number.isFinite(gk) || wv.kn <= 0) return null;
-        const k = gk / wv.kn;
-        return { kn: gk, u: wv.u * k, v: wv.v * k };
-      };
-      if (state.style === "arrows") {
-        const step = 64;
+      const wv = vectorAt(f, f.windKn[t]!, dirL, la, lo, false);
+      const gk = valueAt(f, knL, la, lo);
+      if (!wv || !Number.isFinite(gk) || wv.kn <= 0) return null;
+      const k = gk / wv.kn;
+      return { kn: gk, u: wv.u * k, v: wv.v * k };
+    };
+    if (state.style === "arrows" || waves) {
+      if (own) {
+        const step = waves ? 72 : 64;
         for (let y = step / 2; y < h; y += step) {
           for (let x = step / 2; x < w; x += step) {
             const ll = toLatLng(x, y);
             const v = vec(ll.lat, ll.lng);
             if (!v) continue;
-            arrow(g, x, y, Math.atan2(v.u, v.v), 16, "#ffffff", L1 === "current" ? v.kn.toFixed(1) : String(Math.round(v.kn)));
+            const label = L1 === "current" || waves ? v.kn.toFixed(1) : String(Math.round(v.kn));
+            arrow(g, x, y, Math.atan2(v.u, v.v), waves ? 12 : 16, "#ffffff", label);
           }
         }
-        return;
       }
-      // Particles: velocity on a coarse pixel grid, then animate.
-      const step = 24;
-      const cols = Math.ceil(w / step) + 1;
-      const rows = Math.ceil(h / step) + 1;
-      const u = new Float32Array(cols * rows);
-      const v = new Float32Array(cols * rows);
-      const kn = new Float32Array(cols * rows);
-      for (let j = 0; j < rows; j++) {
-        for (let i = 0; i < cols; i++) {
-          const ll = toLatLng(i * step, j * step);
-          const vv = vec(ll.lat, ll.lng);
-          const k = j * cols + i;
-          if (!vv) {
-            kn[k] = NaN;
-            continue;
-          }
-          u[k] = vv.u;
-          v[k] = vv.v;
-          kn[k] = vv.kn;
-        }
-      }
-      flowGrid = { step, cols, rows, u, v, kn };
-      const n = Math.min(1600, Math.round((w * h) / 1900));
-      particles = Array.from({ length: n }, () => ({ x: Math.random() * w, y: Math.random() * h, age: Math.floor(Math.random() * 80) }));
-      animate(w, h, dpr, L1 === "current" ? 1.4 : 0.22);
+      if (state.style === "arrows") return;
     }
+    // Particles: velocity on a coarse pixel grid, then animate.
+    const step = 24;
+    const cols = Math.ceil(w / step) + 1;
+    const rows = Math.ceil(h / step) + 1;
+    const u = new Float32Array(cols * rows);
+    const v = new Float32Array(cols * rows);
+    const kn = new Float32Array(cols * rows);
+    for (let j = 0; j < rows; j++) {
+      for (let i = 0; i < cols; i++) {
+        const ll = toLatLng(i * step, j * step);
+        const vv = vec(ll.lat, ll.lng);
+        const k = j * cols + i;
+        if (!vv) {
+          kn[k] = NaN;
+          continue;
+        }
+        u[k] = vv.u;
+        v[k] = vv.v;
+        kn[k] = vv.kn;
+      }
+    }
+    flowGrid = { step, cols, rows, u, v, kn };
+    const n = Math.min(own ? 1600 : 900, Math.round((w * h) / (own ? 1900 : 3200)));
+    // Keep the particles when only the time or data changed, so the slider never restarts them.
+    if (!keep || particles.length !== n || w !== lastW || h !== lastH) {
+      particles = Array.from({ length: n }, () => ({ x: Math.random() * w, y: Math.random() * h, age: Math.floor(Math.random() * 80) }));
+    }
+    lastW = w;
+    lastH = h;
+    // Pixels a frame per unit: currents are slow, so they get a bigger scale to be seen moving;
+    // waves (metres) drift at a steady pace that grows with height.
+    const speed = L1 === "current" ? 3.2 : waves ? 1.3 : 0.22;
+    const color = L1 === "current" ? "rgba(235,225,255,0.92)" : waves ? "rgba(220,240,255,0.9)" : own ? "rgba(255,255,255,0.88)" : "rgba(255,255,255,0.5)";
+    animate(w, h, dpr, speed, color, waves);
   }
 
   /** An arrow pointing along `ang` (radians clockwise from north) with an outlined label. */
@@ -301,16 +312,36 @@ export function createWxLayer(L: LeafletNS, map: LeafletMap) {
     g.fillText(label, x + 20, y + 14);
   }
 
-  function animate(w: number, h: number, dpr: number, pxPerKn: number) {
+  function animate(w: number, h: number, dpr: number, pxPerKn: number, color: string, minSpeed: boolean) {
     const g = moving.getContext("2d");
     const fg = flowGrid;
     if (!g || !fg) return;
     g.setTransform(dpr, 0, 0, dpr, 0, 0);
+    // Bilinear between grid points so particles curve smoothly instead of stepping.
     const sample = (x: number, y: number) => {
-      const i = Math.max(0, Math.min(fg.cols - 1, Math.round(x / fg.step)));
-      const j = Math.max(0, Math.min(fg.rows - 1, Math.round(y / fg.step)));
-      const k = j * fg.cols + i;
-      return { u: fg.u[k]!, v: fg.v[k]!, kn: fg.kn[k]! };
+      const fx = Math.max(0, Math.min(fg.cols - 1.001, x / fg.step));
+      const fy = Math.max(0, Math.min(fg.rows - 1.001, y / fg.step));
+      const i = Math.floor(fx);
+      const j = Math.floor(fy);
+      const tx = fx - i;
+      const ty = fy - j;
+      const k00 = j * fg.cols + i;
+      const ks = [k00, k00 + 1, k00 + fg.cols, k00 + fg.cols + 1];
+      const ws = [(1 - tx) * (1 - ty), tx * (1 - ty), (1 - tx) * ty, tx * ty];
+      let u = 0;
+      let v = 0;
+      let kn = 0;
+      let wsum = 0;
+      for (let q = 0; q < 4; q++) {
+        const kk = fg.kn[ks[q]!]!;
+        if (!Number.isFinite(kk)) continue;
+        u += fg.u[ks[q]!]! * ws[q]!;
+        v += fg.v[ks[q]!]! * ws[q]!;
+        kn += kk * ws[q]!;
+        wsum += ws[q]!;
+      }
+      if (wsum < 0.25) return { u: 0, v: 0, kn: NaN };
+      return { u: u / wsum, v: v / wsum, kn: kn / wsum };
     };
     const tick = () => {
       g.globalCompositeOperation = "destination-in";
@@ -326,9 +357,11 @@ export function createWxLayer(L: LeafletNS, map: LeafletMap) {
           p.age = 0;
           continue;
         }
-        const nx = p.x + s.u * pxPerKn;
-        const ny = p.y - s.v * pxPerKn;
-        g.strokeStyle = state.layer === "current" ? "rgba(235,225,255,0.9)" : "rgba(255,255,255,0.88)";
+        // Waves keep a visible drift even where they are small.
+        const boost = minSpeed && s.kn > 0 && s.kn < 0.6 ? 0.6 / s.kn : 1;
+        const nx = p.x + s.u * pxPerKn * boost;
+        const ny = p.y - s.v * pxPerKn * boost;
+        g.strokeStyle = color;
         g.beginPath();
         g.moveTo(p.x, p.y);
         g.lineTo(nx, ny);
@@ -352,11 +385,25 @@ export function createWxLayer(L: LeafletNS, map: LeafletMap) {
 
   return {
     set(next: WxLayerState) {
-      const changed = next.layer !== state.layer || next.style !== state.style || next.at !== state.at || next.field !== state.field;
+      const restart = next.layer !== state.layer || next.style !== state.style;
+      const changed = restart || next.at !== state.at || next.field !== state.field;
       state = next;
-      if (changed) draw();
+      if (!changed) return;
+      if (restart) {
+        cancelAnimationFrame(pending);
+        pending = 0;
+        draw();
+        return;
+      }
+      // Time slider: redraw at most once a frame and keep the particles flowing.
+      if (!pending)
+        pending = requestAnimationFrame(() => {
+          pending = 0;
+          draw(true);
+        });
     },
     destroy() {
+      cancelAnimationFrame(pending);
       stop();
       map.off("movestart zoomstart", onStart);
       map.off("moveend zoomend resize", onEnd);

@@ -54,7 +54,9 @@ export type PanelId =
   | "anchor"
   | "legend"
   | "save"
+  | "rename"
   | "layers"
+  | "settings"
   | "weather"
   | "boat";
 export type DrawMode = "idle" | "record" | "draw";
@@ -103,7 +105,25 @@ export type LocalDraft = {
   savedAt: string;
   /** Waypoints tapped on the chart: followed exactly, never simplified. */
   tapped?: boolean;
+  /** Shared to the online library: its id there and the secret that lets this phone remove it. */
+  libraryId?: string;
+  librarySecret?: string;
+  /** Saved from the online library (someone else's track). */
+  fromLibrary?: boolean;
 };
+
+/** Tracks kept on the phone. */
+export const MAX_TRACKS = 150;
+
+/** "Track 1", "Track 2", … the next free number among the saved tracks. */
+export function nextTrackName(drafts: Array<{ title: string }>): string {
+  let n = 0;
+  for (const d of drafts) {
+    const m = /^Track (\d+)$/.exec(d.title.trim());
+    if (m) n = Math.max(n, Number(m[1]));
+  }
+  return `Track ${n + 1}`;
+}
 
 export type WxLayers = {
   wind: boolean;
@@ -207,6 +227,10 @@ export type HelmState = {
   demoPlaying: boolean;
   introOpen: boolean;
   drafts: LocalDraft[];
+  /** The just-recorded track the rename sheet is naming. */
+  renameTrackId: string | null;
+  /** A library track shown on the chart before it is saved. */
+  libraryPreview: LatLng[] | null;
   gpsDenied: boolean;
   tapMode:
     | "none"
@@ -258,6 +282,8 @@ export type HelmState = {
   /** Weather drawn on the chart, its style, and the hour shown (hour not saved). */
   wxMapLayer: WxMapLayer | "off";
   wxMapStyle: "particles" | "arrows";
+  /** Weather map model (ECMWF, GFS, ICON, UKMO); waves and current always from the marine model. */
+  wxMapModel: string;
   wxMapAt: number;
   wxMapPlaying: boolean;
   wxMapInfo: { source: "live" | "saved" | "passage" | "none" | "loading"; fetchedAt: number | null; times: number[] } | null;
@@ -365,6 +391,7 @@ type HelmActions = {
   setDemoPlaying: (v: boolean) => void;
   dismissIntro: () => void;
   saveDraft: (draft: Omit<LocalDraft, "localId" | "savedAt">) => LocalDraft;
+  updateDraft: (localId: string, patch: Partial<Omit<LocalDraft, "localId">>) => void;
   removeDraft: (localId: string) => void;
   setGpsDenied: (v: boolean) => void;
   setTapMode: (mode: HelmState["tapMode"]) => void;
@@ -389,7 +416,7 @@ type HelmActions = {
   setSunPunch: (n: 1 | 2 | 3) => void;
   setSharpTiles: (v: boolean) => void;
   setDepthLayer: (v: "off" | "depth" | "shallow") => void;
-  setWxMap: (p: Partial<Pick<HelmState, "wxMapLayer" | "wxMapStyle" | "wxMapAt" | "wxMapInfo" | "wxMapPlaying" | "wxProbe">>) => void;
+  setWxMap: (p: Partial<Pick<HelmState, "wxMapLayer" | "wxMapStyle" | "wxMapAt" | "wxMapInfo" | "wxMapPlaying" | "wxProbe" | "wxMapModel">>) => void;
   setTideNowMsl: (v: number | null) => void;
   setBenthic: (v: boolean) => void;
   /** Put the two measuring pins on the chart (default: across the middle of the view). */
@@ -504,7 +531,7 @@ function persistSig(state: Record<string, unknown>): string {
     state.depthLayer,
     state.wxMapLayer,
     state.baseMap,
-    state.wxMapStyle,
+    state.wxMapModel,
     state.benthic,
     state.textSize,
     state.reefClarity,
@@ -839,6 +866,8 @@ export const useHelm = create<HelmState & HelmActions>()(
       demoPlaying: false,
       introOpen: false,
       drafts: [],
+      renameTrackId: null,
+      libraryPreview: null,
       gpsDenied: false,
       tapMode: "none",
       measurePts: [],
@@ -870,6 +899,7 @@ export const useHelm = create<HelmState & HelmActions>()(
       baseMap: "photo",
       wxMapLayer: "off",
       wxMapStyle: "particles",
+      wxMapModel: "ecmwf",
       wxMapAt: Date.now(),
       wxMapPlaying: false,
       wxMapInfo: null,
@@ -1035,19 +1065,21 @@ export const useHelm = create<HelmState & HelmActions>()(
         }));
         const recorded: LocalDraft = {
           localId: `rec-${Date.now()}`,
-          title: "Start to stop",
+          title: nextTrackName(s.drafts),
           region: "",
-          notes: "Recorded from the start to the stop.",
+          notes: "",
           kind: "passage",
           waypoints,
           savedAt: new Date().toISOString(),
         };
         set({
-          drafts: [recorded, ...s.drafts].slice(0, 40),
+          drafts: [recorded, ...s.drafts].slice(0, MAX_TRACKS),
           activePassage: recorded,
           draft: [],
           drawMode: "idle",
-          panel: null,
+          // Ask for a name and a comment straight away (both optional).
+          panel: "rename",
+          renameTrackId: recorded.localId,
           courseMark: 0,
           pinnedMark: null,
           followBoat: true,
@@ -1402,12 +1434,18 @@ export const useHelm = create<HelmState & HelmActions>()(
           savedAt: new Date().toISOString(),
         };
         set({
-          drafts: [draft, ...get().drafts].slice(0, 40),
+          drafts: [draft, ...get().drafts].slice(0, MAX_TRACKS),
           panel: null,
           drawMode: "idle",
           draft: [],
         });
         return draft;
+      },
+      updateDraft: (localId, patch) => {
+        const drafts = get().drafts.map((d) => (d.localId === localId ? { ...d, ...patch } : d));
+        const active = get().activePassage;
+        const nextActive = active && "localId" in active && active.localId === localId ? drafts.find((d) => d.localId === localId) ?? active : active;
+        set({ drafts, activePassage: nextActive });
       },
       removeDraft: (localId) =>
         set({ drafts: get().drafts.filter((d) => d.localId !== localId) }),
@@ -1673,7 +1711,7 @@ export const useHelm = create<HelmState & HelmActions>()(
         depthLayer: s.depthLayer,
         baseMap: s.baseMap,
         wxMapLayer: s.wxMapLayer,
-        wxMapStyle: s.wxMapStyle,
+        wxMapModel: s.wxMapModel,
         benthic: s.benthic,
         textSize: s.textSize,
         reefClarity: s.reefClarity,
@@ -1744,7 +1782,9 @@ export const useHelm = create<HelmState & HelmActions>()(
           sharpTiles: typeof p.sharpTiles === "boolean" ? p.sharpTiles : current.sharpTiles,
           depthLayer: p.depthLayer === "depth" || p.depthLayer === "shallow" ? p.depthLayer : "off",
           wxMapLayer: WX_MAP_LAYERS.some((l) => l.id === p.wxMapLayer) ? (p.wxMapLayer as WxMapLayer) : "off",
-          wxMapStyle: p.wxMapStyle === "arrows" ? "arrows" : "particles",
+          // Always opens moving (arrows are one tap away); the model choice is remembered.
+          wxMapStyle: "particles",
+          wxMapModel: ["ecmwf", "gfs", "icon", "ukmo"].includes(p.wxMapModel as string) ? (p.wxMapModel as string) : "ecmwf",
           baseMap: p.baseMap === "chart" || p.baseMap === "lines" ? p.baseMap : "photo",
           wxMapAt: Date.now(),
           wxMapInfo: null,

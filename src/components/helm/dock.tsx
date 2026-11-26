@@ -2,10 +2,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import {
   Anchor,
-  BookOpen,
-  Map as MapIcon,
+  Compass,
   Pencil,
-  Radio,
   Route as RouteIcon,
   Square,
   Undo2,
@@ -16,10 +14,12 @@ import { rodeMath, formatTideClock } from "@/lib/anchor";
 import { gpsReachM } from "@/lib/boat";
 import { unlockAlarmAudio } from "@/hooks/helm-runtime";
 import { armWatchAlerts } from "@/lib/watch-notify";
+import { tapFeel } from "@/lib/haptics";
 import { useWx } from "@/hooks/weather";
 import { fetchTideRise, latDatumM, tideRiseAt, toLatM } from "@/lib/tides";
 import type { SeaState } from "@/lib/weather";
 import { AnchorWxCard } from "@/components/helm/weather";
+import { NightCheckCard } from "@/components/helm/night-check-card";
 import { useHelm } from "@/store/helm";
 import {
   depthSuffix,
@@ -133,20 +133,13 @@ export function BottomDock() {
   if (wxOn) return null;
   return (
     <nav className="pointer-events-none absolute inset-x-0 bottom-0 z-20 p-2 pb-[max(0.5rem,var(--safe-area-inset-bottom,env(safe-area-inset-bottom)))]">
-      <div className="pointer-events-auto mx-auto grid max-w-lg grid-cols-6 gap-0.5 rounded-xl border border-border bg-card p-1 shadow-[var(--shadow-border)]">
+      <div className="pointer-events-auto mx-auto grid max-w-lg grid-cols-4 gap-0.5 rounded-xl border border-border bg-card p-1 shadow-[var(--shadow-border)]">
         <DockBtn
-          active={panel === "atlas"}
-          label="Places"
-          onClick={() => toggle("atlas")}
-        >
-          <MapIcon />
-        </DockBtn>
-        <DockBtn
-          active={panel === "passages"}
-          label="Tracks"
+          active={panel === "passages" || panel === "rename"}
+          label="Navigation"
           onClick={() => toggle("passages")}
         >
-          <BookOpen />
+          <Compass />
         </DockBtn>
         <DockBtn
           active={panel === "route"}
@@ -177,17 +170,6 @@ export function BottomDock() {
           }}
         >
           <Anchor />
-        </DockBtn>
-        <DockBtn
-          active={false}
-          label="Start"
-          onClick={() => {
-            useHelm.getState().setDraft([]);
-            useHelm.getState().clearCrumb();
-            setDrawMode("record");
-          }}
-        >
-          <Radio />
         </DockBtn>
         <DockBtn
           active={false}
@@ -245,6 +227,7 @@ function AnchorSetBar() {
   const swingShape = useHelm((s) => s.swingShape);
   const setSwingShape = useHelm((s) => s.setSwingShape);
   const fenceDraft = useHelm((s) => s.fenceDraft);
+  const circleRadius = useHelm((s) => s.circleDraft?.radiusM ?? s.anchor?.radiusM ?? 40);
   const math = rodeMath(rode, gpsReachM(hull));
   const astern =
     boat?.heading != null ? Math.round((boat.heading + 180) % 360) : null;
@@ -348,6 +331,7 @@ function AnchorSetBar() {
         ) : null}
         {step === "watch" ? (
           <div className="max-h-[46dvh] overflow-y-auto">
+            <NightCheckCard radiusM={circleRadius} />
             <p className="mb-2 text-t12 text-muted-foreground">
               Next 24 h
             </p>
@@ -362,6 +346,7 @@ function AnchorSetBar() {
               onOk={() => {
                 void armWatchAlerts();
                 confirm();
+                tapFeel();
               }}
             />
           </div>

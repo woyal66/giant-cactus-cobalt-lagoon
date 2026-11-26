@@ -111,7 +111,7 @@ function ensureAlarmChannel(
   channelReady ??= LocalNotifications.createChannel({
     id: ALARM_CHANNEL,
     name: "Anchor and safety alarms",
-    description: "Anchor drag, GPS lost, off track and man overboard",
+    description: "Anchor drag, GPS lost and man overboard",
     importance: 5,
     visibility: 1,
     vibration: true,

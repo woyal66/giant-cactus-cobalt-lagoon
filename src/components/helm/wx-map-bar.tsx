@@ -18,6 +18,7 @@ import {
   type WxMapLayer,
 } from "@/lib/wx-map";
 import { useViewField } from "@/lib/wx-view";
+import { ROUTE_MODELS } from "@/lib/routing/fetch-field";
 import { useHelm, useUnitsKey } from "@/store/helm";
 
 const H = 3_600_000;
@@ -61,6 +62,7 @@ export function WxMapBar() {
   const panel = useHelm((s) => s.panel);
   const set = useHelm((s) => s.setWxMap);
   const playing = useHelm((s) => s.wxMapPlaying);
+  const modelId = useHelm((s) => s.wxMapModel);
   const field = useViewField();
   const times = info?.times ?? [];
   const now = Date.now();
@@ -105,7 +107,9 @@ export function WxMapBar() {
   }, [field, layer, shown]);
 
   if (layer === "off" || panel) return null;
-  const motion = layer === "wind" || layer === "gust" || layer === "current";
+  const motion = layer === "wind" || layer === "gust" || layer === "current" || layer === "waves";
+  const marine = layer === "waves" || layer === "current";
+  const modelLabel = ROUTE_MODELS.find((m) => m.id === modelId)?.label ?? "ECMWF";
   const legend = LEGEND[layer];
   const source =
     info?.source === "loading"
@@ -116,7 +120,9 @@ export function WxMapBar() {
           ? "Passage forecast (offline)"
           : info?.source === "none"
             ? "No forecast for this area"
-            : "ECMWF";
+            : marine
+              ? "Open-Meteo marine model (same for every weather model)"
+              : `${modelLabel} model`;
 
   return (
     <div className="pointer-events-auto absolute inset-x-0 bottom-0 z-30 mx-auto max-w-2xl rounded-t-2xl border border-b-0 border-border bg-card/97 px-2 pt-2 pb-[max(0.5rem,var(--safe-area-inset-bottom,env(safe-area-inset-bottom)))] shadow-[var(--shadow-border)] rp-glass">
@@ -140,9 +146,17 @@ export function WxMapBar() {
             );
           })}
         </div>
-        <Button variant="outline" className="h-12 shrink-0 px-3" aria-label="Close the weather map" onClick={() => set({ wxMapLayer: "off", wxMapPlaying: false, wxProbe: null })}>
-          Done
-        </Button>
+        <div className="flex shrink-0 gap-1">
+          <Button variant="outline" className="h-12 px-2" aria-label="Forecast here, as a graph" onClick={() => {
+            set({ wxMapLayer: "off", wxMapPlaying: false, wxProbe: null });
+            useHelm.getState().setPanel("weather");
+          }}>
+            Forecast
+          </Button>
+          <Button variant="outline" className="h-12 px-2.5" aria-label="Close the weather map" onClick={() => set({ wxMapLayer: "off", wxMapPlaying: false, wxProbe: null })}>
+            Done
+          </Button>
+        </div>
       </div>
 
       <div className="mt-2 flex items-center gap-2">
@@ -215,6 +229,26 @@ export function WxMapBar() {
             {style === "arrows" ? "Moving" : "Arrows"}
           </Button>
         ) : null}
+      </div>
+      <div className="mt-1 flex items-center gap-1.5">
+        <span className="shrink-0 text-t12 text-muted-foreground">Model</span>
+        <div className="flex min-w-0 gap-1 overflow-x-auto" role="radiogroup" aria-label="Weather model">
+          {ROUTE_MODELS.map((m) => {
+            const on = modelId === m.id;
+            return (
+              <button
+                key={m.id}
+                type="button"
+                role="radio"
+                aria-checked={on}
+                onClick={() => set({ wxMapModel: m.id })}
+                className={`h-9 shrink-0 rounded-lg px-2.5 text-t12 font-semibold ${on ? "bg-primary text-primary-foreground" : "bg-background text-foreground"}`}
+              >
+                {m.label}
+              </button>
+            );
+          })}
+        </div>
       </div>
       <p className="text-t12 text-muted-foreground">
         {empty ? <span className="font-semibold text-foreground">{empty} </span> : null}

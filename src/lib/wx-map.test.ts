@@ -13,11 +13,13 @@ import {
   rampColor,
   valueAt,
   viewGrid,
+  smoothLines,
+  upsample,
 } from "./wx-map.ts";
 
-test("view grid covers the view, stays under 100 points, and snaps", () => {
+test("view grid covers the view, stays under 144 points, and snaps", () => {
   const g = viewGrid({ south: -24.2, west: 152.1, north: -23.6, east: 152.7 });
-  assert.ok(g.lats.length * g.lngs.length <= 100);
+  assert.ok(g.lats.length * g.lngs.length <= 144);
   assert.ok(g.south <= -24.2 && g.north >= -23.6 && g.west <= 152.1 && g.east >= 152.7);
   const moved = viewGrid({ south: -24.19, west: 152.11, north: -23.59, east: 152.71 });
   assert.equal(moved.key, g.key);
@@ -103,4 +105,28 @@ test("probe reads wind from, gusts and waves at a point; waves reach the coast",
   assert.equal(p.gustKn, 22);
   assert.ok(Math.abs(p.waveM! - 1.5) < 1e-6); // half the corners are land: still 1.5 m
   assert.equal(p.curKn, null);
+});
+
+test("bicubic upsample passes through every grid value", () => {
+  const g = { lat0: 0, lng0: 0, dLat: 1, dLng: 1, nx: 4, ny: 3 };
+  const vals = [1010, 1012, 1015, 1013, 1011, 1014, 1018, 1016, 1009, 1012, 1016, 1014];
+  const up = upsample(g, vals, 4);
+  assert.equal(up.grid.nx, 13);
+  assert.equal(up.grid.ny, 9);
+  for (let j = 0; j < 3; j++) for (let i = 0; i < 4; i++) assert.ok(Math.abs(up.values[j * 4 * 13 + i * 4]! - vals[j * 4 + i]!) < 1e-3);
+});
+
+test("smoothLines joins contour segments into one line", () => {
+  const segs: Array<[{ lat: number; lng: number }, { lat: number; lng: number }]> = [
+    [{ lat: 0, lng: 1 }, { lat: 0, lng: 2 }],
+    [{ lat: 0, lng: 0 }, { lat: 0, lng: 1 }],
+    [{ lat: 1, lng: 2 }, { lat: 0, lng: 2 }],
+  ];
+  const lines = smoothLines(segs, 0);
+  assert.equal(lines.length, 1);
+  assert.equal(lines[0]!.length, 4);
+  const smooth = smoothLines(segs, 2);
+  assert.equal(smooth.length, 1);
+  assert.ok(smooth[0]!.length > 4);
+  assert.deepEqual(smooth[0]![0], lines[0]![0]);
 });
