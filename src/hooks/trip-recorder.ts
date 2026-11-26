@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 import { toast } from "sonner";
 import { pathLengthMeters, type LatLng } from "@/lib/geo";
-import { kvGet, kvSet } from "@/lib/kv";
+import { kvDel, kvGet, kvSet } from "@/lib/kv";
 import { loadActivePassage } from "@/lib/routing/passage-store";
 import { keepFix, thinPlan, tripStats, type TripFix, type TripPlan } from "@/lib/trip";
 import { MAX_TRIPS, useHelm, type TripRecord } from "@/store/helm";
@@ -17,14 +17,57 @@ let last: TripFix | undefined;
 let flushTimer = 0;
 let movingSince = 0;
 
-async function flush(id: string) {
+const chunkKey = (id: string, n: number) => `trip:fixes:${id}:${n}`;
+const countKey = (id: string) => `trip:chunks:${id}`;
+
+/**
+ * Every 30 s the new fixes go in as one small chunk, so a long passage doesn't rewrite its whole
+ * log each time (less storage work for the phone). The count is kept too, so chunks survive the
+ * app being closed mid-trip.
+ */
+let flushing: Promise<void> = Promise.resolve();
+
+/** One flush at a time, so two never write the same chunk number. */
+function flush(id: string): Promise<void> {
+  flushing = flushing.then(() => writeChunk(id));
+  return flushing;
+}
+
+async function writeChunk(id: string) {
   if (!buffer.length) return;
   const add = buffer;
   buffer = [];
-  const prev = (await kvGet<TripFix[]>(tripKey(id)).catch(() => undefined)) ?? [];
+  const n = (await kvGet<number>(countKey(id)).catch(() => undefined)) ?? 0;
+  await kvSet(chunkKey(id, n), add).catch(() => undefined);
+  await kvSet(countKey(id), n + 1).catch(() => undefined);
+}
+
+/** All fixes of a trip: the finished log plus any chunks not yet merged. */
+export async function readTripFixes(id: string): Promise<TripFix[]> {
+  const base = (await kvGet<TripFix[]>(tripKey(id)).catch(() => undefined)) ?? [];
+  const n = (await kvGet<number>(countKey(id)).catch(() => undefined)) ?? 0;
+  const parts = await Promise.all(Array.from({ length: n }, (_, i) => kvGet<TripFix[]>(chunkKey(id, i)).catch(() => undefined)));
+  return base.concat(...parts.map((p) => p ?? []));
+}
+
+/** Merge the chunks into one log (thinned past 20,000 fixes) and drop them. */
+async function mergeTrip(id: string): Promise<TripFix[]> {
+  const all = await readTripFixes(id);
+  const n = (await kvGet<number>(countKey(id)).catch(() => undefined)) ?? 0;
   // Very long trips: keep every other old fix past 20,000 so storage stays small.
-  const all = prev.concat(add);
-  await kvSet(tripKey(id), all.length > 20_000 ? all.filter((_, i) => i % 2 === 0 || i > all.length - 5_000) : all).catch(() => undefined);
+  const kept = all.length > 20_000 ? all.filter((_, i) => i % 2 === 0 || i > all.length - 5_000) : all;
+  await kvSet(tripKey(id), kept).catch(() => undefined);
+  for (let i = 0; i < n; i++) await kvDel(chunkKey(id, i)).catch(() => undefined);
+  await kvDel(countKey(id)).catch(() => undefined);
+  return kept;
+}
+
+/** Delete a trip's log, chunks included. */
+export async function deleteTripFixes(id: string) {
+  const n = (await kvGet<number>(countKey(id)).catch(() => undefined)) ?? 0;
+  for (let i = 0; i < n; i++) await kvDel(chunkKey(id, i)).catch(() => undefined);
+  await kvDel(countKey(id)).catch(() => undefined);
+  await kvDel(tripKey(id)).catch(() => undefined);
 }
 
 async function planFor(passageId: string | undefined): Promise<TripPlan | undefined> {
@@ -63,10 +106,16 @@ async function finish(opts: { trackId?: string; anchoredAt?: LatLng; discard?: b
   if (!t) return null;
   useHelm.setState({ activeTrip: null });
   await flush(t.id);
-  if (opts.discard) return null;
-  const fixes = (await kvGet<TripFix[]>(tripKey(t.id)).catch(() => undefined)) ?? [];
+  if (opts.discard) {
+    await deleteTripFixes(t.id);
+    return null;
+  }
+  const fixes = await mergeTrip(t.id);
   const stats = tripStats(fixes, t.plan);
-  if (!stats || stats.distM < 100 || stats.endAt - stats.startAt < 120_000) return null;
+  if (!stats || stats.distM < 100 || stats.endAt - stats.startAt < 120_000) {
+    await deleteTripFixes(t.id);
+    return null;
+  }
   const s = useHelm.getState();
   const track = opts.trackId ? s.drafts.find((d) => d.localId === opts.trackId) : undefined;
   const when = new Date(stats.departAt).toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" });

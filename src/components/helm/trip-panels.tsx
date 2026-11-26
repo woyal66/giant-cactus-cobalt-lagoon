@@ -3,11 +3,10 @@ import { toast } from "sonner";
 import { Sheet } from "@/components/helm/panels";
 import { Button } from "@/components/ui/button";
 import { formatMeters } from "@/lib/geo";
-import { kvDel, kvGet } from "@/lib/kv";
 import { formatDuration } from "@/lib/measure";
 import { shareImageFile, shareTextFile } from "@/lib/share-file";
 import { speedColor, speedSeries, tripCsv, tripGpx, type TripFix } from "@/lib/trip";
-import { tripKey } from "@/hooks/trip-recorder";
+import { deleteTripFixes, readTripFixes } from "@/hooks/trip-recorder";
 import { useHelm, useUnitsKey, type TripRecord } from "@/store/helm";
 import { tripLine } from "@/components/helm/trip-format";
 
@@ -39,7 +38,7 @@ export function TripSummaryPanel() {
     setFixes(null);
     if (!id) return;
     let live = true;
-    void kvGet<TripFix[]>(tripKey(id)).then((f) => {
+    void readTripFixes(id).then((f) => {
       if (live) setFixes(f ?? []);
     });
     return () => {
@@ -169,7 +168,7 @@ export function TripSummaryPanel() {
               panel: null,
               tripTrack: st.tripTrack?.id === trip.id ? null : st.tripTrack,
             });
-            void kvDel(tripKey(trip.id));
+            void deleteTripFixes(trip.id);
           }}
         >
           Delete this trip

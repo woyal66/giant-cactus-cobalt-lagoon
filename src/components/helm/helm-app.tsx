@@ -44,6 +44,7 @@ import { getPublicPassage } from "@/lib/passages";
 import { listPacks } from "@/lib/offline-tiles";
 import { AnchorStatusCard } from "@/components/helm/anchor-status-card";
 import { useTripRecorder } from "@/hooks/trip-recorder";
+import { useBatterySaver } from "@/hooks/battery";
 import { TripSummaryPanel } from "@/components/helm/trip-panels";
 import { useHelm } from "@/store/helm";
 
@@ -57,6 +58,7 @@ export function HelmApp() {
   useDemoCruise();
   useAnchorWatch();
   useTripRecorder();
+  useBatterySaver();
   useWakeLock();
   useMarkMade();
   useAutoNight();

@@ -540,7 +540,7 @@ export function LayersPanel() {
 }
 
 const SETTINGS_SECTIONS = [
-  { id: "display", title: "Look and text", words: "look night red dark sun sunlight bright contrast punch text size font bigger larger auto" },
+  { id: "display", title: "Look and text", words: "look night red dark sun sunlight bright contrast punch text size font bigger larger auto screen awake on battery sleep" },
   { id: "units", title: "Units", words: "units feet foot metres meters fathoms depth length distance" },
   { id: "steer", title: "Steering and tracks", words: "steer steering track ear guide sound turn record recording yellow line trail crumb reverse corner" },
   { id: "boat", title: "Boat and GPS", words: "boat hull length draft beam bow gps place position manual" },
@@ -563,6 +563,7 @@ export function SettingsPanel() {
   const tapMode = useHelm((s) => s.tapMode);
   const setTapMode = useHelm((s) => s.setTapMode);
   const setPanel = useHelm((s) => s.setPanel);
+  const keepScreenOn = useHelm((s) => s.keepScreenOn);
   const [q, setQ] = useState("");
   const words = q.trim().toLowerCase().split(/\s+/).filter(Boolean);
   const show = (id: (typeof SETTINGS_SECTIONS)[number]["id"]) => {
@@ -628,6 +629,13 @@ export function SettingsPanel() {
             </div>
           ) : null}
           <TextSizeRow />
+          <div className="mt-2">
+            <ToggleRow
+              label="Keep the screen on while following or recording a route"
+              on={keepScreenOn}
+              onChange={(v) => useHelm.setState({ keepScreenOn: v })}
+            />
+          </div>
         </>
       ) : null}
       {show("units") ? (

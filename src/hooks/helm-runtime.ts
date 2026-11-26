@@ -544,11 +544,16 @@ export function useMarkMade() {
 }
 
 export function useWakeLock() {
-  /* On the hook the screen must be allowed to sleep. MOB still holds it. */
+  /*
+   * Screen on only while it's being used to steer: following a route or recording one (if the
+   * skipper wants that), the demo, or MOB. On the hook it sleeps; the night or sun look alone no
+   * longer holds it on (left on overnight it kept the screen lit).
+   */
   const keepAwake = useHelm((s) => {
     if (s.mob) return true;
     if (s.anchor) return false;
-    return s.look !== "normal" || Boolean(s.activePassage) || s.demoPlaying;
+    if (s.demoPlaying) return true;
+    return s.keepScreenOn && (Boolean(s.activePassage) || s.drawMode === "record");
   });
   useEffect(() => {
     if (!keepAwake || typeof navigator === "undefined" || !("wakeLock" in navigator)) {

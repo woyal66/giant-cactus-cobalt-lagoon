@@ -261,6 +261,10 @@ export type HelmState = {
   tripCursor: LatLng | null;
   /** Plan with this boat's real pace from past trips (`paceFactor`). */
   usePace: boolean;
+  /** Keep the screen on while following or recording a route. */
+  keepScreenOn: boolean;
+  /** Phone low and not charging: animations step down (see useBatterySaver). Not persisted. */
+  lowBattery: boolean;
   /** The shared anchorage tapped on the chart. */
   anchorageCard: import("@/lib/anchorage-library").SharedAnchorage | null;
   /** Anchorages shared from this phone, with the secret that removes each. */
@@ -584,6 +588,7 @@ function persistSig(state: Record<string, unknown>): string {
     state.activeTrip,
     persistId(state.trips),
     state.usePace,
+    state.keepScreenOn,
     state.mySharedAnchorages,
     state.look,
     state.autoNight,
@@ -943,6 +948,8 @@ export const useHelm = create<HelmState & HelmActions>()(
       tripTrack: null,
       tripCursor: null,
       usePace: false,
+      keepScreenOn: true,
+      lowBattery: false,
       anchorageCard: null,
       mySharedAnchorages: [],
       gpsDenied: false,
@@ -1821,6 +1828,7 @@ export const useHelm = create<HelmState & HelmActions>()(
         activeTrip: s.activeTrip,
         trips: s.trips,
         usePace: s.usePace,
+        keepScreenOn: s.keepScreenOn,
         mySharedAnchorages: s.mySharedAnchorages,
         drafts: s.drafts,
         lastFix: s.lastFix,
@@ -1912,6 +1920,7 @@ export const useHelm = create<HelmState & HelmActions>()(
             ? (p.trips as TripRecord[]).filter((t) => t && typeof t.id === "string" && t.stats && Number.isFinite(t.stats.startAt)).slice(0, MAX_TRIPS)
             : current.trips,
           usePace: p.usePace === true,
+          keepScreenOn: p.keepScreenOn !== false,
           mySharedAnchorages: Array.isArray(p.mySharedAnchorages)
             ? p.mySharedAnchorages
                 .filter((x: unknown): x is { id: string; secret: string; lat: number; lng: number } =>

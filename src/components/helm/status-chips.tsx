@@ -31,6 +31,7 @@ function ago(ms: number): string {
 export function StatusChips() {
   useUnitsKey();
   const boat = useHelm((s) => s.boat);
+  const lowBattery = useHelm((s) => s.lowBattery);
   const wx = useWx();
   const [online, setOnline] = useState(() => (typeof navigator === "undefined" ? true : navigator.onLine));
   const [now, setNow] = useState(() => Date.now());
@@ -69,6 +70,9 @@ export function StatusChips() {
         className="rp-glass flex flex-col items-stretch gap-0.5 rounded-md border border-border bg-card/95 p-1 shadow-[var(--shadow-border)]"
       >
         <span className={`rounded border px-1.5 py-0.5 text-center text-t11 font-semibold tabular-nums ${tone(gpsTone)}`}>{gpsText}</span>
+        {lowBattery ? (
+          <span className={`rounded border px-1.5 py-0.5 text-center text-t11 font-semibold ${tone("warn")}`}>Battery low</span>
+        ) : null}
         {!online ? (
           <span className={`flex items-center justify-center gap-1 rounded border px-1.5 py-0.5 text-t11 font-semibold ${tone("warn")}`}>
             <WifiOff className="size-3" aria-hidden />
@@ -107,6 +111,12 @@ export function StatusChips() {
           <p className="text-muted-foreground">
             {online ? "Maps, forecasts and tides update." : "Saved maps, tides and the last forecast are used. The anchor alarm works without signal."}
           </p>
+          {lowBattery ? (
+            <>
+              <p className="mt-1.5 font-semibold">Battery low, not charging</p>
+              <p className="text-muted-foreground">Saving power: the weather map shows still arrows. The anchor watch and alarms are unchanged. Plug in if you can.</p>
+            </>
+          ) : null}
           <p className="mt-1.5 font-semibold">Forecast: {wxAge != null ? `${ago(wxAge)} old` : "not loaded"}</p>
           <p className="text-muted-foreground">Updates when there is signal. Older than a day, treat it with care.</p>
         </div>

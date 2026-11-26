@@ -822,7 +822,7 @@ export function MapView() {
             .finally(() => {
               wxLoading = false;
               const s2 = useHelm.getState();
-              wxLayer.set({ layer: s2.wxMapLayer, style: s2.wxMapStyle, at: s2.wxMapAt, field: wxField });
+              wxLayer.set({ layer: s2.wxMapLayer, style: s2.lowBattery ? "arrows" : s2.wxMapStyle, at: s2.wxMapAt, field: wxField });
             });
         };
         map.on("moveend", wxLoad);
@@ -1555,7 +1555,7 @@ export function MapView() {
           if (s.landHeights && !map.hasLayer(land)) land.addTo(map);
           else if (!s.landHeights && map.hasLayer(land)) map.removeLayer(land);
           if (s.wxMapLayer !== "off") wxLoad();
-          wxLayer.set({ layer: s.wxMapLayer, style: s.wxMapStyle, at: s.wxMapAt, field: wxField });
+          wxLayer.set({ layer: s.wxMapLayer, style: s.lowBattery ? "arrows" : s.wxMapStyle, at: s.wxMapAt, field: wxField });
           // The tapped weather spot: a draggable pin, only while the weather map is on.
           const probe = s.wxMapLayer !== "off" ? s.wxProbe : null;
           if (!probe) {
@@ -2262,7 +2262,27 @@ export function MapView() {
         };
 
         apply();
-        unsub = useHelm.subscribe(apply);
+        // Screen off or app in the background: nobody sees the chart, so don't redraw it on
+        // every GPS fix (the anchor watch and alarms run elsewhere). Catch up when it shows.
+        let chartDirty = false;
+        const unsubState = useHelm.subscribe(() => {
+          if (document.hidden) {
+            chartDirty = true;
+            return;
+          }
+          apply();
+        });
+        const onShow = () => {
+          if (!document.hidden && chartDirty) {
+            chartDirty = false;
+            apply();
+          }
+        };
+        document.addEventListener("visibilitychange", onShow);
+        unsub = () => {
+          unsubState();
+          document.removeEventListener("visibilitychange", onShow);
+        };
 
         map.on("click", (e) => {
           if (heldPin) {
