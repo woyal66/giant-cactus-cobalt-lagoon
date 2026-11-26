@@ -280,7 +280,7 @@ export type HelmState = {
   /** Fetch the next zoom level and show it at half size, so photos are sharp on high-density screens. */
   sharpTiles: boolean;
   /** Seabed overlay: off, depth shading, or "too shallow for my draft at this tide". */
-  depthLayer: "off" | "depth" | "shallow";
+  depthLayer: "off" | "depth" | "lines" | "shallow";
   /** Weather drawn on the chart, its style, and the hour shown (hour not saved). */
   wxMapLayer: WxMapLayer | "off";
   wxMapStyle: "particles" | "arrows";
@@ -303,6 +303,8 @@ export type HelmState = {
   textSize: TextSize;
   /** Extra contrast and colour on the satellite photo for reading water depth. */
   reefClarity: boolean;
+  /** Photo filter that stretches the blues and greens to separate shallow from deep (real pixels only). */
+  reefDepthLook: boolean;
   rode: RodeSetup;
   hull: BoatSetup;
   alarmSound: AlarmSoundId;
@@ -421,7 +423,7 @@ type HelmActions = {
   cycleLook: () => void;
   setSunPunch: (n: 1 | 2 | 3) => void;
   setSharpTiles: (v: boolean) => void;
-  setDepthLayer: (v: "off" | "depth" | "shallow") => void;
+  setDepthLayer: (v: "off" | "depth" | "lines" | "shallow") => void;
   setWxMap: (p: Partial<Pick<HelmState, "wxMapLayer" | "wxMapStyle" | "wxMapAt" | "wxMapInfo" | "wxMapPlaying" | "wxProbe" | "wxMapModel">>) => void;
   setTideNowMsl: (v: number | null) => void;
   setBenthic: (v: boolean) => void;
@@ -430,6 +432,7 @@ type HelmActions = {
   endMeasure: () => void;
   setTextSize: (v: TextSize) => void;
   setReefClarity: (v: boolean) => void;
+  setReefDepthLook: (v: boolean) => void;
   setRode: (partial: Partial<RodeSetup>) => void;
   setHull: (partial: Partial<BoatSetup>) => void;
   setAlarmSound: (id: AlarmSoundId) => void;
@@ -541,6 +544,7 @@ function persistSig(state: Record<string, unknown>): string {
     state.benthic,
     state.textSize,
     state.reefClarity,
+    state.reefDepthLook,
     state.look,
     state.autoNight,
     state.depthUnit,
@@ -916,6 +920,7 @@ export const useHelm = create<HelmState & HelmActions>()(
       benthic: false,
       sharpTiles: typeof window !== "undefined" && (window.devicePixelRatio ?? 1) >= 2,
       reefClarity: false,
+      reefDepthLook: false,
       rode: DEFAULT_RODE,
       hull: DEFAULT_BOAT,
       alarmSound: "klaxon",
@@ -1553,7 +1558,8 @@ export const useHelm = create<HelmState & HelmActions>()(
       },
       endMeasure: () => set({ measurePts: [] }),
       setTextSize: (textSize) => set({ textSize }),
-      setReefClarity: (reefClarity) => set({ reefClarity }),
+      setReefClarity: (reefClarity) => set({ reefClarity, reefDepthLook: reefClarity ? false : get().reefDepthLook }),
+      setReefDepthLook: (reefDepthLook) => set({ reefDepthLook, reefClarity: reefDepthLook ? false : get().reefClarity }),
       setRode: (partial) => {
         const rode = clampRode({ ...get().rode, ...partial }, get().rode);
         const hull = clampBoat({
@@ -1742,6 +1748,7 @@ export const useHelm = create<HelmState & HelmActions>()(
         benthic: s.benthic,
         textSize: s.textSize,
         reefClarity: s.reefClarity,
+        reefDepthLook: s.reefDepthLook,
         drafts: s.drafts,
         lastFix: s.lastFix,
         rode: s.rode,
@@ -1808,7 +1815,7 @@ export const useHelm = create<HelmState & HelmActions>()(
               : null,
           lengthUnit: applyLengthUnit(p.lengthUnit, current.lengthUnit),
           sharpTiles: typeof p.sharpTiles === "boolean" ? p.sharpTiles : current.sharpTiles,
-          depthLayer: p.depthLayer === "depth" || p.depthLayer === "shallow" ? p.depthLayer : "off",
+          depthLayer: p.depthLayer === "depth" || p.depthLayer === "shallow" || p.depthLayer === "lines" ? p.depthLayer : "off",
           wxMapLayer: WX_MAP_LAYERS.some((l) => l.id === p.wxMapLayer) ? (p.wxMapLayer as WxMapLayer) : "off",
           // Always opens moving (arrows are one tap away); the model choice is remembered.
           wxMapStyle: "particles",
@@ -1821,6 +1828,7 @@ export const useHelm = create<HelmState & HelmActions>()(
           tideNowMsl: null,
           textSize: p.textSize === "standard" || p.textSize === "large" || p.textSize === "xl" ? p.textSize : current.textSize,
           reefClarity: typeof p.reefClarity === "boolean" ? p.reefClarity : current.reefClarity,
+          reefDepthLook: typeof p.reefDepthLook === "boolean" ? p.reefDepthLook : current.reefDepthLook,
           look: isLookMode(p.look)
             ? p.look
             : p.sunlight === true

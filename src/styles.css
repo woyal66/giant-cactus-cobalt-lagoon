@@ -195,6 +195,14 @@
 }
 
 /* Reef clarity: stretch contrast and colour so sand, coral and deep water separate. */
+/* Reef depth: stretch the water's blues and greens (an SVG filter, #rp-reef-depth in helm-app)
+   so sand, shallow coral and deep water separate. Adjusts the real pixels; adds no detail. */
+.rp-reefdepth .leaflet-tile-pane,
+.rp-reefdepth .leaflet-satOverlay-pane,
+.rp-reefdepth .leaflet-satHi-pane {
+  filter: url(#rp-reef-depth) contrast(1.18) saturate(1.35);
+}
+
 .rp-clarity .leaflet-tile-pane,
 .rp-clarity .leaflet-satOverlay-pane,
 .rp-clarity .leaflet-satHi-pane {

@@ -469,6 +469,17 @@ function satLayer(
               qy: at.y & 1,
             }
           : undefined;
+      // Licensed Google tiles need a session first: rather than leave these blank until the next
+      // zoom, wait for it and load them then.
+      if (opts.sources && list.some((src) => src.id === "google" && !src.url)) {
+        const srcs = opts.sources;
+        void ensureGoogleSession().then(() => {
+          const again = srcs(at);
+          const p2 = parent ? { ...parent, sources: srcs({ x: at.x >> 1, y: at.y >> 1, z: at.z - 1 } as Coords) } : undefined;
+          loadSatTile(tile, again, done, p2);
+        });
+        return tile;
+      }
       loadSatTile(tile, list, done, parent);
       return tile;
     };
@@ -489,13 +500,18 @@ function satLayer(
 }
 
 function tileChoice(id: SatSource, coords: Coords) {
-  return [
-    {
-      id,
-      url: satTileUrl(id, coords.x, coords.y, coords.z),
-      cacheKey: `${id}/${coords.z}/${coords.x}/${coords.y}`,
-    },
-  ];
+  const first = {
+    id,
+    url: satTileUrl(id, coords.x, coords.y, coords.z),
+    cacheKey: `${id}/${coords.z}/${coords.x}/${coords.y}`,
+  };
+  // Government aerial only covers some places (NSW, Queensland, NZ, USA): elsewhere, and
+  // past its deepest zoom, fill in from the other photos instead of leaving the chart blank.
+  if (id !== "gov") return [first];
+  const rest = autoSatOrder(coords.z)
+    .filter((src) => src !== "gov")
+    .map((src) => ({ id: src, url: satTileUrl(src, coords.x, coords.y, coords.z), cacheKey: `${src}/${coords.z}/${coords.x}/${coords.y}` }));
+  return first.url ? [first, ...rest] : rest;
 }
 
 function nativeZoom(id: ImageryId): number {
@@ -741,7 +757,7 @@ export function MapView() {
         const depthLook = (): DepthLook => {
           const st = useHelm.getState();
           return {
-            mode: st.depthLayer === "shallow" ? "shallow" : "depth",
+            mode: st.depthLayer === "shallow" ? "shallow" : st.depthLayer === "lines" ? "lines" : "depth",
             tideMsl: st.tideNowMsl ?? 0,
             limitM: st.hull.draftM + 0.5,
           };

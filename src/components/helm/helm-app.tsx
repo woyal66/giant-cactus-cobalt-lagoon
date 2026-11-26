@@ -3,7 +3,7 @@ import { Toaster } from "sonner";
 import { MapView } from "@/components/helm/map-view";
 import { BottomDock } from "@/components/helm/dock";
 import { NavRibbon, MobHud, TopHud } from "@/components/helm/hud";
-import { WeatherPanel, WxStrip } from "@/components/helm/weather";
+import { WeatherPanel } from "@/components/helm/weather";
 import {
   AlarmOverlay,
   Disclaimer,
@@ -79,6 +79,7 @@ export function HelmApp() {
   const look = useHelm((s) => s.look);
   const sunPunch = useHelm((s) => s.sunPunch);
   const clarity = useHelm((s) => s.reefClarity);
+  const reefDepthLook = useHelm((s) => s.reefDepthLook);
   const chartBase = useHelm((s) => s.baseMap === "chart");
   const reef3d = useHelm((s) => s.reef3d);
   const plannerOn = useHelm((s) => s.panel === "route" || s.tapMode === "route-start" || s.tapMode === "route-finish");
@@ -95,9 +96,19 @@ export function HelmApp() {
     <div
       className={`relative h-dvh w-full overflow-hidden bg-background text-foreground${
         look === "sunlight" ? " rp-sunlight" : look === "night" ? " rp-night" : ""
-      }${clarity && look === "normal" ? " rp-clarity" : ""}${chartBase ? " rp-chart" : ""}`}
+      }${clarity && look === "normal" ? " rp-clarity" : ""}${reefDepthLook && look === "normal" ? " rp-reefdepth" : ""}${chartBase ? " rp-chart" : ""}`}
       data-sun-punch={look === "sunlight" ? String(sunPunch) : undefined}
     >
+      {/* Reef depth photo filter: lift the greens and blues of shallow water, deepen dark water. */}
+      <svg width="0" height="0" className="absolute" aria-hidden>
+        <filter id="rp-reef-depth" colorInterpolationFilters="sRGB">
+          <feComponentTransfer>
+            <feFuncR type="gamma" amplitude="1" exponent="1.25" offset="0" />
+            <feFuncG type="gamma" amplitude="1.12" exponent="0.85" offset="0" />
+            <feFuncB type="gamma" amplitude="1.1" exponent="0.75" offset="0" />
+          </feComponentTransfer>
+        </filter>
+      </svg>
       <MapView key="sat-v15" />
       {watchOn ? (
         <div
@@ -121,7 +132,6 @@ export function HelmApp() {
       <SettingsPanel />
       <SavePanel />
       <WeatherPanel />
-      <WxStrip />
       <BottomDock />
       <Disclaimer />
       <RadarChip />
