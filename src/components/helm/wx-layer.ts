@@ -347,11 +347,11 @@ export function createWxLayer(L: LeafletNS, map: LeafletMap) {
       });
     };
     const L1 = state.layer;
-    if (L1 === "wind") fill(f.windKn[t], WIND_RAMP, 205);
-    else if (L1 === "gust") fill(f.gustKn[t], WIND_RAMP, 205);
-    else if (L1 === "current") fill(f.curKn[t], CURRENT_RAMP, 190);
-    else if (L1 === "waves") fill(f.waveM[t], WAVE_RAMP, 200);
-    else if (L1 === "pressure") fill(f.pressureHpa?.[t], PRESSURE_RAMP, 185);
+    if (L1 === "wind") fill(f.windKn[t], WIND_RAMP, 128);
+    else if (L1 === "gust") fill(f.gustKn[t], WIND_RAMP, 128);
+    else if (L1 === "current") fill(f.curKn[t], CURRENT_RAMP, 128);
+    else if (L1 === "waves") fill(f.waveM[t], WAVE_RAMP, 128);
+    else if (L1 === "pressure") fill(f.pressureHpa?.[t], PRESSURE_RAMP, 120);
     else if (L1 === "rain" && !live && f.precipMm) {
       // Rain by intensity band. The model grid is coarse (about 10–25 km), so it is smoothed
       // into rounded areas; the live radar shows the real detail.
@@ -362,7 +362,7 @@ export function createWxLayer(L: LeafletNS, map: LeafletMap) {
         const k = rainBandIndex(e.v);
         if (k < 0) return null;
         const c = RAIN_BANDS[k]!.color;
-        return [c[0], c[1], c[2], Math.round((k === 0 ? 150 : 200) * e.a)];
+        return [c[0], c[1], c[2], Math.round((k === 0 ? 110 : 150) * e.a)];
       });
     } else if (L1 === "cloud" && f.cloudPct) {
       // Cloud: a veil as thick as the cover; low cloud (the kind that hides reefs) greyer.
@@ -442,7 +442,7 @@ export function createWxLayer(L: LeafletNS, map: LeafletMap) {
     lastH = h;
     // Pixels a frame per unit: currents are slow, so they get a bigger scale to be seen moving;
     // waves (metres) drift at a steady pace that grows with height.
-    const speed = L1 === "current" ? 3.2 : waves ? 1.3 : 0.22;
+    const speed = L1 === "current" ? 2 : waves ? 0.8 : 0.12;
     const color = L1 === "current" ? "rgba(235,225,255,0.7)" : waves ? "rgba(220,240,255,0.7)" : own ? "rgba(255,255,255,0.62)" : "rgba(255,255,255,0.38)";
     animate(w, h, dpr, speed, color, waves);
   }
@@ -523,7 +523,7 @@ export function createWxLayer(L: LeafletNS, map: LeafletMap) {
       const k = lastT ? Math.min(3, (now - lastT) / 16.7) : 1;
       lastT = now;
       g.globalCompositeOperation = "destination-in";
-      g.fillStyle = `rgba(0,0,0,${Math.pow(0.86, k).toFixed(3)})`;
+      g.fillStyle = `rgba(0,0,0,${Math.pow(0.78, k).toFixed(3)})`;
       g.fillRect(0, 0, w, h);
       g.globalCompositeOperation = "source-over";
       g.lineWidth = 1.1;
@@ -531,7 +531,7 @@ export function createWxLayer(L: LeafletNS, map: LeafletMap) {
       g.beginPath();
       for (const p of particles) {
         const s = sample(p.x, p.y);
-        if (!Number.isFinite(s.kn) || p.age > 75) {
+        if (!Number.isFinite(s.kn) || p.age > 55) {
           p.x = Math.random() * w;
           p.y = Math.random() * h;
           p.age = 0;
