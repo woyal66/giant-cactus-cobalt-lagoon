@@ -54,12 +54,13 @@ import { MoonCard } from "@/components/helm/moon-card";
 import { RemoteWatchCard } from "@/components/helm/remote-watch-card";
 import { NightCheckCard } from "@/components/helm/night-check-card";
 import { ShareAnchorageCard } from "@/components/helm/anchorage-cards";
+import { PLACE_CHIP, PLACE_KINDS } from "@/lib/place-library";
+import { AisSettings, RescueSettings, SquallSettings } from "@/components/helm/safety-settings";
 import { anchoragesOn } from "@/lib/anchorage-library";
 import { formatDepth, formatLength } from "@/lib/units";
 import { criticalAlerts, type CriticalStatus } from "@/lib/critical-alert";
 import { openLocationSettings } from "@/lib/background-gps";
 import { isFreeApp, isPreview } from "@/lib/subscription";
-import { radarAvailable } from "@/lib/radar";
 import { SubscriptionRow } from "@/components/subscription";
 import { simulateAnchorDrag, unlockAlarmAudio } from "@/hooks/helm-runtime";
 import { nextTrackName, useHelm, useUnitsKey, type LocalDraft, type PanelId } from "@/store/helm";
@@ -416,6 +417,60 @@ export function AnchorPanel() {
   );
 }
 
+/** Which kinds of place show on the chart. */
+function PlaceKindChips() {
+  const kinds = useHelm((s) => s.placeKinds);
+  const anchorages = useHelm((s) => s.sharedAnchorages);
+  return (
+    <div className="-mt-0.5 mb-1 flex flex-wrap gap-1 pl-1" role="group" aria-label="Kinds of place">
+      {anchoragesOn() ? (
+        <button
+          type="button"
+          aria-pressed={anchorages}
+          onClick={() => useHelm.setState({ sharedAnchorages: !anchorages, anchorageCard: null })}
+          className={`h-10 rounded-lg px-2.5 text-t13 font-semibold ${anchorages ? "bg-primary text-primary-foreground" : "border border-border bg-background text-foreground"}`}
+        >
+          Anchorages
+        </button>
+      ) : null}
+      {PLACE_KINDS.map((k) => {
+        const on = kinds.includes(k);
+        return (
+          <button
+            key={k}
+            type="button"
+            aria-pressed={on}
+            onClick={() => useHelm.setState({ placeKinds: on ? kinds.filter((x) => x !== k) : [...kinds, k] })}
+            className={`h-10 rounded-lg px-2.5 text-t13 font-semibold ${on ? "bg-primary text-primary-foreground" : "border border-border bg-background text-foreground"}`}
+          >
+            {PLACE_CHIP[k]}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+/** A row of choices, one picked (used for the Map menu's either/or settings). */
+function ChoiceRow<T extends string>({ label, value, options, onPick }: { label: string; value: T; options: Array<[T, string]>; onPick: (v: T) => void }) {
+  return (
+    <div>
+      <p className="mb-1 text-t13 text-muted-foreground">{label}</p>
+      <div className={`grid gap-1.5 ${options.length === 4 ? "grid-cols-4" : options.length === 2 ? "grid-cols-2" : "grid-cols-3"}`} role="radiogroup" aria-label={label}>
+        {options.map(([id, text]) => (
+          <Button key={id} role="radio" aria-checked={value === id} variant={value === id ? "default" : "outline"} className="h-11 px-1" onClick={() => onPick(id)}>
+            {text}
+          </Button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * The Map menu, in three short sections: the base map (and photo), what's on the map, and more.
+ * Weather and the rain radar live in Weather; AIS and the squall alert in Settings → Safety.
+ */
 export function LayersPanel() {
   const imagery = useHelm((s) => s.imagery);
   const setImagery = useHelm((s) => s.setImagery);
@@ -424,117 +479,153 @@ export function LayersPanel() {
   const graticule = useHelm((s) => s.graticule);
   const setGraticule = useHelm((s) => s.setGraticule);
   const seamarks = useHelm((s) => s.seamarks);
-  const setSeamarks = useHelm((s) => s.setSeamarks);
-  const depths = useHelm((s) => s.depths);
-  const setDepths = useHelm((s) => s.setDepths);
   const reefOutlines = useHelm((s) => s.reefOutlines);
   const parkZones = useHelm((s) => s.parkZones);
   const setParkZones = useHelm((s) => s.setParkZones);
   const setReefOutlines = useHelm((s) => s.setReefOutlines);
   const officialCharts = useHelm((s) => s.officialCharts);
-  const setOfficialCharts = useHelm((s) => s.setOfficialCharts);
-  const radar = useHelm((s) => s.radar);
   const baseMap = useHelm((s) => s.baseMap);
-  const sharpTiles = useHelm((s) => s.sharpTiles);
-  const setSharpTiles = useHelm((s) => s.setSharpTiles);
   const reefClarity = useHelm((s) => s.reefClarity);
-  const setReefClarity = useHelm((s) => s.setReefClarity);
   const reefDepthLook = useHelm((s) => s.reefDepthLook);
-  const setReefDepthLook = useHelm((s) => s.setReefDepthLook);
-  const sharedAnchorages = useHelm((s) => s.sharedAnchorages);
+  const places = useHelm((s) => s.places);
   const landHeights = useHelm((s) => s.landHeights);
-  const setRadar = useHelm((s) => s.setRadar);
   const setPanel = useHelm((s) => s.setPanel);
+  const photo = baseMap !== "chart";
+  const look = reefDepthLook ? "depth" : reefClarity ? "clear" : "natural";
+  const overlay = officialCharts ? "official" : seamarks ? "seamarks" : "off";
 
   return (
-    <Sheet id="layers" title="Chart" kicker="What the map shows">
-      <p className="mb-1 text-t13 text-muted-foreground">Base map</p>
-      <div className="mb-2 grid grid-cols-3 gap-1.5" role="radiogroup" aria-label="Base map">
-        {(
-          [
+    <Sheet id="layers" title="Map" kicker="What the map shows">
+      <p className="mb-1 text-t15 font-semibold">Base map</p>
+      <div className="mb-2 grid gap-2">
+        <ChoiceRow
+          label="Map"
+          value={baseMap}
+          options={[
             ["photo", "Photo"],
             ["chart", "Chart"],
             ["lines", "Photo + lines"],
-          ] as const
-        ).map(([id, label]) => (
-          <Button
-            key={id}
-            role="radio"
-            aria-checked={baseMap === id}
-            variant={baseMap === id ? "default" : "outline"}
-            className="h-11 px-1"
-            onClick={() => useHelm.setState({ baseMap: id })}
-          >
-            {label}
-          </Button>
-        ))}
+          ]}
+          onPick={(v) => useHelm.setState({ baseMap: v })}
+        />
+        {photo ? (
+          <>
+            <div>
+              <div className="mb-1 flex items-baseline justify-between gap-2">
+                <p className="text-t13 text-muted-foreground">Satellite photo</p>
+                {availableImagery().length > 2 ? (
+                  <button
+                    type="button"
+                    className="text-t13 font-semibold text-primary underline"
+                    onClick={() => {
+                      const next = useHelm.getState().flipImagery(centreTileSource());
+                      toast(`Showing ${imageryShort(next)}. Tap Compare again to flip back.`, { duration: 2500 });
+                    }}
+                  >
+                    ⇄ Compare two photos
+                  </button>
+                ) : null}
+              </div>
+              <div className="grid grid-cols-3 gap-1.5" role="radiogroup" aria-label="Satellite photo">
+                {availableImagery().map((im) => (
+                  <button
+                    key={im.id}
+                    type="button"
+                    role="radio"
+                    aria-checked={imagery === im.id}
+                    title={im.detail}
+                    onClick={() => setImagery(im.id)}
+                    className={`flex min-h-11 min-w-0 items-center gap-1.5 rounded-md border px-1.5 text-left ${
+                      imagery === im.id ? "border-primary bg-primary/15" : "border-border bg-background"
+                    }`}
+                  >
+                    <span
+                      className="grid size-6 shrink-0 place-items-center rounded font-display text-t13 font-semibold"
+                      style={{ background: im.markBg, color: im.markFg }}
+                      aria-hidden
+                    >
+                      {im.mark}
+                    </span>
+                    <span className="min-w-0 truncate text-t14 font-semibold">{imageryShort(im.id)}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+            <ChoiceRow
+              label="Photo look (real pixels, adjusted)"
+              value={look}
+              options={[
+                ["natural", "Natural"],
+                ["clear", "Clearer water"],
+                ["depth", "Depth colours"],
+              ]}
+              onPick={(v) => useHelm.setState({ reefClarity: v === "clear", reefDepthLook: v === "depth" })}
+            />
+            <PhotoInfoRow />
+          </>
+        ) : null}
       </div>
-      <p className="mb-1 text-t13 text-muted-foreground">Satellite photo</p>
-      {/* Compact picker: tap to flip between photos and compare. */}
-      <div className="mb-2 grid grid-cols-3 gap-1.5" role="radiogroup" aria-label="Satellite photo">
-        {availableImagery().map((im) => (
-          <button
-            key={im.id}
-            type="button"
-            role="radio"
-            aria-checked={imagery === im.id}
-            title={im.detail}
-            onClick={() => setImagery(im.id)}
-            className={`flex min-h-11 min-w-0 items-center gap-1.5 rounded-md border px-1.5 text-left ${
-              imagery === im.id ? "border-primary bg-primary/15" : "border-border bg-background"
-            }`}
-          >
-            <span
-              className="grid size-6 shrink-0 place-items-center rounded font-display text-t13 font-semibold"
-              style={{ background: im.markBg, color: im.markFg }}
-              aria-hidden
-            >
-              {im.mark}
-            </span>
-            <span className="min-w-0 truncate text-t14 font-semibold">{imageryShort(im.id)}</span>
-          </button>
-        ))}
-      </div>
-      <OfflinePacks />
-      <p className="mb-1 text-t13 text-muted-foreground">On the chart</p>
+
+      <p className="mb-1 text-t15 font-semibold">On the map</p>
       <div className="mb-2 grid gap-1.5">
         <DepthRow />
         <ToggleRow label="Reefs, rocks and cays (GBR, offline)" on={reefOutlines} onChange={setReefOutlines} />
-        <ToggleRow label="Land heights (hill shading and height lines)" on={landHeights} onChange={(v) => useHelm.setState({ landHeights: v })} />
-        {anchoragesOn() ? (
-          <ToggleRow
-            label="Shared anchorages (other skippers, zoom in, needs signal)"
-            on={sharedAnchorages}
-            onChange={(v) => useHelm.setState({ sharedAnchorages: v, anchorageCard: v ? useHelm.getState().anchorageCard : null })}
-          />
+        <ChoiceRow
+          label="Chart overlay"
+          value={overlay}
+          options={[
+            ["off", "Off"],
+            ["seamarks", "Seamarks"],
+            ["official", "Official chart"],
+          ]}
+          onPick={(v) => useHelm.setState({ seamarks: v === "seamarks", officialCharts: v === "official" })}
+        />
+        {overlay === "official" ? (
+          <p className="text-t13 leading-snug text-muted-foreground">Australia (AHO) and the USA (NOAA), with their buoys and lights. Not for navigation.</p>
         ) : null}
+        <ToggleRow
+          label="Places and shared anchorages (zoom in)"
+          on={places}
+          onChange={(v) => useHelm.setState({ places: v, placeCard: v ? useHelm.getState().placeCard : null, anchorageCard: v ? useHelm.getState().anchorageCard : null })}
+        />
+        {places ? <PlaceKindChips /> : null}
         <ToggleRow label="Marine park zones (GBR)" on={parkZones} onChange={setParkZones} />
         {parkZones ? <ZoneLegend /> : null}
-        <ToggleRow label="Official charts where free (USA: NOAA)" on={officialCharts} onChange={setOfficialCharts} />
-        <ToggleRow label="Seamarks" on={seamarks} onChange={setSeamarks} />
-        <ToggleRow label="Depth contours" on={depths} onChange={setDepths} />
-        {radarAvailable() ? <ToggleRow label="Rain radar (needs signal)" on={radar} onChange={setRadar} /> : null}
+        <ToggleRow label="Land heights (hill shading and height lines)" on={landHeights} onChange={(v) => useHelm.setState({ landHeights: v })} />
+      </div>
+
+      <p className="mb-1 text-t15 font-semibold">More</p>
+      <div className="mb-2 grid gap-1.5">
         <ToggleRow label="Place names" on={labels} onChange={setLabels} />
         <ToggleRow label="Lat / long lines" on={graticule} onChange={setGraticule} />
+        <div className="grid grid-cols-3 gap-1.5">
+          <Button
+            variant="outline"
+            className="h-11 px-1"
+            onClick={() => {
+              const st = useHelm.getState();
+              const v = getChartBounds();
+              if (!v) return;
+              const lat = (v.north + v.south) / 2;
+              const dLng = (v.east - v.west) * 0.22;
+              const dLat = (v.north - v.south) * 0.08;
+              const mid = (v.east + v.west) / 2;
+              st.setPanel(null);
+              st.startMeasure({ lat: lat + dLat, lng: mid - dLng }, { lat: lat - dLat, lng: mid + dLng });
+            }}
+          >
+            Measure
+          </Button>
+          <Button variant="outline" className="h-11 px-1" onClick={() => useHelm.setState({ reef3d: true, panel: null })}>
+            3D view
+          </Button>
+          <Button variant="outline" className="h-11 px-1" onClick={() => setPanel("legend")}>
+            Colour guide
+          </Button>
+        </div>
+        <p className="text-t12 text-muted-foreground">Tip: press and hold the map to measure from a spot, add a place or get its forecast.</p>
       </div>
-      <p className="mb-1 text-t13 text-muted-foreground">Photo quality</p>
-      <div className="mb-2 grid gap-1.5">
-        <ToggleRow label="Sharp photos (HD, about 4× the data)" on={sharpTiles} onChange={setSharpTiles} />
-        <ToggleRow label="Reef clarity (more contrast to read depth)" on={reefClarity} onChange={setReefClarity} />
-        <ToggleRow label="Reef depth colours (sand, coral and deep water stand apart)" on={reefDepthLook} onChange={setReefDepthLook} />
-        <PhotoInfoRow />
-      </div>
-      <div className="mb-2 grid grid-cols-2 gap-2">
-        <Button variant="outline" className="h-11" onClick={() => useHelm.setState({ reef3d: true, panel: null })}>
-          3D view
-        </Button>
-        <Button variant="outline" className="h-11" onClick={() => setPanel("legend")}>
-          Colour guide
-        </Button>
-      </div>
-      <Button variant="ghost" className="w-full" onClick={() => setPanel("settings")}>
-        Settings: look, text size, units, steering…
-      </Button>
+      <OfflinePacks />
     </Sheet>
   );
 }
@@ -544,6 +635,7 @@ const SETTINGS_SECTIONS = [
   { id: "units", title: "Units", words: "units feet foot metres meters fathoms depth length distance" },
   { id: "steer", title: "Steering and tracks", words: "steer steering track ear guide sound turn record recording yellow line trail crumb reverse corner" },
   { id: "boat", title: "Boat and GPS", words: "boat hull length draft beam bow gps place position manual" },
+  { id: "safety", title: "Safety: AIS, squalls and marine rescue", words: "squall radar rain storm alert ais ship ships vessel traffic collision cpa close approach signal k aisstream marine rescue vmr coast guard log on off due back" },
   { id: "help", title: "Help and about", words: "help guide getting started tour about garmin navionics privacy terms licence account subscription sign in" },
 ] as const;
 
@@ -680,6 +772,14 @@ export function SettingsPanel() {
             </Button>
           </div>
           <p className="mt-1 text-t13 leading-snug text-muted-foreground">Place the boat by hand only when there is no GPS, e.g. to plan at home.</p>
+        </>
+      ) : null}
+      {show("safety") ? (
+        <>
+          {head("safety")}
+          <AisSettings />
+          <SquallSettings />
+          <RescueSettings />
         </>
       ) : null}
       {show("help") ? (

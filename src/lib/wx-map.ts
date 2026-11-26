@@ -6,17 +6,20 @@ import type { BBox } from "./routing/land.ts";
 import type { WeatherField } from "./routing/field.ts";
 import type { CorridorGrid } from "./routing/fetch-field.ts";
 
-export type WxMapLayer = "wind" | "gust" | "current" | "waves" | "pressure" | "rain" | "storm";
+export type WxMapLayer = "wind" | "gust" | "rain" | "cloud" | "waves" | "current" | "pressure";
 
 export const WX_MAP_LAYERS: Array<{ id: WxMapLayer; label: string }> = [
   { id: "wind", label: "Wind" },
   { id: "gust", label: "Gusts" },
-  { id: "current", label: "Current" },
+  { id: "rain", label: "Rain & thunder" },
+  { id: "cloud", label: "Cloud" },
   { id: "waves", label: "Waves" },
+  { id: "current", label: "Current" },
   { id: "pressure", label: "Pressure" },
-  { id: "rain", label: "Rain" },
-  { id: "storm", label: "Storms" },
 ];
+
+/** Resolution of each weather model on the map (Open-Meteo global runs). */
+export const MODEL_KM: Record<string, number> = { ecmwf: 25, gfs: 25, icon: 13, ukmo: 10 };
 
 const MAX_POINTS = 144;
 
@@ -78,6 +81,23 @@ export function valueAt(f: WeatherField, layer: Float32Array, lat: number, lng: 
     w += wt;
   }
   return w >= 0.25 ? sum / w : NaN;
+}
+
+/**
+ * Value for shading, carried a little past the grid's edge so the colour reaches the screen
+ * edge, with a fade (0–1) over the last `cells` grid cells outside it. Far outside: NaN.
+ */
+export function valueAtEdge(f: WeatherField, layer: Float32Array, lat: number, lng: number, cells = 2.5): { v: number; a: number } {
+  const fy = (lat - f.lat0) / f.dLat;
+  const fx = (lng - f.lng0) / f.dLng;
+  const ox = fx < 0 ? -fx : fx > f.nx - 1 ? fx - (f.nx - 1) : 0;
+  const oy = fy < 0 ? -fy : fy > f.ny - 1 ? fy - (f.ny - 1) : 0;
+  const out = Math.max(ox, oy);
+  if (out > cells) return { v: NaN, a: 0 };
+  const cx = Math.min(f.nx - 1, Math.max(0, fx));
+  const cy = Math.min(f.ny - 1, Math.max(0, fy));
+  const v = valueAt(f, layer, f.lat0 + cy * f.dLat, f.lng0 + cx * f.dLng);
+  return { v, a: out > 0 ? Math.max(0, 1 - out / cells) : 1 };
 }
 
 /** East/north components (knots) of a speed and a direction. `toward` false = direction it comes FROM. */
@@ -373,26 +393,46 @@ export function smoothLines(segs: Array<[Pt, Pt]>, passes = 2): Pt[][] {
 /** A colour scale: value stops with RGB colours, blended smoothly between stops (like Windy). */
 export type Ramp = Array<[number, [number, number, number]]>;
 
-/** Wind and gust, knots: calm blue → green → yellow → orange → red → purple. */
+/**
+ * Wind and gust, knots. Muted, even steps like Windy's scale: blue calm, teal and green
+ * breeze, sand and brown fresh, red and magenta strong, purple and blue-grey storm.
+ */
 export const WIND_RAMP: Ramp = [
-  [0, [40, 80, 160]],
-  [6, [30, 140, 200]],
-  [11, [40, 180, 120]],
-  [16, [200, 200, 60]],
-  [21, [240, 150, 40]],
-  [27, [225, 60, 50]],
-  [34, [190, 40, 140]],
-  [45, [110, 40, 180]],
+  [0, [98, 113, 183]],
+  [2, [57, 97, 159]],
+  [6, [74, 148, 169]],
+  [10, [77, 141, 123]],
+  [14, [83, 165, 83]],
+  [17, [53, 159, 53]],
+  [21, [167, 157, 81]],
+  [25, [159, 127, 58]],
+  [29, [161, 108, 92]],
+  [33, [129, 58, 78]],
+  [37, [175, 80, 136]],
+  [41, [117, 74, 147]],
+  [47, [109, 97, 163]],
+  [55, [68, 105, 141]],
 ];
-/** Significant wave height, metres. */
+/** Significant wave height, metres (muted, like the wind scale). */
 export const WAVE_RAMP: Ramp = [
-  [0, [40, 110, 190]],
-  [0.5, [40, 160, 200]],
-  [1, [60, 190, 150]],
-  [1.5, [200, 200, 70]],
-  [2.5, [240, 140, 40]],
-  [4, [220, 50, 60]],
-  [6, [160, 40, 150]],
+  [0, [92, 106, 168]],
+  [0.5, [64, 118, 170]],
+  [1, [70, 150, 160]],
+  [1.5, [80, 160, 110]],
+  [2, [150, 160, 80]],
+  [3, [170, 120, 70]],
+  [4.5, [160, 70, 80]],
+  [7, [150, 80, 150]],
+];
+/** Sea-level pressure, hPa: lows blue, normal green, highs sand and orange. */
+export const PRESSURE_RAMP: Ramp = [
+  [990, [110, 70, 150]],
+  [1000, [70, 100, 170]],
+  [1008, [70, 145, 170]],
+  [1013, [80, 155, 110]],
+  [1018, [140, 160, 80]],
+  [1024, [170, 140, 70]],
+  [1032, [170, 100, 70]],
 ];
 /** Rain, mm per hour. */
 export const RAIN_RAMP: Ramp = [
@@ -402,13 +442,19 @@ export const RAIN_RAMP: Ramp = [
   [6, [150, 60, 220]],
   [12, [230, 50, 120]],
 ];
+/** Cloud cover, %: clear sky shows the chart, overcast is a white veil. */
+export const CLOUD_RAMP: Ramp = [
+  [0, [40, 50, 70]],
+  [50, [170, 180, 195]],
+  [100, [245, 248, 252]],
+];
 /** Current, knots. */
 export const CURRENT_RAMP: Ramp = [
-  [0, [60, 70, 150]],
-  [0.5, [80, 120, 200]],
-  [1, [120, 170, 230]],
-  [2, [200, 160, 240]],
-  [3, [240, 120, 200]],
+  [0, [70, 80, 140]],
+  [0.5, [70, 115, 170]],
+  [1, [80, 150, 170]],
+  [2, [150, 130, 190]],
+  [3, [180, 100, 160]],
 ];
 /** Thunderstorm risk from CAPE, J/kg (shown only where rain or instability makes storms possible). */
 export const CAPE_RAMP: Ramp = [
@@ -450,6 +496,8 @@ export type WxProbe = {
   rainMm: number | null;
   pressureHpa: number | null;
   capeJkg: number | null;
+  cloudPct: number | null;
+  lowCloudPct: number | null;
 };
 
 const fin = (v: number) => (Number.isFinite(v) ? v : null);
@@ -473,6 +521,8 @@ export function probeAt(f: WeatherField, at: number, lat: number, lng: number): 
     rainMm: f.precipMm ? fin(valueAt(f, f.precipMm[t]!, lat, lng)) : null,
     pressureHpa: f.pressureHpa ? fin(valueAt(f, f.pressureHpa[t]!, lat, lng)) : null,
     capeJkg: f.capeJkg ? fin(valueAt(f, f.capeJkg[t]!, lat, lng)) : null,
+    cloudPct: f.cloudPct ? fin(valueAt(f, f.cloudPct[t]!, lat, lng)) : null,
+    lowCloudPct: f.lowCloudPct ? fin(valueAt(f, f.lowCloudPct[t]!, lat, lng)) : null,
   };
 }
 

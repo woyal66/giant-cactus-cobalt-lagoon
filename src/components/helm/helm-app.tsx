@@ -26,6 +26,10 @@ import { DepthChip } from "@/components/helm/depth-chip";
 import { WxMapBar, WxProbeCard } from "@/components/helm/wx-map-bar";
 import { PinCard } from "@/components/helm/pin-card";
 import { AnchorageCard } from "@/components/helm/anchorage-cards";
+import { AddPlaceCard, PlaceCard } from "@/components/helm/place-cards";
+import { AisCard } from "@/components/helm/ais-card";
+import { useAis } from "@/hooks/ais";
+import { useRescueReminder } from "@/hooks/rescue-reminder";
 import { PerfChip } from "@/components/helm/perf-chip";
 import { WebNotice } from "@/components/helm/web-notice";
 import { usePolarMonitor } from "@/hooks/polar-monitor";
@@ -58,6 +62,8 @@ export function HelmApp() {
   useDemoCruise();
   useAnchorWatch();
   useTripRecorder();
+  useAis();
+  useRescueReminder();
   useBatterySaver();
   useWakeLock();
   useMarkMade();
@@ -87,6 +93,7 @@ export function HelmApp() {
   const clarity = useHelm((s) => s.reefClarity);
   const reefDepthLook = useHelm((s) => s.reefDepthLook);
   const chartBase = useHelm((s) => s.baseMap === "chart");
+  const wxDim = useHelm((s) => s.wxMapLayer !== "off");
   const reef3d = useHelm((s) => s.reef3d);
   const plannerOn = useHelm((s) => s.panel === "route" || s.tapMode === "route-start" || s.tapMode === "route-finish");
   const textSize = useHelm((s) => s.textSize);
@@ -102,7 +109,7 @@ export function HelmApp() {
     <div
       className={`relative h-dvh w-full overflow-hidden bg-background text-foreground${
         look === "sunlight" ? " rp-sunlight" : look === "night" ? " rp-night" : ""
-      }${clarity && look === "normal" ? " rp-clarity" : ""}${reefDepthLook && look === "normal" ? " rp-reefdepth" : ""}${chartBase ? " rp-chart" : ""}`}
+      }${clarity && look === "normal" ? " rp-clarity" : ""}${reefDepthLook && look === "normal" ? " rp-reefdepth" : ""}${chartBase ? " rp-chart" : ""}${wxDim ? " rp-wxdim" : ""}`}
       data-sun-punch={look === "sunlight" ? String(sunPunch) : undefined}
     >
       {/* Reef depth photo filter: lift the greens and blues of shallow water, deepen dark water. */}
@@ -152,6 +159,9 @@ export function HelmApp() {
       <WxProbeCard />
       <PinCard />
       <AnchorageCard />
+      <PlaceCard />
+      <AisCard />
+      <AddPlaceCard />
       <PerfChip />
       <WebNotice />
       <PassageHud />

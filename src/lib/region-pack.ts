@@ -9,8 +9,10 @@ import { DEPTH_MAX_Z, loadDemTile } from "./depth.ts";
 import { tileRange, type BBox } from "./offline-tiles.ts";
 import { saveAreaWeather } from "./wx-map-data.ts";
 import { saveTideChunks } from "./tide-model.ts";
+import { libraryConfig } from "./track-library.ts";
+import { saveLibraryArea } from "./library-cache.ts";
 
-export type ExtrasResult = { depthTiles: number; chartTiles: number; weather: boolean };
+export type ExtrasResult = { depthTiles: number; chartTiles: number; weather: boolean; shared?: number };
 
 export async function saveRegionExtras(b: BBox, onStep?: (label: string) => void, signal?: AbortSignal): Promise<ExtrasResult> {
   onStep?.("Seabed depth");
@@ -32,5 +34,10 @@ export async function saveRegionExtras(b: BBox, onStep?: (label: string) => void
   // The weather grid covers a wider area so the layers still fill the screen when zoomed out.
   const pad = 0.5;
   const weather = await saveAreaWeather({ south: b.south - pad, west: b.west - pad, north: b.north + pad, east: b.east + pad }).catch(() => false);
-  return { depthTiles, chartTiles, weather };
+  let shared = 0;
+  if (libraryConfig()) {
+    onStep?.("Shared anchorages and places");
+    shared = await saveLibraryArea(b, signal).catch(() => 0);
+  }
+  return { depthTiles, chartTiles, weather, shared };
 }

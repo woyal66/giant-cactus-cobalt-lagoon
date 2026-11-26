@@ -16,6 +16,7 @@ import { isTopic } from "@/lib/remote-watch";
 import type { DriftPoint } from "@/lib/mob";
 import type { CellTrend } from "@/lib/radar";
 import { WX_MAP_LAYERS, type WxMapLayer } from "@/lib/wx-map";
+import { PLACE_KINDS, type PlaceKind } from "@/lib/place-library";
 import { readBoatType, type BoatPerf, type BoatType, type PolarTune } from "@/lib/routing/polar";
 import { EMPTY_LEARNED, readLearned, type LearnedPolar, type PerfLive } from "@/lib/routing/learned";
 import { DEFAULT_LIMITS, DEFAULT_RULES, type Limits, type RouteRules } from "@/lib/routing/router";
@@ -116,6 +117,21 @@ export type LocalDraft = {
 
 /** Tracks kept on the phone. */
 export const MAX_TRACKS = 150;
+
+/** What the weather map's live strip has: radar (past frames, then the outlook) or satellite. */
+export type WxLiveInfo = {
+  kind: "radar" | "sat";
+  status: "loading" | "ok" | "none";
+  /** Frame times, oldest first. Radar frames at or after `outlookFrom` are the outlook. */
+  frames: number[];
+  latestAt: number | null;
+  outlookFrom: number | null;
+  /** "Rain moving NE at 18 kn", when the radar shows it. */
+  motion: string | null;
+  /** The next hour at the boat (or the chart centre). */
+  here: string | null;
+  note: string | null;
+};
 
 export type TripRecord = {
   id: string;
@@ -266,6 +282,29 @@ export type HelmState = {
   /** Phone low and not charging: animations step down (see useBatterySaver). Not persisted. */
   lowBattery: boolean;
   /** The shared anchorage tapped on the chart. */
+  /**
+   * AIS: where targets come from (off, aisstream.io with the skipper's own key, or a Signal K
+   * server on the boat's Wi-Fi), and the close-approach alarm. The key stays on the phone and is
+   * left out of backup files.
+   */
+  aisSource: "off" | "online" | "signalk";
+  aisKey: string;
+  aisHost: string;
+  aisAlarm: { on: boolean; cpaNm: number; tcpaMin: number };
+  /** Live targets and connection state (not saved). */
+  aisTargets: import("@/lib/ais").AisTarget[];
+  aisStatus: { state: "off" | "connecting" | "live" | "error"; note: string | null; at: number };
+  aisCard: string | null;
+  /** Marine rescue log on / log off: the skipper's base and whether to remind them. */
+  rescue: { on: boolean; name: string; vhf: string; phone: string; returnBy: number | null };
+  /** Places on the chart (moorings, ramps, marinas...): on, and which kinds. */
+  places: boolean;
+  placeKinds: import("@/lib/place-library").PlaceKind[];
+  /** Tapped place, and where "Add a place" was started (not saved). */
+  placeCard: import("@/lib/place-library").SharedPlace | null;
+  addPlaceAt: LatLng | null;
+  /** Places this phone shared, with the secret that removes them. */
+  myPlaces: Array<{ id: string; secret: string; lat: number; lng: number }>;
   anchorageCard: import("@/lib/anchorage-library").SharedAnchorage | null;
   /** Anchorages shared from this phone, with the secret that removes each. */
   mySharedAnchorages: Array<{ id: string; secret: string; lat: number; lng: number }>;
@@ -322,6 +361,8 @@ export type HelmState = {
   /** Weather drawn on the chart, its style, and the hour shown (hour not saved). */
   wxMapLayer: WxMapLayer | "off";
   wxMapStyle: "particles" | "arrows";
+  /** Isobars over any weather layer (always shown on Pressure). */
+  wxIsobars: boolean;
   /** Weather map model (ECMWF, GFS, ICON, UKMO); waves and current always from the marine model. */
   wxMapModel: string;
   wxMapAt: number;
@@ -329,6 +370,12 @@ export type HelmState = {
   wxMapInfo: { source: "live" | "saved" | "passage" | "none" | "loading" | "kept"; fetchedAt: number | null; times: number[] } | null;
   /** Weather map: the point tapped for a readout (Windy-style), not saved. */
   wxProbe: LatLng | null;
+  /**
+   * Live view on the weather map (not saved): the radar frame (Rain, Storms) or satellite frame
+   * (Cloud) shown, by time; null = the model forecast on the hourly slider.
+   */
+  wxLiveAt: number | null;
+  wxLiveInfo: WxLiveInfo | null;
   /** Base map: satellite photo, vector chart, or chart lines over the photo. */
   baseMap: "photo" | "chart" | "lines";
   /** 3D reef view open (not saved). */
@@ -462,7 +509,9 @@ type HelmActions = {
   setSunPunch: (n: 1 | 2 | 3) => void;
   setSharpTiles: (v: boolean) => void;
   setDepthLayer: (v: "off" | "depth" | "lines" | "shallow") => void;
-  setWxMap: (p: Partial<Pick<HelmState, "wxMapLayer" | "wxMapStyle" | "wxMapAt" | "wxMapInfo" | "wxMapPlaying" | "wxProbe" | "wxMapModel">>) => void;
+  setWxMap: (
+    p: Partial<Pick<HelmState, "wxMapLayer" | "wxMapStyle" | "wxMapAt" | "wxMapInfo" | "wxMapPlaying" | "wxProbe" | "wxMapModel" | "wxLiveAt" | "wxLiveInfo" | "wxIsobars">>,
+  ) => void;
   setTideNowMsl: (v: number | null) => void;
   setBenthic: (v: boolean) => void;
   /** Put the two measuring pins on the chart (default: across the middle of the view). */
@@ -579,6 +628,7 @@ function persistSig(state: Record<string, unknown>): string {
     state.wxMapLayer,
     state.baseMap,
     state.wxMapModel,
+    state.wxIsobars,
     state.benthic,
     state.textSize,
     state.reefClarity,
@@ -590,6 +640,14 @@ function persistSig(state: Record<string, unknown>): string {
     state.usePace,
     state.keepScreenOn,
     state.mySharedAnchorages,
+    state.places,
+    state.placeKinds,
+    state.rescue,
+    state.aisSource,
+    state.aisKey,
+    state.aisHost,
+    state.aisAlarm,
+    state.myPlaces,
     state.look,
     state.autoNight,
     state.depthUnit,
@@ -951,6 +1009,19 @@ export const useHelm = create<HelmState & HelmActions>()(
       keepScreenOn: true,
       lowBattery: false,
       anchorageCard: null,
+      rescue: { on: true, name: "", vhf: "", phone: "", returnBy: null },
+      aisSource: "off",
+      aisKey: "",
+      aisHost: "",
+      aisAlarm: { on: true, cpaNm: 0.5, tcpaMin: 15 },
+      aisTargets: [],
+      aisStatus: { state: "off", note: null, at: 0 },
+      aisCard: null,
+      places: true,
+      placeKinds: [...PLACE_KINDS],
+      placeCard: null,
+      addPlaceAt: null,
+      myPlaces: [],
       mySharedAnchorages: [],
       gpsDenied: false,
       tapMode: "none",
@@ -984,11 +1055,14 @@ export const useHelm = create<HelmState & HelmActions>()(
       baseMap: "photo",
       wxMapLayer: "off",
       wxMapStyle: "particles",
+      wxIsobars: false,
       wxMapModel: "ecmwf",
       wxMapAt: Date.now(),
       wxMapPlaying: false,
       wxMapInfo: null,
       wxProbe: null,
+      wxLiveAt: null,
+      wxLiveInfo: null,
       reef3d: false,
       tideNowMsl: null,
       benthic: false,
@@ -1819,6 +1893,7 @@ export const useHelm = create<HelmState & HelmActions>()(
         baseMap: s.baseMap,
         wxMapLayer: s.wxMapLayer,
         wxMapModel: s.wxMapModel,
+        wxIsobars: s.wxIsobars,
         benthic: s.benthic,
         textSize: s.textSize,
         reefClarity: s.reefClarity,
@@ -1830,6 +1905,14 @@ export const useHelm = create<HelmState & HelmActions>()(
         usePace: s.usePace,
         keepScreenOn: s.keepScreenOn,
         mySharedAnchorages: s.mySharedAnchorages,
+        places: s.places,
+        placeKinds: s.placeKinds,
+        rescue: s.rescue,
+        aisSource: s.aisSource,
+        aisKey: s.aisKey,
+        aisHost: s.aisHost,
+        aisAlarm: s.aisAlarm,
+        myPlaces: s.myPlaces,
         drafts: s.drafts,
         lastFix: s.lastFix,
         rode: s.rode,
@@ -1872,7 +1955,8 @@ export const useHelm = create<HelmState & HelmActions>()(
           ...p,
           imagery: isImageryId(p.imagery) ? usableImagery(p.imagery) : current.imagery,
           prevImagery: isImageryId(p.prevImagery) ? usableImagery(p.prevImagery) : null,
-          depths: typeof p.depths === "boolean" ? p.depths : current.depths,
+          // The OpenSeaMap depth layer was merged into the seabed depth lines.
+          depths: false,
           reefOutlines:
             typeof p.reefOutlines === "boolean" ? p.reefOutlines : current.reefOutlines,
           officialCharts:
@@ -1895,9 +1979,12 @@ export const useHelm = create<HelmState & HelmActions>()(
               ? { topic: p.remoteWatch.topic, boatName: p.remoteWatch.boatName.slice(0, 40) }
               : null,
           lengthUnit: applyLengthUnit(p.lengthUnit, current.lengthUnit),
-          sharpTiles: typeof p.sharpTiles === "boolean" ? p.sharpTiles : current.sharpTiles,
+          // Sharp photos follow the screen (on for high-density screens); no longer a switch.
+          sharpTiles: current.sharpTiles,
           depthLayer: p.depthLayer === "depth" || p.depthLayer === "shallow" || p.depthLayer === "lines" ? p.depthLayer : "off",
-          wxMapLayer: WX_MAP_LAYERS.some((l) => l.id === p.wxMapLayer) ? (p.wxMapLayer as WxMapLayer) : "off",
+          // "storm" was its own layer before Rain & thunder merged them.
+          wxMapLayer: (p.wxMapLayer as string) === "storm" ? "rain" : WX_MAP_LAYERS.some((l) => l.id === p.wxMapLayer) ? (p.wxMapLayer as WxMapLayer) : "off",
+          wxIsobars: p.wxIsobars === true,
           // Always opens moving (arrows are one tap away); the model choice is remembered.
           wxMapStyle: "particles",
           wxMapModel: ["ecmwf", "gfs", "icon", "ukmo"].includes(p.wxMapModel as string) ? (p.wxMapModel as string) : "ecmwf",
@@ -1921,6 +2008,39 @@ export const useHelm = create<HelmState & HelmActions>()(
             : current.trips,
           usePace: p.usePace === true,
           keepScreenOn: p.keepScreenOn !== false,
+          places: p.places !== false,
+          rescue:
+            p.rescue && typeof p.rescue === "object"
+              ? {
+                  on: (p.rescue as { on?: unknown }).on !== false,
+                  name: String((p.rescue as { name?: unknown }).name ?? "").slice(0, 60),
+                  vhf: String((p.rescue as { vhf?: unknown }).vhf ?? "").slice(0, 20),
+                  phone: String((p.rescue as { phone?: unknown }).phone ?? "").slice(0, 24),
+                  returnBy: Number.isFinite((p.rescue as { returnBy?: unknown }).returnBy) ? Number((p.rescue as { returnBy?: unknown }).returnBy) : null,
+                }
+              : current.rescue,
+          aisSource: p.aisSource === "online" || p.aisSource === "signalk" ? p.aisSource : "off",
+          aisKey: typeof p.aisKey === "string" ? p.aisKey.slice(0, 200) : "",
+          aisHost: typeof p.aisHost === "string" ? p.aisHost.slice(0, 120) : "",
+          aisAlarm:
+            p.aisAlarm && typeof p.aisAlarm === "object"
+              ? {
+                  on: (p.aisAlarm as { on?: unknown }).on !== false,
+                  cpaNm: Math.min(5, Math.max(0.1, Number((p.aisAlarm as { cpaNm?: unknown }).cpaNm) || 0.5)),
+                  tcpaMin: Math.min(60, Math.max(3, Number((p.aisAlarm as { tcpaMin?: unknown }).tcpaMin) || 15)),
+                }
+              : current.aisAlarm,
+          placeKinds: Array.isArray(p.placeKinds)
+            ? (p.placeKinds as unknown[]).filter((k): k is PlaceKind => (PLACE_KINDS as readonly unknown[]).includes(k))
+            : current.placeKinds,
+          myPlaces: Array.isArray(p.myPlaces)
+            ? (p.myPlaces as unknown[])
+                .filter((x): x is { id: string; secret: string; lat: number; lng: number } => {
+                  const o = x as { id?: unknown; secret?: unknown; lat?: unknown; lng?: unknown } | null;
+                  return Boolean(o) && typeof o!.id === "string" && typeof o!.secret === "string" && Number.isFinite(o!.lat) && Number.isFinite(o!.lng);
+                })
+                .slice(0, 300)
+            : current.myPlaces,
           mySharedAnchorages: Array.isArray(p.mySharedAnchorages)
             ? p.mySharedAnchorages
                 .filter((x: unknown): x is { id: string; secret: string; lat: number; lng: number } =>

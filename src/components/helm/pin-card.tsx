@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { placesOn } from "@/lib/place-library";
 import { useWx } from "@/hooks/weather";
 import { bearingDegrees, formatHeading, formatLat, formatLng, formatMeters, haversineMeters } from "@/lib/geo";
 import { seabedAt, waterDepthM } from "@/lib/depth";
@@ -146,6 +147,17 @@ export function PinCard() {
         >
           Measure from here
         </Button>
+        {placesOn() ? (
+          <Button
+            variant="outline"
+            className="col-span-2 h-11"
+            onClick={() => {
+              useHelm.setState({ pinCard: false, wxPin: null, addPlaceAt: { lat: pin.lat, lng: pin.lng } });
+            }}
+          >
+            Add a place here (mooring, ramp, fuel…)
+          </Button>
+        ) : null}
       </div>
     </div>
   );

@@ -95,6 +95,7 @@ export function RoutePlanner() {
               : "Tap turning points in order to lead the route round islands and reefs. When you tap your destination, press Finish here. The router keeps off land between your points, but you choose the way: check every leg."}
           </p>
           {picking === "start" ? (
+            <>
             <div className="mt-2 grid grid-cols-2 gap-2">
               {anchorAt || boatFix ? (
                 <Button
@@ -113,6 +114,20 @@ export function RoutePlanner() {
                 Cancel
               </Button>
             </div>
+            {/* Drawing by hand used to be its own dock button: it lives here now. */}
+            <Button
+              variant="outline"
+              className="mt-2 w-full"
+              onClick={() => {
+                end();
+                const s = useHelm.getState();
+                s.setDraft([]);
+                s.setDrawMode("draw");
+              }}
+            >
+              Just draw a route (straight legs, no weather)
+            </Button>
+            </>
           ) : (
             <div className="mt-2 grid grid-cols-3 gap-2">
               <Button variant="outline" onClick={undo}>

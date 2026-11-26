@@ -36,6 +36,9 @@ export type FieldData = {
   tempC?: Float32Array[];
   /** Sea-level pressure, hPa (optional; for isobars). */
   pressureHpa?: Float32Array[];
+  /** Cloud cover, % (total and low cloud; weather map only). */
+  cloudPct?: Float32Array[];
+  lowCloudPct?: Float32Array[];
 };
 
 export type WeatherField = Grid & FieldData & { model: string; fetchedAt?: number };

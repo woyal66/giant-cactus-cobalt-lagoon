@@ -47,7 +47,7 @@ export async function saveAreaWeather(b: BBox): Promise<boolean> {
   const grid = viewGrid(b);
   const key = `wx:view:${grid.key}`;
   try {
-    const field = await fetchField(grid, ROUTE_MODELS[0]!, 3);
+    const field = await fetchField(grid, ROUTE_MODELS[0]!, 3, { cloud: true });
     mem.set(key, field);
     await kvSet(key, field);
     await remember(key, field);
@@ -64,7 +64,7 @@ function covers(f: WeatherField, b: BBox): boolean {
 }
 
 /**
- * Weather grid for the chart view (3 days, main model). Recent downloads are reused; each
+ * Weather grid for the chart view (7 days; offline packs keep 3). Recent downloads are reused; each
  * download is kept on the phone so the layers still play offline. With no signal, falls back
  * to a saved download for the area, then to the saved passage's forecast.
  */
@@ -76,7 +76,7 @@ export async function loadViewField(b: BBox, modelId = "ecmwf"): Promise<ViewFie
   const hit = mem.get(key);
   if (hit && now - (hit.fetchedAt ?? 0) < FRESH_MS) return { field: hit, source: "live" };
   try {
-    const field = await fetchField(grid, model, 3);
+    const field = await fetchField(grid, model, 7, { cloud: true });
     mem.set(key, field);
     void kvSet(key, field)
       .then(() => remember(key, field))

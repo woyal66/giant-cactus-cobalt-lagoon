@@ -125,6 +125,77 @@ $$;
 grant execute on function public.share_anchorage, public.remove_anchorage, public.report_anchorage to anon;
 ```
 
+## Shared places (same project)
+
+Run this as well. It adds moorings, ramps, marinas, fuel, water, pump-out, dinghy landings and
+marine rescue bases that skippers share.
+
+```sql
+create table public.places (
+  id uuid primary key default gen_random_uuid(),
+  kind text not null check (kind in ('mooring','ramp','marina','fuel','water','pumpout','landing','rescue')),
+  lat double precision not null check (lat between -90 and 90),
+  lng double precision not null check (lng between -180 and 180),
+  name text not null default '' check (char_length(name) <= 60),
+  comment text not null default '' check (char_length(comment) <= 280),
+  vhf text not null default '' check (char_length(vhf) <= 20),
+  phone text not null default '' check (char_length(phone) <= 24),
+  secret_hash text not null,
+  reports int not null default 0,
+  hidden boolean not null default false,
+  created_at timestamptz not null default now()
+);
+create index places_pos on public.places (lat, lng);
+
+alter table public.places enable row level security;
+create policy "read visible" on public.places for select using (not hidden);
+revoke insert, update, delete on public.places from anon, authenticated;
+revoke select (secret_hash) on public.places from anon, authenticated;
+
+create or replace function public.share_place(
+  p_kind text, p_lat float8, p_lng float8, p_name text, p_comment text, p_vhf text, p_phone text, p_secret text
+) returns uuid language plpgsql security definer set search_path = public as $$
+declare new_id uuid;
+begin
+  if char_length(p_secret) < 24 then raise exception 'bad secret'; end if;
+  insert into places (kind, lat, lng, name, comment, vhf, phone, secret_hash)
+  values (p_kind, p_lat, p_lng, left(coalesce(p_name, ''), 60), left(coalesce(p_comment, ''), 280),
+          left(coalesce(p_vhf, ''), 20), left(coalesce(p_phone, ''), 24), encode(digest(p_secret, 'sha256'), 'hex'))
+  returning id into new_id;
+  return new_id;
+end $$;
+
+create or replace function public.remove_place(p_id uuid, p_secret text)
+returns void language sql security definer set search_path = public as $$
+  delete from places where id = p_id and secret_hash = encode(digest(p_secret, 'sha256'), 'hex');
+$$;
+
+create or replace function public.report_place(p_id uuid)
+returns void language sql security definer set search_path = public as $$
+  update places set reports = reports + 1, hidden = (reports + 1 >= 3) where id = p_id;
+$$;
+
+grant execute on function public.share_place, public.remove_place, public.report_place to anon;
+```
+
+## Open data bundled with the app (moorings, boat ramps)
+
+`public/places/places.json` holds government open data so the chart isn't empty on day one.
+It ships empty; to fill it, download these as GeoJSON (check each licence allows use in an app
+and keep its credit):
+
+- GBRMPA public moorings: GBRMPA GeoHub (geohub-gbrmpa.hub.arcgis.com), search "public moorings".
+- Queensland boat ramps: data.qld.gov.au, search "boat ramps" (Department of Transport and Main Roads).
+- Other states: their transport department's boating infrastructure data.
+
+Then run, one file per kind:
+
+```bash
+node scripts/build-places.mjs mooring:moorings.geojson:"GBRMPA, CC BY 4.0" ramp:ramps.geojson:"Queensland Government, CC BY 4.0"
+```
+
+The script reads each feature's point (or polygon centre) and its name, and writes the file.
+
 ## Looking after it
 
 - **Reported tracks and anchorages:** Table Editor → `tracks` (or `anchorages`), filter `hidden = true`. Delete the row, or set

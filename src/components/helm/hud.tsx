@@ -1,71 +1,29 @@
 import { useState, type ReactNode } from "react";
-import { Link } from "@tanstack/react-router";
 import { toast } from "sonner";
-import {
-  LocateFixed,
-  Navigation2,
-  Ruler,
-  Wind as WindIcon,
-  Satellite,
-  Settings,
-} from "lucide-react";
-import { SignedIn, SignedOut, UserButton } from "@/lib/auth/gates";
-import { useCurrentUserState } from "@/lib/auth/use-current-user";
+import { Layers, LocateFixed, Navigation2, Wind as WindIcon, Settings } from "lucide-react";
 import {
   bearingDegrees,
   scaleBar,
   formatHeading,
-  formatLat,
-  formatLng,
   formatMeters,
   haversineMeters,
   metresAlong,
   msToKnots,
   cornerIndexes,
 } from "@/lib/geo";
-import { imageryShort, availableImagery } from "@/lib/imagery";
 import { formatLength } from "@/lib/units";
 import { formatScope, hoursUntil, rodeMath } from "@/lib/anchor";
 import { steerCue, formatTtg, markNav } from "@/lib/steer";
 import { bowFromGps, gpsReachM } from "@/lib/boat";
-import { Badge } from "@/components/ui/badge";
 import { MobGuide } from "@/components/helm/mob-guide";
 import { Button } from "@/components/ui/button";
-import { centreTileSource, closeInOnBoat, getChartBounds } from "@/components/helm/map-view";
-import { WindInstrument } from "@/components/helm/weather";
+import { closeInOnBoat } from "@/components/helm/map-view";
 import { StatusChips } from "@/components/helm/status-chips";
 import { windCardinal } from "@/lib/weather";
 import { unlockAlarmAudio } from "@/hooks/helm-runtime";
 import { useWx } from "@/hooks/weather";
 import { useHelm, guidePoints, useUnitsKey } from "@/store/helm";
 
-function AuthSlot({ compact }: { compact?: boolean }) {
-  const { user, isPending } = useCurrentUserState();
-  if (isPending) {
-    return <div className="size-9 shrink-0 animate-pulse rounded-md bg-muted" />;
-  }
-  if (user) {
-    return (
-      <SignedIn>
-        <div className={compact ? "size-9 overflow-hidden" : "hidden max-w-[10rem] truncate sm:block"}>
-          <UserButton />
-        </div>
-        {compact ? null : (
-          <div className="sm:hidden">
-            <UserButton />
-          </div>
-        )}
-      </SignedIn>
-    );
-  }
-  return (
-    <SignedOut>
-      <Button asChild variant="helm" size={compact ? "icon-sm" : "sm"}>
-        <Link to="/login">{compact ? "In" : "Sign in"}</Link>
-      </Button>
-    </SignedOut>
-  );
-}
 
 /** Push the chart button columns below the steering bar when it is showing. */
 let steerBottom = 0;
@@ -100,13 +58,9 @@ export function TopHud() {
   const passage = useHelm((s) => s.activePassage);
   const tapMode = useHelm((s) => s.tapMode);
   const wxLayerOn = useHelm((s) => s.wxMapLayer !== "off");
-  const measuring = useHelm((s) => s.measurePts.length > 0);
   const anchorStep = useHelm((s) => s.anchorStep);
   const hookArmed = useHelm((s) => s.hookArmed);
-  const demo = useHelm((s) => s.demoPlaying);
-  const gpsDenied = useHelm((s) => s.gpsDenied);
   const chartZoom = useHelm((s) => s.chartZoom);
-  const imagery = useHelm((s) => s.imagery);
   const hookPreview = useHelm((s) => s.hookPreview);
   const fenceDraft = useHelm((s) => s.fenceDraft);
   const packDraft = useHelm((s) => s.packDraft);
@@ -123,55 +77,12 @@ export function TopHud() {
   const tracking = Boolean(passage && passage.waypoints.length >= 2);
   const following = tracking && follow && chartUp === "heading" && boatLow;
 
-  const src =
-    boat?.source === "gps"
-      ? "GPS"
-      : boat?.source === "last"
-        ? "LAST"
-        : boat?.source === "demo"
-          ? "DEMO"
-          : boat?.source === "placed"
-            ? "PLOT"
-            : "NO FIX";
   const bar = scaleBar(boat?.lat ?? -23.9, chartZoom);
   const tapeUp = Boolean(boat) && tapMode === "none" && panel !== "weather";
 
   return (
     <header className="pointer-events-none absolute inset-x-0 top-0 z-20 p-2 pt-[max(0.5rem,var(--safe-area-inset-top,env(safe-area-inset-top)))]">
       {tapeUp ? <div className={`${tracking ? "h-[4.1rem]" : "h-[2.6rem]"} md:hidden`} aria-hidden /> : null}
-      <div className="pointer-events-auto mx-auto hidden max-w-6xl items-center gap-2 md:flex">
-        <div className="flex min-w-0 items-center gap-3 rounded-xl border border-border bg-card/95 px-3 py-2 shadow-[var(--shadow-border)] rp-glass">
-          <div className="min-w-0">
-            <p className="font-display text-lg leading-none font-semibold text-foreground">
-              Anchor Mate
-            </p>
-            <p className="mt-0.5 text-t13 text-muted-foreground">
-              Satellite helm
-            </p>
-          </div>
-          <Badge variant={boat?.source === "gps" ? "default" : "muted"}>{src}</Badge>
-          {demo ? <Badge>Entrance run</Badge> : null}
-        </div>
-        <div className="flex flex-1 items-stretch gap-px overflow-hidden rounded-xl border border-border bg-card/95 shadow-[var(--shadow-border)] rp-glass">
-          <WindInstrument />
-          <Instrument
-            label="LAT"
-            value={boat ? formatLat(boat.lat) : "—"}
-            unit=""
-            wide
-          />
-          <Instrument
-            label="LON"
-            value={boat ? formatLng(boat.lng) : "—"}
-            unit=""
-            wide
-          />
-        </div>
-        <div className="flex items-center gap-2 rounded-xl border border-border bg-card/95 px-2 py-1.5 shadow-[var(--shadow-border)] rp-glass">
-          <AuthSlot />
-        </div>
-      </div>
-
       <div ref={clearSteerBar} className="mx-auto mt-1.5 flex max-w-6xl justify-between gap-2">
         <div className="pointer-events-auto flex w-[4.75rem] flex-col gap-1.5">
           {/* Chart */}
@@ -198,28 +109,17 @@ export function TopHud() {
               <span className="font-display text-lg font-semibold leading-none">N</span>
             )}
           </RailBtn>
-          {/* Scale: a plain distance bar. Tap to close in on the boat. */}
-          <button
-            type="button"
-            onClick={closeInOnBoat}
-            aria-label={`Scale bar ${formatMeters(bar.metres)}. ${imageryShort(imagery)} photo. Tap to zoom in on the boat`}
-            className="w-full rounded-md border border-border bg-card/95 px-1 py-1.5 text-center shadow-[var(--shadow-border)] rp-glass"
-          >
-            <span className="mx-auto block h-1.5 rounded-sm border-x-2 border-b-2 border-foreground" style={{ width: `${Math.min(64, bar.px)}px` }} aria-hidden />
-            <span className="mt-0.5 block font-display text-t13 leading-none font-semibold tabular-nums">{formatMeters(bar.metres)}</span>
-            <span className="mt-0.5 block text-t11 leading-none text-muted-foreground">{imageryShort(imagery)}</span>
-          </button>
-          {availableImagery().length > 2 ? (
-            <RailBtn
-              label="Compare"
-              aria="Compare: flip to the other satellite photo"
-              onClick={() => {
-                const next = useHelm.getState().flipImagery(centreTileSource());
-                toast(`Showing ${imageryShort(next)}. Tap Compare to flip back.`, { duration: 2500 });
-              }}
+          {/* Scale: a plain distance bar (the only one). Tap to close in on the boat. */}
+          {!wxLayerOn ? (
+            <button
+              type="button"
+              onClick={closeInOnBoat}
+              aria-label={`Scale bar ${formatMeters(bar.metres)}. Tap to zoom in on the boat`}
+              className="w-full rounded-md border border-border bg-card/95 px-1 py-1.5 text-center shadow-[var(--shadow-border)] rp-glass"
             >
-              <span className="text-t16 leading-none font-semibold" aria-hidden>⇄</span>
-            </RailBtn>
+              <span className="mx-auto block h-1.5 rounded-sm border-x-2 border-b-2 border-foreground" style={{ width: `${Math.min(64, bar.px)}px` }} aria-hidden />
+              <span className="mt-0.5 block font-display text-t13 leading-none font-semibold tabular-nums">{formatMeters(bar.metres)}</span>
+            </button>
           ) : null}
           <div className="h-1" aria-hidden />
           {/* Weather: one button for the forecast and the weather map. */}
@@ -235,7 +135,7 @@ export function TopHud() {
             onClick={() => {
               const st = useHelm.getState();
               if (st.wxMapLayer !== "off") {
-                st.setWxMap({ wxMapLayer: "off", wxMapPlaying: false, wxProbe: null });
+                st.setWxMap({ wxMapLayer: "off", wxMapPlaying: false, wxProbe: null, wxLiveAt: null });
                 return;
               }
               setPanel(panel === "weather" ? null : "weather");
@@ -254,29 +154,6 @@ export function TopHud() {
               <WindIcon className="size-5" aria-hidden />
             )}
           </RailBtn>
-          <RailBtn
-            on={measuring}
-            label="Measure"
-            aria={measuring ? "Remove the measuring pins" : "Measure distance on the chart"}
-            onClick={() => {
-              const st = useHelm.getState();
-              if (st.measurePts.length) {
-                st.endMeasure();
-                return;
-              }
-              // Two pins across the middle of the view; drag either one anywhere.
-              const v = getChartBounds();
-              if (!v) return;
-              const lat = (v.north + v.south) / 2;
-              const dLng = (v.east - v.west) * 0.22;
-              const dLat = (v.north - v.south) * 0.08;
-              const mid = (v.east + v.west) / 2;
-              st.setPanel(null);
-              st.startMeasure({ lat: lat + dLat, lng: mid - dLng }, { lat: lat - dLat, lng: mid + dLng });
-            }}
-          >
-            <Ruler className="size-5" aria-hidden />
-          </RailBtn>
           <div className="h-1" aria-hidden />
           {/* Emergency, on its own */}
           <Button
@@ -293,10 +170,10 @@ export function TopHud() {
             <span className="font-display text-t13 font-semibold leading-none">MOB</span>
           </Button>
         </div>
-        <div className="pointer-events-auto flex flex-col items-end gap-1.5">
+        <div className={`pointer-events-auto flex flex-col items-end gap-1.5 ${wxLayerOn ? "invisible" : ""}`}>
           <div className="flex w-[4.25rem] flex-col gap-1.5">
-            <RailBtn on={panel === "layers"} label="Chart" aria="Chart: base map, photos, overlays and offline packs" onClick={() => setPanel(panel === "layers" ? null : "layers")}>
-              <Satellite className="size-5" aria-hidden />
+            <RailBtn on={panel === "layers"} label="Map" aria="Map: base map, photos, what's shown, offline areas" onClick={() => setPanel(panel === "layers" ? null : "layers")}>
+              <Layers className="size-5" aria-hidden />
             </RailBtn>
             <RailBtn on={panel === "settings"} label="Settings" aria="Settings: look, text size, units, steering and help" onClick={() => setPanel(panel === "settings" ? null : "settings")}>
               <Settings className="size-5" aria-hidden />
@@ -369,17 +246,6 @@ export function TopHud() {
         </div>
       ) : null}
 
-      {!boat && !gpsDenied ? (
-        <p className="pointer-events-none mx-auto mt-1.5 max-w-6xl text-center text-t13 text-muted-foreground">
-          Locating GPS…
-        </p>
-      ) : null}
-
-      {!boat && gpsDenied ? (
-        <p className="pointer-events-none mx-auto mt-1.5 max-w-6xl text-center text-t13 text-muted-foreground">
-          GPS is off. Settings → Place boat by hand.
-        </p>
-      ) : null}
     </header>
   );
 }
@@ -420,45 +286,6 @@ function RailBtn({
   );
 }
 
-function Instrument({
-  label,
-  value,
-  unit,
-  wide,
-  compact,
-}: {
-  label: string;
-  value: string;
-  unit: string;
-  wide?: boolean;
-  compact?: boolean;
-}) {
-  return (
-    <div
-      className={
-        compact
-          ? "min-w-0 flex-1 px-2 py-1.5"
-          : `px-3 py-2 ${wide ? "min-w-[9.5rem]" : "min-w-[4.5rem]"}`
-      }
-    >
-      <p className="text-t11 text-muted-foreground">
-        {label}
-      </p>
-      <p
-        className={`font-display leading-none font-semibold tabular-nums rp-instrument-value ${
-          compact ? "text-lg" : "text-[1.35rem]"
-        }`}
-      >
-        {value}
-        {unit ? (
-          <span className="ml-0.5 text-t12 font-medium text-muted-foreground">
-            {unit}
-          </span>
-        ) : null}
-      </p>
-    </div>
-  );
-}
 
 export function MobHud() {
   const boat = useHelm((s) => s.boat);

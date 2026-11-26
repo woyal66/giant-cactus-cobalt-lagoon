@@ -56,13 +56,17 @@ import { squareFromCorners } from "@/lib/offline-tiles";
 import { toast } from "sonner";
 import { measure } from "@/lib/measure";
 import { createRadar } from "@/components/helm/radar-layer";
+import { createPlacesLayer } from "@/components/helm/places-layer";
+import { createAisLayer } from "@/components/helm/ais-layer";
+import { createWxLive } from "@/components/helm/wx-live";
+import type { RainNow } from "@/components/helm/rain-now";
 import { radarAvailable } from "@/lib/radar";
 import { createDepthLayer, type DepthLook } from "@/components/helm/depth-layer";
 import { createAnchorageLayer } from "@/components/helm/anchorage-layer";
 import { createLandLayer } from "@/components/helm/land-layer";
 import { speedColor } from "@/lib/trip";
 import { createHazardLayer } from "@/components/helm/hazard-layer";
-import { OFFICIAL_CHARTS } from "@/lib/official-charts";
+import { OFFICIAL_CHARTS, arcgisTileUrl } from "@/lib/official-charts";
 import { createWxLayer } from "@/components/helm/wx-layer";
 import { setViewField } from "@/lib/wx-view";
 import { createChartLayer } from "@/components/helm/chart-layer";
@@ -723,6 +727,12 @@ export function MapView() {
         const reefs = createHazardLayer(L, MAX_ZOOM);
         // Other skippers' shared anchorages (online library), once zoomed in.
         const anchorages = createAnchorageLayer(L, map);
+        const placesLayer = createPlacesLayer(L, map);
+        const aisLayer = createAisLayer(L, map);
+        const onPlaceShared = (e: Event) => placesLayer.add((e as CustomEvent).detail);
+        const onPlaceRemoved = (e: Event) => placesLayer.remove((e as CustomEvent<string>).detail);
+        window.addEventListener("helm:place-shared", onPlaceShared);
+        window.addEventListener("helm:place-removed", onPlaceRemoved);
         // Land heights: hill shading and height lines (free worldwide terrain tiles).
         const land = createLandLayer(L, MAX_ZOOM);
         const onShared = (e: Event) => anchorages.add((e as CustomEvent).detail);
@@ -733,8 +743,23 @@ export function MapView() {
         // is requested outside it. Under the reef outlines and seamarks.
         const official = L.layerGroup(
           OFFICIAL_CHARTS.flatMap((c) =>
-            c.boxes.map(([w, s, e, n]) =>
-              L.tileLayer.wms(c.url, {
+            c.boxes.map(([w, s, e, n]) => {
+              if (c.kind === "arcgis-image") {
+                const Arc = L.TileLayer.extend({
+                  getTileUrl(this: TileLayer, t: { x: number; y: number; z: number }) {
+                    return arcgisTileUrl(c.url, t.z, t.x, t.y);
+                  },
+                });
+                return new (Arc as unknown as new (url: string, o: import("leaflet").TileLayerOptions) => TileLayer)("", {
+                  maxZoom: MAX_ZOOM,
+                  minZoom: c.minZoom,
+                  bounds: L.latLngBounds([s, w], [n, e]),
+                  pane: "chartOverlay",
+                  attribution: c.attribution,
+                  zIndex: 0,
+                });
+              }
+              return L.tileLayer.wms(c.url, {
                 layers: c.layers,
                 format: "image/png",
                 transparent: true,
@@ -745,8 +770,8 @@ export function MapView() {
                 pane: "chartOverlay",
                 attribution: c.attribution,
                 zIndex: 0,
-              }),
-            ),
+              });
+            }),
           ),
         );
         let officialOn = false;
@@ -781,6 +806,20 @@ export function MapView() {
         // Weather on the chart: grid for the view, loaded when a layer is on and after panning away.
         const wxLayer = createWxLayer(L, map);
         let wxField: WeatherField | null = null;
+        // Live radar (Rain, Storms) and satellite (Cloud) for the weather map's live strip.
+        let liveRain: RainNow | null = null;
+        const wxState = (s: ReturnType<typeof useHelm.getState>) => ({
+          layer: s.wxMapLayer,
+          style: s.lowBattery ? ("arrows" as const) : s.wxMapStyle,
+          at: s.wxMapAt,
+          field: wxField,
+          isobars: s.wxIsobars,
+          live: liveRain && s.wxLiveAt != null ? { rain: liveRain, at: s.wxLiveAt } : null,
+        });
+        const wxLive = createWxLive(L, map, (r) => {
+          liveRain = r;
+          wxLayer.set(wxState(useHelm.getState()));
+        });
         let wxLoading = false;
         let wxFieldModel = "";
         let wxProbeMarker: import("leaflet").Marker | null = null;
@@ -798,6 +837,13 @@ export function MapView() {
           wxField
             ? { source: "kept" as const, fetchedAt: wxField.fetchedAt ?? null, times: wxField.times }
             : { source: "none" as const, fetchedAt: null, times: [] };
+        // A failed download (no signal, or the forecast service's per-minute limit) tries once
+        // more after half a minute, without the skipper having to pan.
+        let wxRetry = 0;
+        const retryWx = () => {
+          window.clearTimeout(wxRetry);
+          wxRetry = window.setTimeout(() => wxLoad(), 30_000);
+        };
         const wxLoad = () => {
           const st = useHelm.getState();
           if (!map || st.wxMapLayer === "off" || wxLoading || (wxCovers(wxField) && wxFieldModel === st.wxMapModel)) return;
@@ -815,21 +861,30 @@ export function MapView() {
                   ? { source: r.source, fetchedAt: r.field.fetchedAt ?? null, times: r.field.times }
                   : keptInfo(),
               });
+              if (!r || r.source !== "live") retryWx();
             })
             // A failed download (no signal, or the forecast service's per-minute limit) must not
             // leave the time slider with no hours: keep the forecast already on screen.
-            .catch(() => useHelm.getState().setWxMap({ wxMapInfo: keptInfo() }))
+            .catch(() => {
+              useHelm.getState().setWxMap({ wxMapInfo: keptInfo() });
+              retryWx();
+            })
             .finally(() => {
               wxLoading = false;
-              const s2 = useHelm.getState();
-              wxLayer.set({ layer: s2.wxMapLayer, style: s2.lowBattery ? "arrows" : s2.wxMapStyle, at: s2.wxMapAt, field: wxField });
+              wxLayer.set(wxState(useHelm.getState()));
             });
         };
         map.on("moveend", wxLoad);
         stopWx = () => {
           map?.off("moveend", wxLoad);
+          window.clearTimeout(wxRetry);
           wxLayer.destroy();
+          wxLive.destroy();
           anchorages.destroy();
+          placesLayer.destroy();
+          aisLayer.destroy();
+          window.removeEventListener("helm:place-shared", onPlaceShared);
+          window.removeEventListener("helm:place-removed", onPlaceRemoved);
           window.removeEventListener("helm:anchorage-shared", onShared);
           window.removeEventListener("helm:anchorage-removed", onRemoved);
         };
@@ -848,9 +903,7 @@ export function MapView() {
           : null;
         stopRadar = () => radar.destroy();
 
-        L.control
-          .scale({ metric: true, imperial: false, position: "bottomright" })
-          .addTo(map);
+        // One scale only: the nautical one on the rail (the Leaflet km bar was a duplicate).
 
         const boatIcon = (
           heading: number,
@@ -1551,11 +1604,14 @@ export function MapView() {
             zonesOn = false;
           }
           radar.set(s.radar && radarAvailable());
-          anchorages.set(s.sharedAnchorages);
+          anchorages.set(s.places && s.sharedAnchorages);
+          placesLayer.set(s.places, s.placeKinds.join(","));
+          aisLayer.set(s.aisTargets, s.aisSource !== "off");
           if (s.landHeights && !map.hasLayer(land)) land.addTo(map);
           else if (!s.landHeights && map.hasLayer(land)) map.removeLayer(land);
           if (s.wxMapLayer !== "off") wxLoad();
-          wxLayer.set({ layer: s.wxMapLayer, style: s.lowBattery ? "arrows" : s.wxMapStyle, at: s.wxMapAt, field: wxField });
+          wxLive.set(s.wxMapLayer, s.wxMapLayer === "off" ? null : s.wxLiveAt);
+          wxLayer.set(wxState(s));
           // The tapped weather spot: a draggable pin, only while the weather map is on.
           const probe = s.wxMapLayer !== "off" ? s.wxProbe : null;
           if (!probe) {

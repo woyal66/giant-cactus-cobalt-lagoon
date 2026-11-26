@@ -54,6 +54,8 @@ export type WxHour = {
   tempC: number;
   precipMm: number;
   cloudPct: number;
+  /** Low cloud, % (Open-Meteo only). */
+  lowCloudPct?: number;
   sky: WxSky;
   /** Convective energy (J/kg), lifted index (°C) and WMO weather code, where the model gives them. */
   capeJkg?: number;
@@ -565,6 +567,7 @@ type OpenMeteoPayload = {
     temperature_2m?: (number | null)[];
     precipitation?: (number | null)[];
     cloud_cover?: (number | null)[];
+    cloud_cover_low?: (number | null)[];
     cape?: (number | null)[];
     lifted_index?: (number | null)[];
   };
@@ -592,6 +595,7 @@ export function parseOpenMeteo(
       tempC: Math.round(num(json.hourly?.temperature_2m?.[i]) * 10) / 10,
       precipMm: num(json.hourly?.precipitation?.[i]),
       cloudPct: Math.round(num(json.hourly?.cloud_cover?.[i])),
+      ...optNum("lowCloudPct", json.hourly?.cloud_cover_low?.[i]),
       sky: skyFromWmo(num(json.hourly?.weather_code?.[i])),
       ...optNum("capeJkg", json.hourly?.cape?.[i]),
       ...optNum("liftedIndex", json.hourly?.lifted_index?.[i]),
@@ -762,7 +766,7 @@ async function fetchNamedModel(
   url.searchParams.set("longitude", lng.toFixed(4));
   url.searchParams.set(
     "hourly",
-    "wind_speed_10m,wind_direction_10m,wind_gusts_10m,weather_code,temperature_2m,precipitation,cloud_cover,cape,lifted_index",
+    "wind_speed_10m,wind_direction_10m,wind_gusts_10m,weather_code,temperature_2m,precipitation,cloud_cover,cloud_cover_low,cape,lifted_index",
   );
   url.searchParams.set("forecast_days", spec.days);
   url.searchParams.set("wind_speed_unit", "kn");
@@ -788,7 +792,7 @@ async function fetchOpenMeteo(
   url.searchParams.set("longitude", lng.toFixed(4));
   url.searchParams.set(
     "hourly",
-    "wind_speed_10m,wind_direction_10m,wind_gusts_10m,weather_code,temperature_2m,precipitation,cloud_cover,cape,lifted_index",
+    "wind_speed_10m,wind_direction_10m,wind_gusts_10m,weather_code,temperature_2m,precipitation,cloud_cover,cloud_cover_low,cape,lifted_index",
   );
   url.searchParams.set("forecast_days", "16");
   url.searchParams.set("wind_speed_unit", "kn");
