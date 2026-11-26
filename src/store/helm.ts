@@ -231,6 +231,12 @@ export type HelmState = {
   renameTrackId: string | null;
   /** A library track shown on the chart before it is saved. */
   libraryPreview: LatLng[] | null;
+  /** Show other skippers' shared anchorages on the chart (needs signal and the library). */
+  sharedAnchorages: boolean;
+  /** The shared anchorage tapped on the chart. */
+  anchorageCard: import("@/lib/anchorage-library").SharedAnchorage | null;
+  /** Anchorages shared from this phone, with the secret that removes each. */
+  mySharedAnchorages: Array<{ id: string; secret: string; lat: number; lng: number }>;
   gpsDenied: boolean;
   tapMode:
     | "none"
@@ -545,6 +551,8 @@ function persistSig(state: Record<string, unknown>): string {
     state.textSize,
     state.reefClarity,
     state.reefDepthLook,
+    state.sharedAnchorages,
+    state.mySharedAnchorages,
     state.look,
     state.autoNight,
     state.depthUnit,
@@ -886,6 +894,9 @@ export const useHelm = create<HelmState & HelmActions>()(
       drafts: [],
       renameTrackId: null,
       libraryPreview: null,
+      sharedAnchorages: true,
+      anchorageCard: null,
+      mySharedAnchorages: [],
       gpsDenied: false,
       tapMode: "none",
       measurePts: [],
@@ -1757,6 +1768,8 @@ export const useHelm = create<HelmState & HelmActions>()(
         textSize: s.textSize,
         reefClarity: s.reefClarity,
         reefDepthLook: s.reefDepthLook,
+        sharedAnchorages: s.sharedAnchorages,
+        mySharedAnchorages: s.mySharedAnchorages,
         drafts: s.drafts,
         lastFix: s.lastFix,
         rode: s.rode,
@@ -1837,6 +1850,14 @@ export const useHelm = create<HelmState & HelmActions>()(
           textSize: p.textSize === "standard" || p.textSize === "large" || p.textSize === "xl" ? p.textSize : current.textSize,
           reefClarity: typeof p.reefClarity === "boolean" ? p.reefClarity : current.reefClarity,
           reefDepthLook: typeof p.reefDepthLook === "boolean" ? p.reefDepthLook : current.reefDepthLook,
+          sharedAnchorages: typeof p.sharedAnchorages === "boolean" ? p.sharedAnchorages : current.sharedAnchorages,
+          mySharedAnchorages: Array.isArray(p.mySharedAnchorages)
+            ? p.mySharedAnchorages
+                .filter((x: unknown): x is { id: string; secret: string; lat: number; lng: number } =>
+                  Boolean(x) && typeof (x as { id?: unknown }).id === "string" && typeof (x as { secret?: unknown }).secret === "string" &&
+                  Number.isFinite((x as { lat?: unknown }).lat) && Number.isFinite((x as { lng?: unknown }).lng))
+                .slice(0, 200)
+            : current.mySharedAnchorages,
           look: isLookMode(p.look)
             ? p.look
             : p.sunlight === true

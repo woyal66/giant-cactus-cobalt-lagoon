@@ -58,6 +58,7 @@ import { measure } from "@/lib/measure";
 import { createRadar } from "@/components/helm/radar-layer";
 import { radarAvailable } from "@/lib/radar";
 import { createDepthLayer, type DepthLook } from "@/components/helm/depth-layer";
+import { createAnchorageLayer } from "@/components/helm/anchorage-layer";
 import { createHazardLayer } from "@/components/helm/hazard-layer";
 import { OFFICIAL_CHARTS } from "@/lib/official-charts";
 import { createWxLayer } from "@/components/helm/wx-layer";
@@ -718,6 +719,10 @@ export function MapView() {
 
         // Reefs, drying reef, rocks and cays from the bundled GBRMPA file (works offline).
         const reefs = createHazardLayer(L, MAX_ZOOM);
+        // Other skippers' shared anchorages (online library), once zoomed in.
+        const anchorages = createAnchorageLayer(L, map);
+        const onShared = (e: Event) => anchorages.add((e as CustomEvent).detail);
+        window.addEventListener("helm:anchorage-shared", onShared);
         // Free official charts (NOAA in the USA): one WMS layer per covered area, so nothing
         // is requested outside it. Under the reef outlines and seamarks.
         const official = L.layerGroup(
@@ -811,6 +816,8 @@ export function MapView() {
         stopWx = () => {
           map?.off("moveend", wxLoad);
           wxLayer.destroy();
+          anchorages.destroy();
+          window.removeEventListener("helm:anchorage-shared", onShared);
         };
         // Allen Coral Atlas sand / coral / seagrass, only when the build names its map service.
         const benthic: TileLayer | null = BENTHIC_WMS
@@ -1526,6 +1533,7 @@ export function MapView() {
             zonesOn = false;
           }
           radar.set(s.radar && radarAvailable());
+          anchorages.set(s.sharedAnchorages);
           if (s.wxMapLayer !== "off") wxLoad();
           wxLayer.set({ layer: s.wxMapLayer, style: s.wxMapStyle, at: s.wxMapAt, field: wxField });
           // The tapped weather spot: a draggable pin, only while the weather map is on.

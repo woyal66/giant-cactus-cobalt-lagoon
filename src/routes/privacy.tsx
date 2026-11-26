@@ -37,8 +37,9 @@ export function Privacy() {
             unless you set it up, and turning it off stops all sending.
           </p>
           <p>
-            If you choose to share a track to the online track library, its points, name, location
-            label and comment are published for other users to find and save. Your name and contact
+            If you choose to share a track to the online track library, or share an anchorage (its
+            position, depth, bottom, shelter and comment), it is published for other users to find.
+            For a track that is its points, name, location label and comment. Your name and contact
             details are not sent. Shared tracks are stored with Supabase, and only the phone that
             shared a track can remove it. Nothing is shared unless you tap Share.
           </p>

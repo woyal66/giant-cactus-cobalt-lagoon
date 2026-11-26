@@ -52,6 +52,8 @@ import { UnitStepField } from "@/components/helm/unit-field";
 import { MoonCard } from "@/components/helm/moon-card";
 import { RemoteWatchCard } from "@/components/helm/remote-watch-card";
 import { NightCheckCard } from "@/components/helm/night-check-card";
+import { ShareAnchorageCard } from "@/components/helm/anchorage-cards";
+import { anchoragesOn } from "@/lib/anchorage-library";
 import { formatDepth, formatLength } from "@/lib/units";
 import { criticalAlerts, type CriticalStatus } from "@/lib/critical-alert";
 import { openLocationSettings } from "@/lib/background-gps";
@@ -270,6 +272,7 @@ export function AnchorPanel() {
       </div>
       {boat || anchor ? <AnchorWxCard /> : null}
       <MoonCard compact />
+      {anchor?.radiusLocked ? <ShareAnchorageCard /> : null}
       <RemoteWatchCard />
       {anchor ? (
         <div className="mb-2 grid gap-2">
@@ -437,6 +440,7 @@ export function LayersPanel() {
   const setReefClarity = useHelm((s) => s.setReefClarity);
   const reefDepthLook = useHelm((s) => s.reefDepthLook);
   const setReefDepthLook = useHelm((s) => s.setReefDepthLook);
+  const sharedAnchorages = useHelm((s) => s.sharedAnchorages);
   const setRadar = useHelm((s) => s.setRadar);
   const setPanel = useHelm((s) => s.setPanel);
 
@@ -494,6 +498,13 @@ export function LayersPanel() {
       <div className="mb-2 grid gap-1.5">
         <DepthRow />
         <ToggleRow label="Reefs, rocks and cays (GBR, offline)" on={reefOutlines} onChange={setReefOutlines} />
+        {anchoragesOn() ? (
+          <ToggleRow
+            label="Shared anchorages (other skippers, zoom in, needs signal)"
+            on={sharedAnchorages}
+            onChange={(v) => useHelm.setState({ sharedAnchorages: v, anchorageCard: v ? useHelm.getState().anchorageCard : null })}
+          />
+        ) : null}
         <ToggleRow label="Marine park zones (GBR)" on={parkZones} onChange={setParkZones} />
         {parkZones ? <ZoneLegend /> : null}
         <ToggleRow label="Official charts where free (USA: NOAA)" on={officialCharts} onChange={setOfficialCharts} />
