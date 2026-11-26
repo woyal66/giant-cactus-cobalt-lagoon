@@ -469,6 +469,17 @@ function satLayer(
               qy: at.y & 1,
             }
           : undefined;
+      // Licensed Google tiles need a session first: rather than leave these blank until the next
+      // zoom, wait for it and load them then.
+      if (opts.sources && list.some((src) => src.id === "google" && !src.url)) {
+        const srcs = opts.sources;
+        void ensureGoogleSession().then(() => {
+          const again = srcs(at);
+          const p2 = parent ? { ...parent, sources: srcs({ x: at.x >> 1, y: at.y >> 1, z: at.z - 1 } as Coords) } : undefined;
+          loadSatTile(tile, again, done, p2);
+        });
+        return tile;
+      }
       loadSatTile(tile, list, done, parent);
       return tile;
     };

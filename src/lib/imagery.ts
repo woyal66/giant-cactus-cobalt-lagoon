@@ -250,8 +250,21 @@ export function parseGoogleSession(v: unknown, now = Date.now()): GoogleSession 
   return expiry - 86_400_000 > now ? { session: o.session, expiry } : null;
 }
 
-/** Make sure a Google session exists. Resolves true when Google tiles can be drawn. */
-export async function ensureGoogleSession(): Promise<boolean> {
+let googlePending: Promise<boolean> | null = null;
+
+/**
+ * Make sure a Google session exists. Resolves true when Google tiles can be drawn. Every tile
+ * asks at once on a cold start, so they all share one request.
+ */
+export function ensureGoogleSession(): Promise<boolean> {
+  if (googleSession && googleSession.expiry - 86_400_000 > Date.now()) return Promise.resolve(true);
+  googlePending ??= makeGoogleSession().finally(() => {
+    googlePending = null;
+  });
+  return googlePending;
+}
+
+async function makeGoogleSession(): Promise<boolean> {
   if (!GOOGLE_KEY) return false;
   if (googleSession && googleSession.expiry - 86_400_000 > Date.now()) return true;
   try {

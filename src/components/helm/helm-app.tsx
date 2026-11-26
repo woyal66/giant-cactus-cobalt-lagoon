@@ -3,7 +3,7 @@ import { Toaster } from "sonner";
 import { MapView } from "@/components/helm/map-view";
 import { BottomDock } from "@/components/helm/dock";
 import { NavRibbon, MobHud, TopHud } from "@/components/helm/hud";
-import { WeatherPanel, WxStrip } from "@/components/helm/weather";
+import { WeatherPanel } from "@/components/helm/weather";
 import {
   AlarmOverlay,
   Disclaimer,
@@ -121,7 +121,6 @@ export function HelmApp() {
       <SettingsPanel />
       <SavePanel />
       <WeatherPanel />
-      <WxStrip />
       <BottomDock />
       <Disclaimer />
       <RadarChip />
