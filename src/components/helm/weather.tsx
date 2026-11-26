@@ -1794,29 +1794,26 @@ export function AnchorWxCard() {
         type="button"
         onClick={() => setShowDelta((v) => !v)}
         aria-pressed={showDelta}
-        className="grid w-full grid-cols-[3.4rem_1fr_4.2rem_1.4rem] items-center gap-y-1.5 border-t border-border px-3 py-2 text-left"
+        className="grid w-full grid-cols-[3.4rem_1fr_6.2rem_0.4rem] items-center gap-y-1.5 border-t border-border px-3 py-2 text-left"
       >
         <p className="col-span-4 text-t12 text-muted-foreground">
           {showDelta ? "Tide · change from now" : "Tide · tap for change from now"}
         </p>
-        <span className="text-t13 text-muted-foreground">Draw</span>
-        <span className="font-display text-xl leading-none font-semibold tabular-nums">
-          {draftM.toFixed(1)}
-          <span className="ml-1 text-t13 font-medium text-muted-foreground">m</span>
-        </span>
-        <span className="text-right text-t13 text-muted-foreground">draft</span>
+        <span className="text-t13 text-muted-foreground">Draft</span>
+        <span className="font-display text-xl leading-none font-semibold tabular-nums">{formatDepth(draftM)}</span>
+        <span className="text-right text-t13 text-muted-foreground">boat</span>
         <span />
         <span className="text-t13 text-muted-foreground">HW</span>
         <span className="font-display text-xl leading-none font-semibold tabular-nums">
           {tideValue(hwM)}
         </span>
-        <span className="text-right text-xs text-muted-foreground">{hw ? hourLabel(hw.at) : ""}</span>
+        <span className="text-right text-t13 text-muted-foreground tabular-nums">{hw ? tideTime(hw.at) : ""}</span>
         <span />
         <span className="text-t13 text-muted-foreground">LW</span>
         <span className="font-display text-xl leading-none font-semibold tabular-nums">
           {tideValue(lwM)}
         </span>
-        <span className="text-right text-xs text-muted-foreground">{lw ? hourLabel(lw.at) : ""}</span>
+        <span className="text-right text-t13 text-muted-foreground tabular-nums">{lw ? tideTime(lw.at) : ""}</span>
         <span />
         {showDelta && tideNow != null ? (
           <p className="col-span-4 text-t13 text-muted-foreground">
@@ -1872,4 +1869,11 @@ function savedAgo(at: number): string {
   if (h < 1) return "just now";
   if (h < 48) return `${h} h ago`;
   return `${Math.round(h / 24)} days ago`;
+}
+
+/** Exact tide time: "1:40 AM", with the day when it isn't today ("Fri 1:40 AM"). */
+function tideTime(at: number): string {
+  const d = new Date(at);
+  const clock = d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  return d.toDateString() === new Date().toDateString() ? clock : `${d.toLocaleDateString([], { weekday: "short" })} ${clock}`;
 }

@@ -2091,8 +2091,8 @@ export const useHelm = create<HelmState & HelmActions>()(
               : current.wxHorizonH,
           wxLayers: readWxLayers(p.wxLayers, current.wxLayers),
           wxModels: readWxModels(p.wxModels, current.wxModels),
-          swingTrailOn:
-            typeof p.swingTrailOn === "boolean" ? p.swingTrailOn : current.swingTrailOn,
+          // Always drawn at anchor now (no switch): a visual aid, never saved.
+          swingTrailOn: true,
           crumbOn: typeof p.crumbOn === "boolean" ? p.crumbOn : current.crumbOn,
           crumb: Array.isArray(p.crumb)
             ? p.crumb.filter(

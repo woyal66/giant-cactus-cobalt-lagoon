@@ -90,3 +90,12 @@ describe("charted depth", () => {
     assert.equal(chartedDepthNeededM(1.8, 2.4), 0.4);
   });
 });
+
+it("depth sounder offset", async () => {
+  const { clampBoat, sounderOffset } = await import("./boat.ts");
+  const b = clampBoat({ draftM: 1.9, sounder: "keel" });
+  assert.equal(sounderOffset(b), 1.9);
+  assert.equal(sounderOffset(clampBoat({ sounder: "offset", sounderOffsetM: 0.5 })), 0.5);
+  assert.equal(sounderOffset(clampBoat({})), 0);
+  assert.equal(clampBoat({ sounder: "bogus" as never }).sounder, "surface");
+});

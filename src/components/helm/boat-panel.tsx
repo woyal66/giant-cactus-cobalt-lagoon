@@ -6,6 +6,8 @@ import {
 import { UnitStepField } from "@/components/helm/unit-field";
 import { Sheet } from "@/components/helm/panels";
 import { useHelm } from "@/store/helm";
+import { Button } from "@/components/ui/button";
+import { formatDepth } from "@/lib/units";
 import { BoatTypePicker } from "@/components/helm/boat-type";
 
 
@@ -181,6 +183,35 @@ export function BoatPanel() {
           steps={{ m: 0.1, ft: 0.5 }}
           onChange={(n) => setHull({ bowM: n })}
         />
+      </div>
+      <p className="mt-1 text-t12 leading-snug text-muted-foreground">Bow roller: its height above the water. Scope counts it, because the chain starts there.</p>
+      <div className="mt-2 mb-2">
+        <p className="mb-1 text-t12 text-muted-foreground">Depth sounder reads from</p>
+        <div className="grid grid-cols-3 gap-1.5" role="radiogroup" aria-label="Depth sounder reads from">
+          {(
+            [
+              ["surface", "Surface"],
+              ["keel", "Below keel"],
+              ["offset", "Offset"],
+            ] as const
+          ).map(([id, label]) => (
+            <Button key={id} role="radio" aria-checked={hull.sounder === id} variant={hull.sounder === id ? "default" : "outline"} className="h-11 px-1" onClick={() => setHull({ sounder: id })}>
+              {label}
+            </Button>
+          ))}
+        </div>
+        {hull.sounder === "offset" ? (
+          <div className="mt-1.5 grid grid-cols-2 gap-2">
+            <UnitStepField label="Add to reading" kind="depth" valueM={hull.sounderOffsetM} steps={{ m: 0.1, ft: 0.5, fm: 0.1 }} onChange={(n) => setHull({ sounderOffsetM: n })} />
+          </div>
+        ) : null}
+        <p className="mt-1 text-t12 leading-snug text-muted-foreground">
+          {hull.sounder === "keel"
+            ? `Type the sounder reading when you anchor; the app adds your ${formatDepth(hull.draftM)} draft for the depth of water.`
+            : hull.sounder === "offset"
+              ? "For a sounder set to the transducer: the app adds this to every reading."
+              : "Your sounder shows the full depth of water."}
+        </p>
       </div>
       <BoatPlan />
     </Sheet>

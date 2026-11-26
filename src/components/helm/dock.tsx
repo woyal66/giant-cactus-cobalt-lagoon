@@ -10,7 +10,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { rodeMath, formatTideClock } from "@/lib/anchor";
-import { gpsReachM } from "@/lib/boat";
+import { gpsReachM, sounderOffset } from "@/lib/boat";
 import { unlockAlarmAudio } from "@/hooks/helm-runtime";
 import { armWatchAlerts } from "@/lib/watch-notify";
 import { tapFeel } from "@/lib/haptics";
@@ -291,6 +291,7 @@ function AnchorSetBar() {
             tideNowM={live?.nowM ?? null}
             highM={live?.high?.m ?? null}
             draftM={hull.draftM}
+            sounderM={sounderOffset(hull)}
             onCancel={cancel}
             onOk={(depthM, chainM, scopeTarget) => {
               setRode({ depthM, chainM, scopeTarget });
@@ -381,9 +382,12 @@ function RodeDials({
   tideNowM,
   highM,
   draftM,
+  sounderM,
   onOk,
   onCancel,
 }: {
+  /** Added to the sounder reading for the depth of water (0 = sounder reads from the surface). */
+  sounderM: number;
   depth: number;
   chain: number;
   scope: number;
@@ -404,10 +408,11 @@ function RodeDials({
   const depths = useMemo(() => wheelValues(dw.min, dw.max, dw.step), [dw.min, dw.max, dw.step]);
   const chains = useMemo(() => wheelValues(lw.min, lw.max, lw.step), [lw.min, lw.max, lw.step]);
   const scopes = useMemo(() => wheelValues(1, 10, 1), []);
-  const [depthV, setDepthV] = useState(() => nearest(depths, toDepth(depth, depthUnit)));
+  // The depth wheel is the sounder reading; the water depth is the reading plus the offset.
+  const [depthV, setDepthV] = useState(() => nearest(depths, toDepth(Math.max(0, depth - sounderM), depthUnit)));
   const [chainV, setChainV] = useState(() => nearest(chains, toLength(chain, lengthUnit)));
   const [scopeN, setScopeN] = useState(() => nearest(scopes, scope));
-  const depthM = fromDepth(depthV, depthUnit);
+  const depthM = fromDepth(depthV, depthUnit) + sounderM;
   const chainM = fromLength(chainV, lengthUnit);
   const rise = Math.max(0, tideM);
   const need = Math.ceil(scopeN * (depthM + bowM + rise));
@@ -431,7 +436,7 @@ function RodeDials({
           onChange={setChainV}
         />
         <Wheel
-          label="Depth"
+          label={sounderM > 0 ? "Sounder" : "Depth"}
           value={depthV}
           values={depths}
           step={dw.step}
@@ -440,6 +445,11 @@ function RodeDials({
           onChange={setDepthV}
         />
       </div>
+      {sounderM > 0 ? (
+        <p className="mt-2 text-center text-t14 text-foreground">
+          Sounder {formatDepth(depthM - sounderM)} + {formatDepth(sounderM)} {hullSounderWord(sounderM, draftM)} = {formatDepth(depthM)} of water
+        </p>
+      ) : null}
       {/* The next high tide, and how much the water will rise from now. */}
       {tideNowM != null && highM != null ? (
         <p className="mt-2 text-center text-t14 text-foreground">
@@ -464,6 +474,10 @@ function RodeDials({
       />
     </div>
   );
+}
+
+function hullSounderWord(offsetM: number, draftM: number) {
+  return Math.abs(offsetM - draftM) < 0.01 ? "keel" : "offset";
 }
 
 function tideAboveLat(sea: SeaState | null): number | null {
