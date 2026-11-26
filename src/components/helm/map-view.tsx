@@ -790,6 +790,10 @@ export function MapView() {
             f.lng0 + (f.nx - 1) * f.dLng >= b.getEast()
           );
         };
+        const keptInfo = () =>
+          wxField
+            ? { source: "kept" as const, fetchedAt: wxField.fetchedAt ?? null, times: wxField.times }
+            : { source: "none" as const, fetchedAt: null, times: [] };
         const wxLoad = () => {
           const st = useHelm.getState();
           if (!map || st.wxMapLayer === "off" || wxLoading || (wxCovers(wxField) && wxFieldModel === st.wxMapModel)) return;
@@ -805,9 +809,12 @@ export function MapView() {
               useHelm.getState().setWxMap({
                 wxMapInfo: r
                   ? { source: r.source, fetchedAt: r.field.fetchedAt ?? null, times: r.field.times }
-                  : { source: "none", fetchedAt: null, times: [] },
+                  : keptInfo(),
               });
             })
+            // A failed download (no signal, or the forecast service's per-minute limit) must not
+            // leave the time slider with no hours: keep the forecast already on screen.
+            .catch(() => useHelm.getState().setWxMap({ wxMapInfo: keptInfo() }))
             .finally(() => {
               wxLoading = false;
               const s2 = useHelm.getState();

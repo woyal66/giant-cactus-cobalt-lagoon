@@ -179,6 +179,65 @@ export function extremes(
 }
 
 /**
+ * Highs and lows placed where the pressure really peaks, not snapped to the forecast grid:
+ * searched on the smooth (bicubic) field `k` times finer than the grid, over a window one grid
+ * cell wide, then refined between points with a parabola. So an L moves smoothly as the low
+ * moves, instead of jumping a whole grid cell (which can be 100 km zoomed out). Weak bumps
+ * (under 1 hPa below or above their surroundings) are left out.
+ */
+export function extremesSmooth(
+  g: { lat0: number; lng0: number; dLat: number; dLng: number; nx: number; ny: number },
+  values: ArrayLike<number>,
+  k = 4,
+): Array<Pt & { kind: "H" | "L"; hPa: number }> {
+  if (g.nx < 3 || g.ny < 3) return [];
+  const up = upsample(g, values, k);
+  const u = up.values;
+  const G = up.grid;
+  const at = (x: number, y: number) => u[y * G.nx + x]!;
+  const out: Array<Pt & { kind: "H" | "L"; hPa: number }> = [];
+  const r = k;
+  for (let y = r; y < G.ny - r; y++) {
+    for (let x = r; x < G.nx - r; x++) {
+      const v = at(x, y);
+      if (!Number.isFinite(v)) continue;
+      let isMin = true;
+      let isMax = true;
+      let lo = v;
+      let hi = v;
+      for (let j = -r; j <= r && (isMin || isMax); j++) {
+        for (let i = -r; i <= r; i++) {
+          if (!i && !j) continue;
+          const n = at(x + i, y + j);
+          if (!Number.isFinite(n)) {
+            isMin = false;
+            isMax = false;
+            break;
+          }
+          // Ties go to the earlier point, so a flat top gives one mark.
+          const before = j < 0 || (j === 0 && i < 0);
+          if (n < v || (n === v && before)) isMin = false;
+          if (n > v || (n === v && before)) isMax = false;
+          lo = Math.min(lo, n);
+          hi = Math.max(hi, n);
+        }
+      }
+      const kind = isMin && hi - v >= 1 ? "L" : isMax && v - lo >= 1 ? "H" : null;
+      if (!kind) continue;
+      // Parabola through the neighbours on each axis: the peak between points.
+      const off = (a: number, b: number, c: number) => {
+        const d = a - 2 * b + c;
+        return d !== 0 ? Math.max(-0.5, Math.min(0.5, (a - c) / (2 * d))) : 0;
+      };
+      const ox = off(at(x - 1, y), v, at(x + 1, y));
+      const oy = off(at(x, y - 1), v, at(x, y + 1));
+      out.push({ lat: G.lat0 + (y + oy) * G.dLat, lng: G.lng0 + (x + ox) * G.dLng, kind, hPa: Math.round(v) });
+    }
+  }
+  return out;
+}
+
+/**
  * Speed and east/north components at a point, blending the four corners as vectors (so 350°
  * and 10° average to north, not south). `toward` false = direction it comes FROM.
  */

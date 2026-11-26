@@ -294,7 +294,7 @@ export type HelmState = {
   wxMapModel: string;
   wxMapAt: number;
   wxMapPlaying: boolean;
-  wxMapInfo: { source: "live" | "saved" | "passage" | "none" | "loading"; fetchedAt: number | null; times: number[] } | null;
+  wxMapInfo: { source: "live" | "saved" | "passage" | "none" | "loading" | "kept"; fetchedAt: number | null; times: number[] } | null;
   /** Weather map: the point tapped for a readout (Windy-style), not saved. */
   wxProbe: LatLng | null;
   /** Base map: satellite photo, vector chart, or chart lines over the photo. */
