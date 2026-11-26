@@ -15,6 +15,8 @@ export type SavedPassage = {
   title: string;
   start: LatLng;
   finish: LatLng;
+  /** The skipper's turning points, kept for re-routing underway. */
+  via?: LatLng[];
   mode: RouteMode;
   departAt: number;
   arriveAt: number;

@@ -60,3 +60,31 @@ test("window finder groups good departures and ranks a calm window first", () =>
   assert.ok(best.from >= t0 + 27 * H, `best window starts +${(best.from - t0) / H} h`);
   assert.equal(best.confidence, best.leadDays <= 3 ? "good" : "fair");
 });
+
+test("routes through the skipper's waypoints in order, legs back to back", async () => {
+  const { routeVia } = await import("./plan.ts");
+  const f: WeatherField = uniformField({ windKn: 14, windDir: 0 }, box, t0, 48);
+  const via = [{ lat: -23.3, lng: 152.25 }];
+  const direct = routeVia({ start: A, finish: B, departAt: t0, field: f, boat, mode: "fastest", limits: DEFAULT_LIMITS });
+  const r = routeVia({ start: A, finish: B, via, departAt: t0, field: f, boat, mode: "fastest", limits: DEFAULT_LIMITS });
+  assert.ok(r.ok && direct.ok);
+  // Passes close to the waypoint and takes longer than going straight.
+  const near = Math.min(...r.points.map((p) => Math.hypot(p.lat - via[0]!.lat, p.lng - via[0]!.lng)));
+  assert.ok(near < 0.01, `closest ${near}`);
+  assert.ok(r.arriveAt > direct.arriveAt);
+  assert.equal(r.departAt, t0);
+  // Times never go backwards across the join.
+  for (let i = 1; i < r.points.length; i += 1) assert.ok(r.points[i]!.at >= r.points[i - 1]!.at);
+  // The plan carries the waypoints through.
+  const out = planPassage({ start: A, finish: B, via, windowStart: t0, windowEnd: t0, fields: [f], boat, limits: DEFAULT_LIMITS });
+  assert.ok(out.best.fastest!.result.arriveAt > direct.arriveAt);
+});
+
+test("re-routing underway keeps only the waypoints still ahead", async () => {
+  const { remainingVia } = await import("./plan.ts");
+  const via = [{ lat: -23.5, lng: 152.1 }, { lat: -23.5, lng: 152.3 }];
+  const fin = { lat: -23.5, lng: 152.5 };
+  assert.equal(remainingVia({ lat: -23.5, lng: 152.0 }, via, fin).length, 2); // not there yet
+  assert.equal(remainingVia({ lat: -23.5, lng: 152.15 }, via, fin).length, 1); // past the first
+  assert.equal(remainingVia({ lat: -23.5, lng: 152.4 }, via, fin).length, 0); // past both
+});

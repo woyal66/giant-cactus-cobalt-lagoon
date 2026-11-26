@@ -76,43 +76,58 @@ export function RoutePlanner() {
   const anchorAt = useHelm((s) => (s.anchor?.radiusLocked && !s.anchor.demo ? s.anchor : null));
   const setStart = useHelm((s) => s.setRouteStart);
   const end = useHelm((s) => s.endRoutePlan);
+  const via = useHelm((s) => s.routeVia);
+  const undo = useHelm((s) => s.undoRouteWaypoint);
+  const finishHere = useHelm((s) => s.finishRouteHere);
 
   if (tapMode === "route-start" || tapMode === "route-finish") {
-    const picking = tapMode === "route-start" ? "start" : "finish";
+    const picking = tapMode === "route-start" ? "start" : "next";
     return (
       <div className="pointer-events-none absolute inset-x-0 bottom-0 z-40 p-2 pb-[max(0.5rem,var(--safe-area-inset-bottom,env(safe-area-inset-bottom)))]">
         <div className="pointer-events-auto mx-auto max-w-lg rounded-xl border border-border bg-card p-3 shadow-[var(--shadow-border)]">
-          <p className="text-t12 text-muted-foreground">Plan a passage</p>
-          <p className="font-display mt-1 text-xl leading-tight font-semibold">
-            Tap the {picking === "start" ? "start" : "finish"} on the chart
+          <p className="text-t12 text-muted-foreground">
+            Plan a passage{picking === "next" && via.length ? ` · ${via.length} point${via.length === 1 ? "" : "s"} so far` : ""}
           </p>
-          <p className="mt-0.5 text-t14 text-muted-foreground">
+          <p className="font-display mt-1 text-xl leading-tight font-semibold">
+            {picking === "start" ? "Tap the start on the chart" : via.length ? "Tap the next point, or finish" : "Tap the next point"}
+          </p>
+          <p className="mt-0.5 text-t14 leading-snug text-muted-foreground">
             {picking === "start"
               ? "Zoom and pan as needed, then tap where you'll leave from."
-              : "Now tap where you're going. Zoom out to see both ends."}
+              : "Tap turning points in order to lead the route round islands and reefs. When you tap your destination, press Finish here. The router keeps off land between your points, but you choose the way: check every leg."}
           </p>
-          <div className="mt-2 grid grid-cols-2 gap-2">
-            {picking === "start" && (anchorAt || boatFix) ? (
-              <Button
-                variant="outline"
-                onClick={() => {
-                  const at = anchorAt ?? boatFix!;
-                  setStart({ lat: at.lat, lng: at.lng });
-                }}
-              >
-                {anchorAt ? "From the anchorage" : "From the boat"}
+          {picking === "start" ? (
+            <div className="mt-2 grid grid-cols-2 gap-2">
+              {anchorAt || boatFix ? (
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    const at = anchorAt ?? boatFix!;
+                    setStart({ lat: at.lat, lng: at.lng });
+                  }}
+                >
+                  {anchorAt ? "From the anchorage" : "From the boat"}
+                </Button>
+              ) : (
+                <span />
+              )}
+              <Button variant="ghost" onClick={end}>
+                Cancel
               </Button>
-            ) : picking === "finish" ? (
-              <Button variant="outline" onClick={() => setStart(null)}>
-                Back
+            </div>
+          ) : (
+            <div className="mt-2 grid grid-cols-3 gap-2">
+              <Button variant="outline" onClick={undo}>
+                {via.length ? "Undo" : "Back"}
               </Button>
-            ) : (
-              <span />
-            )}
-            <Button variant="ghost" onClick={end}>
-              Cancel
-            </Button>
-          </div>
+              <Button disabled={!via.length} onClick={finishHere}>
+                Finish here
+              </Button>
+              <Button variant="ghost" onClick={end}>
+                Cancel
+              </Button>
+            </div>
+          )}
         </div>
       </div>
     );
@@ -124,6 +139,7 @@ export function RoutePlanner() {
 function PlannerSheet() {
   const start = useHelm((s) => s.routeStart)!;
   const finish = useHelm((s) => s.routeFinish)!;
+  const via = useHelm((s) => s.routeVia);
   const prefs = useHelm((s) => s.routePrefs);
   const hull = useHelm((s) => s.hull);
   const setPreview = useHelm((s) => s.setRoutePreview);
@@ -136,7 +152,8 @@ function PlannerSheet() {
   const [out, setOut] = useState<PlanOutput | null>(null);
   const [ctx, setCtx] = useState<PlanContext | null>(null);
   const [picked, setPicked] = useState<{ mode: RouteMode; departAt: number } | null>(null);
-  const distM = haversineMeters(start, finish);
+  const stops = [start, ...via, finish];
+  const distM = stops.slice(1).reduce((m, p, i) => m + haversineMeters(stops[i]!, p), 0);
 
   const run = (lead = offsetH, span = windowH) => {
     const now = Date.now();
@@ -149,6 +166,7 @@ function PlannerSheet() {
     runPlan({
       start,
       finish,
+      via,
       windowStart,
       windowEnd: windowStart + span * H,
       boat,
@@ -189,7 +207,7 @@ function PlannerSheet() {
   };
 
   return (
-    <Sheet id="route" title="Plan a passage" kicker={`${formatMeters(distM)} · ${formatHeading(bearingDegrees(start, finish))} direct`}>
+    <Sheet id="route" title="Plan a passage" kicker={via.length ? `${formatMeters(distM)} through ${via.length} waypoint${via.length === 1 ? "" : "s"}` : `${formatMeters(distM)} · ${formatHeading(bearingDegrees(start, finish))} direct`}>
       <p className="mb-2 text-t13 leading-snug text-amber-300">
         Planning aid only. Routes avoid the coastline, mapped GBR reefs and water the depth model shows as
         too shallow, but the data is approximate (hundreds of metres in places) and has no bommies. Check
@@ -247,7 +265,7 @@ function PlannerSheet() {
           </p>
           {distM < 926 ? (
             <p className="mb-2 text-t14 text-destructive">
-              Start and finish are under half a mile apart. Tap Change start or finish and zoom out.
+              Start and finish are under half a mile apart. Tap Start again and zoom out.
             </p>
           ) : null}
           <Button size="lg" className="w-full" disabled={Boolean(busy) || distM < 926} onClick={() => run()}>
@@ -263,6 +281,7 @@ function PlannerSheet() {
               findWeatherWindows({
                 start,
                 finish,
+                via,
                 boat: boatPerfOf(prefs, hull.loaM),
                 limits: prefs.limits,
                 rules: prefs.rules,
@@ -280,9 +299,14 @@ function PlannerSheet() {
           >
             Find the best window (next 10 days)
           </Button>
-          <Button variant="ghost" size="sm" className="mt-1 w-full" onClick={begin}>
-            Change start or finish
-          </Button>
+          <div className="mt-1 grid grid-cols-2 gap-2">
+            <Button variant="outline" size="sm" onClick={() => useHelm.getState().editRouteWaypoints()}>
+              Edit waypoints
+            </Button>
+            <Button variant="ghost" size="sm" onClick={begin}>
+              Start again
+            </Button>
+          </div>
         </>
       ) : (
         <Results out={out} ctx={ctx} picked={pickedResult} onChoose={choose} onAgain={() => setOut(null)} />
@@ -494,6 +518,7 @@ function PickedActions({ picked, ctx, shelter }: { picked: Choice; ctx: PlanCont
   const prefs = useHelm((s) => s.routePrefs);
   const start = useHelm((s) => s.routeStart);
   const finish = useHelm((s) => s.routeFinish);
+  const via = useHelm((s) => s.routeVia);
   const r = picked.result;
   const title = `${PLAN_LOOK[r.mode].title} · ${when(picked.row.departAt)}`;
   /** Keep the plan and its forecast on the phone, for re-routing and the passage tools offshore. */
@@ -504,6 +529,7 @@ function PickedActions({ picked, ctx, shelter }: { picked: Choice; ctx: PlanCont
       title,
       start,
       finish,
+      via: via.length ? via : undefined,
       mode: r.mode,
       departAt: picked.row.departAt,
       arriveAt: r.arriveAt,
