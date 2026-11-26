@@ -29,6 +29,7 @@ export function AnchorStatusCard() {
   const tapMode = useHelm((s) => s.tapMode);
   const drawMode = useHelm((s) => s.drawMode);
   const alarm = useHelm((s) => s.alarmOn);
+  const otherCard = useHelm((s) => Boolean(s.anchorageCard || s.pinCard));
   const gpsLost = useHelm((s) => s.gpsLost);
   const wx = useWx();
   const [now, setNow] = useState(() => Date.now());
@@ -36,7 +37,7 @@ export function AnchorStatusCard() {
     const t = window.setInterval(() => setNow(Date.now()), 30_000);
     return () => window.clearInterval(t);
   }, []);
-  if (!anchor || panel || wxMap || tapMode !== "none" || drawMode !== "idle") return null;
+  if (!anchor || panel || wxMap || tapMode !== "none" || drawMode !== "idle" || otherCard) return null;
 
   const fenced = Boolean(anchor.fence && anchor.fence.length >= 3);
   const dist = boat ? haversineMeters(boat, anchor) : null;
@@ -63,7 +64,7 @@ export function AnchorStatusCard() {
         <span className={`text-t13 ${breach ? "text-white/90" : "text-muted-foreground"}`}>{since(now - anchor.droppedAt)}</span>
       </div>
       <div className="mt-1.5 flex items-center gap-2">
-        <div className="h-2.5 min-w-0 flex-1 overflow-hidden rounded-full bg-foreground/15" aria-hidden>
+        <div className={`h-2.5 min-w-0 flex-1 overflow-hidden rounded-full bg-foreground/15${fenced ? " invisible" : ""}`} aria-hidden>
           <div
             className={`h-full rounded-full ${breach ? "bg-white" : frac > 0.85 ? "bg-amber-400" : "bg-primary"}`}
             style={{ width: `${Math.max(3, frac * 100)}%` }}

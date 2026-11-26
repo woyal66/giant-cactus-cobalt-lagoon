@@ -4,11 +4,15 @@ import { useWx } from "@/hooks/weather";
 import { formatMeters } from "@/lib/geo";
 import { useHelm, useUnitsKey } from "@/store/helm";
 
-/** GPS quality from the fix: good under 10 m, fair to 30 m, poor beyond; stale after 30 s. */
+/**
+ * GPS quality from the fix: good under 10 m, fair to 30 m, poor beyond; stale after 90 s. At
+ * anchor the phone takes a fix only every 30 s well inside the circle, so a shorter limit would
+ * cry wolf all night.
+ */
 function gpsQuality(source: string | undefined, accuracyM: number | null | undefined, ageMs: number) {
   if (!source || source === "none") return "none" as const;
   if (source === "placed" || source === "last") return "manual" as const;
-  if (ageMs > 30_000) return "stale" as const;
+  if (ageMs > 90_000) return "stale" as const;
   if (accuracyM == null || !Number.isFinite(accuracyM)) return "good" as const;
   return accuracyM <= 10 ? ("good" as const) : accuracyM <= 30 ? ("fair" as const) : ("poor" as const);
 }
