@@ -200,7 +200,9 @@ export function WeatherPanel() {
   return (
     <div
       className={`pointer-events-auto absolute inset-x-0 bottom-0 z-50 flex flex-col overflow-x-hidden overflow-y-auto bg-card pb-[max(1.5rem,var(--safe-area-inset-bottom,env(safe-area-inset-bottom)))] shadow-[var(--shadow-border)] ${
-        full ? "top-0 pt-[max(0.4rem,var(--safe-area-inset-top,env(safe-area-inset-top)))]" : "top-[30dvh] rounded-t-2xl border-t border-border md:top-[22dvh]"
+        full
+          ? "top-0 pt-[max(0.4rem,var(--safe-area-inset-top,env(safe-area-inset-top)))] md:inset-x-auto md:top-3 md:right-3 md:bottom-3 md:w-[min(60rem,calc(100vw-1.5rem))] md:rounded-2xl md:border md:border-border md:pb-3"
+          : "top-[30dvh] rounded-t-2xl border-t border-border md:inset-x-auto md:top-3 md:right-3 md:bottom-3 md:w-[26rem] md:rounded-2xl md:border md:pb-3 lg:w-[30rem]"
       }`}
     >
       <div ref={measureHead} className="sticky top-0 z-10 border-b border-border/60 bg-card/95 px-3 py-1.5 backdrop-blur-md">
