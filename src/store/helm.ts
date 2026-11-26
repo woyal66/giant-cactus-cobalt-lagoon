@@ -1985,8 +1985,16 @@ export const useHelm = create<HelmState & HelmActions>()(
           sharpTiles: current.sharpTiles,
           depthLayer: p.depthLayer === "depth" || p.depthLayer === "shallow" || p.depthLayer === "lines" ? p.depthLayer : "off",
           // "storm" was its own layer before Rain & thunder merged them.
-          wxMapLayer: (p.wxMapLayer as string) === "storm" ? "rain" : WX_MAP_LAYERS.some((l) => l.id === p.wxMapLayer) ? (p.wxMapLayer as WxMapLayer) : "off",
-          wxIsobars: p.wxIsobars === true,
+          // "storm" merged into Rain & thunder; "pressure" is now the Isobars overlay on Wind.
+          wxMapLayer:
+            (p.wxMapLayer as string) === "storm"
+              ? "rain"
+              : (p.wxMapLayer as string) === "pressure"
+                ? "wind"
+                : WX_MAP_LAYERS.some((l) => l.id === p.wxMapLayer)
+                  ? (p.wxMapLayer as WxMapLayer)
+                  : "off",
+          wxIsobars: p.wxIsobars === true || (p.wxMapLayer as string) === "pressure",
           // Always opens moving (arrows are one tap away); the model choice is remembered.
           wxMapStyle: "particles",
           wxMapModel: ["ecmwf", "gfs", "icon", "ukmo"].includes(p.wxMapModel as string) ? (p.wxMapModel as string) : "ecmwf",

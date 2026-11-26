@@ -15,7 +15,6 @@ export const WX_MAP_LAYERS: Array<{ id: WxMapLayer; label: string }> = [
   { id: "cloud", label: "Cloud" },
   { id: "waves", label: "Waves" },
   { id: "current", label: "Current" },
-  { id: "pressure", label: "Pressure" },
 ];
 
 /** Resolution of each weather model on the map (Open-Meteo global runs). */
