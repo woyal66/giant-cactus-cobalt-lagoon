@@ -7,9 +7,7 @@ import {
   formatHeading,
   formatMeters,
   haversineMeters,
-  metresAlong,
   msToKnots,
-  cornerIndexes,
 } from "@/lib/geo";
 import { formatLength } from "@/lib/units";
 import { formatScope, hoursUntil, rodeMath } from "@/lib/anchor";
@@ -400,14 +398,9 @@ export function NavRibbon() {
     boat && pts.length >= 2
       ? steerCue(boat, pts, steerSense, 0, nav?.index)
       : null;
-  const corners = cornerIndexes(pts);
-  const nextCorner =
-    nav == null ? null : (corners.find((i) => i >= nav.index) ?? null);
-  const toCorner =
-    boat && nav && nextCorner != null
-      ? metresAlong(pts, boat, nav.index, nextCorner)
-      : null;
   const remaining = cue ? formatMeters(cue.remainM) : null;
+  // Time to go at the present speed (blank when stopped).
+  const ttg = cue && boat && boat.speedMs > 0.3 ? formatTtg(cue.remainM / boat.speedMs) : null;
   const xte =
     cue && Math.abs(cue.xteM) >= 1
       ? `${cue.xteM < 10 ? Math.abs(cue.xteM).toFixed(1) : formatMeters(Math.abs(cue.xteM))} ${cue.xteM > 0 ? "stb" : "port"}`
@@ -429,8 +422,7 @@ export function NavRibbon() {
             </p>
             {remaining ? (
               <p className="mt-0.5 text-t13 text-muted-foreground">
-                {toCorner != null ? `${formatMeters(toCorner)} along to the corner · ` : ""}
-                {remaining} left · {xte}
+                {remaining} to go{ttg ? ` · ${ttg}` : ""} · {xte}
               </p>
             ) : null}
           </button>

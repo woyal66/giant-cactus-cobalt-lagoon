@@ -28,6 +28,7 @@ import { PinCard } from "@/components/helm/pin-card";
 import { AnchorageCard } from "@/components/helm/anchorage-cards";
 import { AddPlaceCard, PlaceCard } from "@/components/helm/place-cards";
 import { AisCard } from "@/components/helm/ais-card";
+import { ArrivalPrompt } from "@/components/helm/arrival-prompt";
 import { useAis } from "@/hooks/ais";
 import { useRescueReminder } from "@/hooks/rescue-reminder";
 import { PerfChip } from "@/components/helm/perf-chip";
@@ -161,6 +162,7 @@ export function HelmApp() {
       <AnchorageCard />
       <PlaceCard />
       <AisCard />
+      <ArrivalPrompt />
       <AddPlaceCard />
       <PerfChip />
       <WebNotice />
@@ -174,8 +176,11 @@ export function HelmApp() {
       <FirstRunGuide />
       <Toaster
         theme="dark"
-        position="bottom-center"
-        offset={{ bottom: "5.4rem" }}
+        // At the top, under the steering tape: messages never cover the dock or the boat.
+        position="top-center"
+        offset={{ top: "7.2rem" }}
+        mobileOffset={{ top: "7.2rem" }}
+        visibleToasts={2}
         toastOptions={{
           className:
             "!bg-card !text-foreground !border !border-border !font-sans",

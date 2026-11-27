@@ -13,6 +13,10 @@ import {
   createRouter,
 } from "@tanstack/react-router";
 import { HelmApp } from "@/components/helm/helm-app";
+import { useHelm } from "@/store/helm";
+
+// Development only (never in a build): lets browser tests read the app state.
+if (import.meta.env.DEV) (window as unknown as { __helm?: typeof useHelm }).__helm = useHelm;
 import { Privacy } from "@/routes/privacy";
 import { Terms } from "@/components/legal/terms";
 import { SubscriptionGate } from "@/components/subscription";

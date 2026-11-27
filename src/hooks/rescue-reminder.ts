@@ -39,10 +39,11 @@ export function useRescueReminder() {
           toast(rescueText(s.rescue, "on"), {
             description: `Reminder to log off set for ${new Date(at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}. Change it in Settings → Safety.`,
             duration: 15_000,
+            id: "rescue-log-on",
           });
         } else if (!s.activeTrip && prev.activeTrip) {
           setReturnBy(null);
-          toast(rescueText(s.rescue, "off"), { duration: 15_000 });
+          toast(rescueText(s.rescue, "off"), { duration: 15_000, id: "rescue-log-off" });
         }
       }),
     [],

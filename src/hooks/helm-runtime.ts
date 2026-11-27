@@ -38,6 +38,7 @@ import {
   type BackgroundWatch,
 } from "@/lib/background-gps";
 import { useHelm, guidePoints } from "@/store/helm";
+import { courseFromFixes, type CourseRef } from "@/lib/course";
 import type { Waypoint } from "@/lib/passages";
 
 const MUSGRAVE: Waypoint[] = [
@@ -90,20 +91,29 @@ export function useGpsWatch() {
     let bgWatch: BackgroundWatch | null = null;
     let pending = false;
     let pendingAt = 0;
+    // Course and speed worked out from movement, for fixes that don't carry them.
+    let courseRef: CourseRef | null = null;
 
     const applyFix = (pos: GeolocationPosition) => {
       if (stopped) return;
       const s = useHelm.getState();
       // A drag test parks the boat outside the circle; live GPS must not snap it back.
       if (s.demoPlaying || Date.now() < demoHoldUntil) return;
-      const heading = Number.isFinite(pos.coords.heading)
-        ? (pos.coords.heading as number)
-        : (s.boat?.heading ?? null);
+      courseRef = courseFromFixes(courseRef, {
+        lat: pos.coords.latitude,
+        lng: pos.coords.longitude,
+        at: Date.now(),
+        accuracy: pos.coords.accuracy,
+      });
+      const gpsHeading = Number.isFinite(pos.coords.heading) ? (pos.coords.heading as number) : null;
+      const gpsSpeed = pos.coords.speed != null && Number.isFinite(pos.coords.speed) ? pos.coords.speed : null;
+      // The phone's own course when it sends one (at speed); else the course from movement.
+      const heading = gpsHeading ?? courseRef.headingDeg ?? s.boat?.heading ?? null;
       const fix = {
         lat: pos.coords.latitude,
         lng: pos.coords.longitude,
         heading,
-        speedMs: pos.coords.speed ?? 0,
+        speedMs: gpsSpeed ?? courseRef.speedMs,
         accuracy: pos.coords.accuracy,
         source: "gps" as const,
         at: Date.now(),

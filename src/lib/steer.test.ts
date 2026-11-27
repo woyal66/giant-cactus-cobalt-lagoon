@@ -136,3 +136,21 @@ describe("following a tapped route", () => {
     assert.equal(cue.offTrack, false);
   });
 });
+
+describe("markLine", () => {
+  it("names the next mark, leads to the start, and calls the arrival", async () => {
+    const { markLine } = await import("./steer.ts");
+    const { destPoint } = await import("./geo.ts");
+    const a = { lat: -23.9, lng: 152.39 };
+    const pts = [a, destPoint(a, 0, 200), destPoint(destPoint(a, 0, 200), 10, 200), destPoint(destPoint(destPoint(a, 0, 200), 10, 200), 60, 200)];
+    const fmt = (m: number) => `${Math.round(m)} m`;
+    const hdg = (d: number) => `${Math.round(d)}°`;
+    const before = destPoint(a, 180, 100);
+    assert.match(markLine(before, pts, 0, null, fmt, hdg), /^Head to mark 1 \(the start\): 100 m/);
+    const mid = destPoint(a, 0, 100);
+    const turn = nextTurn({ ...mid, speedMs: 2 }, pts, 1);
+    assert.match(markLine(mid, pts, 1, turn, fmt, hdg), /^Mark 2 of 4 in 100 m · 50° starboard at mark 3/);
+    const nearEnd = destPoint(pts[2]!, 60, 150);
+    assert.match(markLine(nearEnd, pts, 3, nextTurn({ ...nearEnd, speedMs: 2 }, pts, 3), fmt, hdg), /^Last mark in 50 m/);
+  });
+});

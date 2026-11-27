@@ -364,3 +364,31 @@ export function steerLegIndex(
   const t = nextTurn(boat, pts, navIndex);
   return t && t.now && t.index === navIndex - 1 ? t.index : navIndex;
 }
+
+/**
+ * The line under the steering tape. On a skipper's own track every mark counts, so the next
+ * mark is always named ("Mark 3 of 5 in 180 m"), with the next real turn after it; a turn that
+ * is due now, and the arrival, take over. Before the first mark it just leads there.
+ */
+export function markLine(
+  boat: LatLng,
+  pts: LatLng[],
+  navIndex: number,
+  turn: TurnAhead | null,
+  fmt: (m: number) => string,
+  heading: (d: number) => string,
+): string {
+  if (!pts.length || navIndex < 0 || navIndex >= pts.length) return "";
+  const n = pts.length;
+  const toMark = haversineMeters(boat, pts[navIndex]!);
+  if (turn?.now) return describeTurn(turn, fmt, heading);
+  if (navIndex === 0) return `Head to mark 1 (the start): ${fmt(toMark)}`;
+  if (navIndex === n - 1) return turn && "arrival" in turn && turn.now ? "Arriving at the last mark" : `Last mark in ${fmt(toMark)}`;
+  let then = "";
+  if (turn && !("arrival" in turn)) {
+    const side = turn.turnDeg > 0 ? "starboard" : "port";
+    const deg = Math.round(Math.abs(turn.turnDeg));
+    then = turn.index === navIndex ? `, then ${deg}° ${side}` : ` · ${deg}° ${side} at mark ${turn.index + 1}`;
+  }
+  return `Mark ${navIndex + 1} of ${n} in ${fmt(toMark)}${then}`;
+}

@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { Bell } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { bearingDegrees, formatHeading, formatMeters, haversineMeters, msToKnots } from "@/lib/geo";
-import { describeTurn, formatXte, markNav, nextTurn, steerCue, steerLegIndex, type TurnAhead } from "@/lib/steer";
+import { formatXte, markLine, markNav, nextTurn, steerCue, steerLegIndex, type TurnAhead } from "@/lib/steer";
 import { isNativeApp } from "@/lib/native";
 import { setAllowance } from "@/lib/weather";
 import { useWx } from "@/hooks/weather";
@@ -255,7 +255,9 @@ export function SteerOverlay() {
     pts.length >= 2 ? steerCue(boat, pts, sense, 0, legTo) : null;
   const sog = msToKnots(boat.speedMs);
   const cog = boat.heading;
-  const xte = formatXte(cue?.xteM);
+  // Before the first mark the boat is just heading for the start: no track to be off yet.
+  const toStart = nav?.index === 0;
+  const xte = toStart ? { value: "—", unit: "", side: null as string | null } : formatXte(cue?.xteM);
   const onLine = Boolean(cue && Math.abs(cue.xteM) < 1 && Math.abs(cue.steerDeg) < 6);
   const tone = cue && (cue.offTrack || trackAlarm) ? "danger" : onLine ? "ok" : cue ? "warn" : "ok";
   const showArrow = chartUp === "heading" && cue && boat.heading != null;
@@ -301,7 +303,9 @@ export function SteerOverlay() {
             unit={allow ? `${allow.deg}° ${allow.side}` : undefined}
           />
         </div>
-        {nav && pts.length >= 2 ? <TurnLine turn={turn} markIndex={nav.index} /> : null}
+        {nav && pts.length >= 2 ? (
+          <TurnLine turn={turn} markIndex={nav.index} text={markLine(boat, pts, nav.index, turn, formatMeters, formatHeading)} />
+        ) : null}
         {showArrow ? (
           <div
             className="rp-steer-bug mt-1"
@@ -330,7 +334,7 @@ function buzz(strong: boolean) {
 }
 
 /** Next turn on the route, called before it arrives, so the helm turns on time. */
-function TurnLine({ turn, markIndex }: { turn: TurnAhead | null; markIndex: number }) {
+function TurnLine({ turn, markIndex, text }: { turn: TurnAhead | null; markIndex: number; text: string }) {
   const lastNow = useRef<number>(-1);
   const lastMark = useRef<number>(markIndex);
   useEffect(() => {
@@ -343,18 +347,17 @@ function TurnLine({ turn, markIndex }: { turn: TurnAhead | null; markIndex: numb
     if (markIndex > lastMark.current) buzz(false);
     lastMark.current = markIndex;
   }, [markIndex]);
-  if (!turn) return null;
-  const text = describeTurn(turn, formatMeters, formatHeading);
-  const side = "turnDeg" in turn ? (turn.turnDeg > 0 ? "S" : "P") : null;
+  if (!text) return null;
+  const side = turn && turn.now && "turnDeg" in turn ? (turn.turnDeg > 0 ? "S" : "P") : null;
   return (
     <div
       role="status"
       aria-live="polite"
       className={cn(
         "rp-glass mt-1 flex items-center gap-2 rounded-full px-3 py-1 text-t15 font-semibold tabular-nums",
-        turn.now && side === "S" && "bg-emerald-600 text-white",
-        turn.now && side === "P" && "bg-red-600 text-white",
-        turn.now && !side && "bg-primary text-primary-foreground",
+        turn?.now && side === "S" && "bg-emerald-600 text-white",
+        turn?.now && side === "P" && "bg-red-600 text-white",
+        turn?.now && !side && "bg-primary text-primary-foreground",
       )}
     >
       {side ? (
