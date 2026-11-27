@@ -392,3 +392,25 @@ export function markLine(
   }
   return `Mark ${navIndex + 1} of ${n} in ${fmt(toMark)}${then}`;
 }
+
+/**
+ * Where to start following a track from where the boat is now. Nearer the last mark than the
+ * first (by a clear margin, so a closed loop isn't flipped) → suggest following it reversed,
+ * e.g. leaving the anchorage the track was drawn into. Beside the route part-way along → pick up
+ * at the mark ahead instead of going back to mark 1.
+ */
+export function followStart(
+  boat: LatLng | null | undefined,
+  pts: LatLng[],
+): { reverse: boolean; index: number; offM: number } {
+  if (!boat || pts.length < 2) return { reverse: false, index: 0, offM: 0 };
+  const toFirst = haversineMeters(boat, pts[0]!);
+  const toLast = haversineMeters(boat, pts[pts.length - 1]!);
+  const span = haversineMeters(pts[0]!, pts[pts.length - 1]!);
+  const reverse = span > 100 && toLast + Math.max(50, span * 0.15) < toFirst;
+  const route = reverse ? pts.slice().reverse() : pts;
+  const fix = locateOnRoute(boat, route, 0);
+  // Pick up part-way only when the boat is near the line (within 300 m); otherwise lead to the start.
+  const index = fix && fix.distM <= 300 && fix.index > 0 ? Math.min(fix.index, route.length - 1) : 0;
+  return { reverse, index, offM: fix?.distM ?? 0 };
+}

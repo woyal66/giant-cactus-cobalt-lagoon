@@ -28,6 +28,8 @@ export const BACKUP_SETTING_KEYS = [
   "steerSense",
   "xteAlarmM",
   "steerEar",
+  "voiceOn",
+  "steerBig",
   "trackTurnDeg",
   "trackChordM",
   "alarmSound",

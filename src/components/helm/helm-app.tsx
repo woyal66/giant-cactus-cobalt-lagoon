@@ -52,6 +52,7 @@ import { useTripRecorder } from "@/hooks/trip-recorder";
 import { useBatterySaver } from "@/hooks/battery";
 import { TripSummaryPanel } from "@/components/helm/trip-panels";
 import { useHelm } from "@/store/helm";
+import { useVoiceGuide } from "@/components/helm/voice-guide";
 
 // The passage planner (and its settings, graph and window finder) loads when first opened.
 // The 3D view (MapLibre, ~1 MB) only loads when opened.
@@ -68,6 +69,7 @@ export function HelmApp() {
   useBatterySaver();
   useWakeLock();
   useMarkMade();
+  useVoiceGuide();
   useAutoNight();
   useRemoteWatch();
   useMobDrift();

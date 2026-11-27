@@ -220,6 +220,8 @@ export function SteerOverlay() {
   const courseMark = useHelm((s) => s.courseMark);
   const pinned = useHelm((s) => s.pinnedMark);
   const trackAlarm = useHelm((s) => s.trackAlarm);
+  const big = useHelm((s) => s.steerBig);
+  const look = useHelm((s) => s.look);
   const wx = useWx();
 
   if (!boat || tapMode !== "none" || panel === "weather") return null;
@@ -277,6 +279,23 @@ export function SteerOverlay() {
           ? "on track"
           : "no track";
 
+  const line = nav ? markLine(boat, pts, nav.index, turn, formatMeters, formatHeading) : "";
+  if (big) {
+    return (
+      <BigSteer
+        night={look === "night"}
+        cts={ctsLabel}
+        steerDeg={cue && boat.heading != null ? cue.steerDeg : null}
+        xte={xte}
+        sog={sogLabel}
+        turn={turn}
+        markIndex={nav?.index ?? 0}
+        line={line}
+        warn={Boolean(cue?.offTrack || trackAlarm)}
+      />
+    );
+  }
+
   return (
     <div
       ref={publishSteerBottom}
@@ -288,7 +307,13 @@ export function SteerOverlay() {
           allow ? `. Allow ${allow.deg} degrees ${allow.side === "P" ? "port" : "starboard"} for set` : ""
         }.`}
       >
-        <div className="rp-helm-tape rp-glass grid w-full grid-cols-3 md:grid-cols-4">
+        <button
+          type="button"
+          aria-label="Big steering view"
+          title="Tap for the big steering view"
+          onClick={() => useHelm.getState().setSteerBig(true)}
+          className="rp-helm-tape rp-glass pointer-events-auto grid w-full grid-cols-3 text-left md:grid-cols-4"
+        >
           <HelmNum className="hidden md:flex" label="COG" value={formatHeading(cog)} />
           <HelmNum label="SOG" value={sogLabel} unit="kn" />
           <HelmNum
@@ -302,9 +327,9 @@ export function SteerOverlay() {
             value={ctsLabel}
             unit={allow ? `${allow.deg}° ${allow.side}` : undefined}
           />
-        </div>
+        </button>
         {nav && pts.length >= 2 ? (
-          <TurnLine turn={turn} markIndex={nav.index} text={markLine(boat, pts, nav.index, turn, formatMeters, formatHeading)} />
+          <TurnLine turn={turn} markIndex={nav.index} text={line} />
         ) : null}
         {showArrow ? (
           <div
@@ -322,6 +347,91 @@ export function SteerOverlay() {
   );
 }
 
+/**
+ * The big steering view: course to steer, a large arrow and how far off the line, on a plain
+ * background (black on white by day, red on black at night), readable in bright sun from the
+ * helm. Tap anywhere (or Chart) to go back.
+ */
+function BigSteer({
+  night,
+  cts,
+  steerDeg,
+  xte,
+  sog,
+  turn,
+  markIndex,
+  line,
+  warn,
+}: {
+  night: boolean;
+  cts: string;
+  steerDeg: number | null;
+  xte: { value: string; unit: string; side: string | null };
+  sog: string;
+  turn: TurnAhead | null;
+  markIndex: number;
+  line: string;
+  warn: boolean;
+}) {
+  const voiceOn = useHelm((s) => s.voiceOn);
+  const close = () => useHelm.getState().setSteerBig(false);
+  const fg = night ? "#ff5a4a" : "#000";
+  const bg = night ? "#000" : "#fff";
+  const port = steerDeg != null && steerDeg < -3;
+  const stbd = steerDeg != null && steerDeg > 3;
+  const steerText =
+    steerDeg == null ? "" : Math.abs(steerDeg) <= 3 ? "On course" : `Steer ${Math.round(Math.abs(steerDeg))}° ${steerDeg > 0 ? "starboard" : "port"}`;
+  return (
+    <div
+      className="absolute inset-0 z-[45] flex flex-col items-center px-4 pt-[max(0.75rem,var(--safe-area-inset-top,env(safe-area-inset-top)))] pb-[max(0.75rem,var(--safe-area-inset-bottom,env(safe-area-inset-bottom)))]"
+      style={{ background: bg, color: fg }}
+      role="region"
+      aria-label={`Course to steer ${cts}. ${steerText}. Cross-track ${xte.value} ${xte.unit}.`}
+    >
+      <div className="flex w-full max-w-xl items-center justify-between gap-2">
+        <span className="font-display text-t16 font-semibold tabular-nums">{sog} kn</span>
+        <div className="flex gap-2">
+          <button
+            type="button"
+            className="h-11 rounded-full border-2 px-4 text-t15 font-semibold"
+            style={{ borderColor: fg }}
+            aria-pressed={voiceOn}
+            onClick={() => useHelm.getState().setVoiceOn(!voiceOn)}
+          >
+            {voiceOn ? "Voice on" : "Voice off"}
+          </button>
+          <button type="button" className="h-11 rounded-full border-2 px-4 text-t15 font-semibold" style={{ borderColor: fg }} onClick={close}>
+            Chart
+          </button>
+        </div>
+      </div>
+      <button type="button" className="flex w-full max-w-xl flex-1 flex-col items-center justify-center gap-2" onClick={close} aria-label="Back to the chart">
+        <span className="text-t16 font-semibold">Course to steer</span>
+        <span className="font-display leading-none font-semibold tabular-nums" style={{ fontSize: "min(26vw, 22vh, 10rem)" }}>
+          {cts}
+        </span>
+        {steerDeg != null ? (
+          <svg
+            viewBox="0 0 64 72"
+            aria-hidden
+            style={{ width: "min(38vw, 26vh)", height: "min(38vw, 26vh)", transform: `rotate(${Math.max(-90, Math.min(90, steerDeg))}deg)`, transition: "transform 0.4s" }}
+          >
+            <path d="M32 4 L56 44 L40 44 L40 68 L24 68 L24 44 L8 44 Z" fill={port ? "#dc2626" : stbd ? "#16a34a" : fg} />
+          </svg>
+        ) : null}
+        <span className="font-display text-t16 font-semibold" style={{ fontSize: "1.6rem" }}>
+          {steerText}
+        </span>
+        <span className="mt-1 font-display font-semibold tabular-nums" style={{ fontSize: "2.4rem", color: warn ? "#dc2626" : undefined }}>
+          Off line {xte.value}
+          {xte.unit ? ` ${xte.unit}` : ""}
+        </span>
+      </button>
+      <TurnLine turn={turn} markIndex={markIndex} text={line} big />
+    </div>
+  );
+}
+
 /** One short buzz: a turn is due, or a waypoint was passed. */
 function buzz(strong: boolean) {
   if (isNativeApp()) {
@@ -334,7 +444,7 @@ function buzz(strong: boolean) {
 }
 
 /** Next turn on the route, called before it arrives, so the helm turns on time. */
-function TurnLine({ turn, markIndex, text }: { turn: TurnAhead | null; markIndex: number; text: string }) {
+function TurnLine({ turn, markIndex, text, big }: { turn: TurnAhead | null; markIndex: number; text: string; big?: boolean }) {
   const lastNow = useRef<number>(-1);
   const lastMark = useRef<number>(markIndex);
   useEffect(() => {
@@ -354,7 +464,9 @@ function TurnLine({ turn, markIndex, text }: { turn: TurnAhead | null; markIndex
       role="status"
       aria-live="polite"
       className={cn(
-        "rp-glass mt-1 flex items-center gap-2 rounded-full px-3 py-1 text-t15 font-semibold tabular-nums",
+        big
+          ? "flex w-full max-w-xl items-center justify-center gap-2 rounded-2xl border-2 border-current px-4 py-3 text-center font-semibold tabular-nums [font-size:1.5rem] leading-tight"
+          : "rp-glass mt-1 flex items-center gap-2 rounded-full px-3 py-1 text-t15 font-semibold tabular-nums",
         turn?.now && side === "S" && "bg-emerald-600 text-white",
         turn?.now && side === "P" && "bg-red-600 text-white",
         turn?.now && !side && "bg-primary text-primary-foreground",

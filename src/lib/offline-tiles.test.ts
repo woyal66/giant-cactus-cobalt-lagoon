@@ -81,3 +81,21 @@ describe("offline reef packs", () => {
     assert.ok(u.includes("/18/20/10"));
   });
 });
+
+describe("a track's offline area", async () => {
+  const { trackBox, trackPackZoom } = await import("./offline-tiles.ts");
+  const { destPoint, haversineMeters } = await import("./geo.ts");
+  const a = { lat: -16.9, lng: 145.9 };
+  it("pads the marks each way", () => {
+    const b = trackBox([a, destPoint(a, 90, 1000)], 300)!;
+    assert.ok(Math.abs(haversineMeters({ lat: b.south, lng: a.lng }, { lat: b.north, lng: a.lng }) - 600) < 5);
+    assert.ok(b.west < a.lng && b.east > destPoint(a, 90, 1000).lng);
+    assert.equal(trackBox([]), null);
+  });
+  it("full detail for a short reef track, less for a long one, none when far too big", () => {
+    assert.equal(trackPackZoom(trackBox([a, destPoint(a, 45, 600)])!), 20);
+    const z = trackPackZoom(trackBox([a, destPoint(a, 45, 5000)])!);
+    assert.ok(z != null && z < 20);
+    assert.equal(trackPackZoom(trackBox([a, destPoint(a, 45, 60_000)])!), null);
+  });
+});

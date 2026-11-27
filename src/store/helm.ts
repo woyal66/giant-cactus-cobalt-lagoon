@@ -251,6 +251,10 @@ export type HelmState = {
   xteAlarmM: number;
   /** Soft tick on the line. Side cue past 2 m. */
   steerEar: boolean;
+  /** Spoken prompts while following a track (next mark, turns, off the line). */
+  voiceOn: boolean;
+  /** Big steering view: course to steer and arrow only, for bright sun. */
+  steerBig: boolean;
   /** A bend this sharp is kept when a track is cleaned. */
   trackTurnDeg: number;
   /** A point this far off a straight is kept when a track is cleaned. */
@@ -479,6 +483,8 @@ type HelmActions = {
   setSteerSense: (v: SteerSense) => void;
   setXteAlarmM: (m: number) => void;
   setSteerEar: (v: boolean) => void;
+  setVoiceOn: (on: boolean) => void;
+  setSteerBig: (on: boolean) => void;
   setTrackTurnDeg: (deg: number) => void;
   setTrackChordM: (m: number) => void;
   setDemoPlaying: (v: boolean) => void;
@@ -667,6 +673,8 @@ function persistSig(state: Record<string, unknown>): string {
     state.steerSense,
     state.xteAlarmM,
     state.steerEar,
+    state.voiceOn,
+    state.steerBig,
     state.trackTurnDeg,
     state.trackChordM,
     state.alarmSound,
@@ -997,6 +1005,8 @@ export const useHelm = create<HelmState & HelmActions>()(
       steerSense: "cut",
       xteAlarmM: 1,
       steerEar: true,
+      voiceOn: true,
+      steerBig: false,
       trackTurnDeg: 30,
       trackChordM: 8,
       demoPlaying: false,
@@ -1569,6 +1579,8 @@ export const useHelm = create<HelmState & HelmActions>()(
       setXteAlarmM: (m) =>
         set({ xteAlarmM: Math.max(0, Math.min(200, Math.round(m))) }),
       setSteerEar: (steerEar) => set({ steerEar }),
+      setVoiceOn: (voiceOn) => set({ voiceOn }),
+      setSteerBig: (steerBig) => set({ steerBig }),
       setTrackTurnDeg: (deg) =>
         set({
           trackTurnDeg: Math.max(5, Math.min(90, Math.round(deg))),
@@ -1933,6 +1945,8 @@ export const useHelm = create<HelmState & HelmActions>()(
         steerSense: s.steerSense,
         xteAlarmM: s.xteAlarmM,
         steerEar: s.steerEar,
+        voiceOn: s.voiceOn,
+        steerBig: s.steerBig,
         trackTurnDeg: s.trackTurnDeg,
         trackChordM: s.trackChordM,
         alarmSound: s.alarmSound,
@@ -2098,6 +2112,8 @@ export const useHelm = create<HelmState & HelmActions>()(
                 : Math.max(0, Math.min(200, Math.round(p.xteAlarmM)))
               : 1,
           steerEar: typeof p.steerEar === "boolean" ? p.steerEar : true,
+          voiceOn: typeof p.voiceOn === "boolean" ? p.voiceOn : true,
+          steerBig: typeof p.steerBig === "boolean" ? p.steerBig : false,
           trackTurnDeg:
             typeof p.trackTurnDeg === "number" && Number.isFinite(p.trackTurnDeg)
               ? Math.max(5, Math.min(90, Math.round(p.trackTurnDeg)))

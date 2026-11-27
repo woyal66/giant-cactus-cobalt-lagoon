@@ -22,7 +22,7 @@ import { LibraryTab } from "@/components/helm/library-tab";
 import { tripLine } from "@/components/helm/trip-format";
 import { tapFeel } from "@/lib/haptics";
 import { Radio } from "lucide-react";
-import { formatMeters, haversineMeters, pathLengthMeters, trackInView, TRACK_CHORD_PRESETS, TRACK_TURN_PRESETS } from "@/lib/geo";
+import { formatMeters, haversineMeters, pathLengthMeters, trackInView, TRACK_CHORD_PRESETS, TRACK_TURN_PRESETS, type LatLng } from "@/lib/geo";
 import { BENTHIC_WMS, GARMIN_SDK_URL, PARK_ZONES, availableImagery, imageryShort, isImageryId } from "@/lib/imagery";
 import { centreTileSource, getChartBounds } from "@/components/helm/map-view";
 import { SOURCE_NOTE, describePhoto, fetchEsriPhotoInfo } from "@/lib/imagery-info";
@@ -42,7 +42,8 @@ import {
 } from "@/lib/offline-tiles";
 import type { Passage } from "@/lib/passages";
 import { fetchTideRise } from "@/lib/tides";
-import { STEER_PRESETS } from "@/lib/steer";
+import { STEER_PRESETS, followStart } from "@/lib/steer";
+import { saveTrackOffline, trackAreaSize } from "./track-offline";
 import { SignedIn, SignedOut, UserButton } from "@/lib/auth/gates";
 import { isNativeApp } from "@/lib/native";
 import { shareGpx } from "@/lib/share-gpx";
@@ -63,7 +64,7 @@ import { openLocationSettings } from "@/lib/background-gps";
 import { isFreeApp, isPreview } from "@/lib/subscription";
 import { SubscriptionRow } from "@/components/subscription";
 import { simulateAnchorDrag, unlockAlarmAudio } from "@/hooks/helm-runtime";
-import { nextTrackName, useHelm, useUnitsKey, type LocalDraft, type PanelId } from "@/store/helm";
+import { guidePoints, nextTrackName, useHelm, useUnitsKey, type LocalDraft, type PanelId } from "@/store/helm";
 
 export function Sheet({
   id,
@@ -1031,6 +1032,30 @@ function OfflinePacks() {
   );
 }
 
+/** Spoken prompts: the phone says the next mark, turns and how far off the line. */
+function VoiceToggle() {
+  const on = useHelm((s) => s.voiceOn);
+  const setOn = useHelm((s) => s.setVoiceOn);
+  return (
+    <>
+      <Button
+        variant={on ? "default" : "outline"}
+        size="sm"
+        className="mt-1.5 w-full"
+        onClick={() => {
+          setOn(!on);
+          if (!on) void import("./voice-guide").then((m) => m.speak("Voice prompts on. Mark 3 in 50 metres, then 25 degrees to port.", true));
+        }}
+      >
+        {on ? "Spoken prompts on" : "Spoken prompts off"}
+      </Button>
+      <p className="mt-1 text-t13 leading-snug text-muted-foreground">
+        The phone's own voice says the next mark, each turn before it comes and when it's due, and when you're more than 5 m off the line. Works with no signal.
+      </p>
+    </>
+  );
+}
+
 function TrackSteerSettings() {
   const sense = useHelm((s) => s.steerSense);
   const setSense = useHelm((s) => s.setSteerSense);
@@ -1066,6 +1091,7 @@ function TrackSteerSettings() {
       >
         {ear ? "Ear guide on" : "Ear guide off"}
       </Button>
+      <VoiceToggle />
       <p className="mt-1.5 text-t12 text-muted-foreground">
         Keep a turn of
       </p>
@@ -1144,6 +1170,8 @@ export function SavePanel() {
   const prefs = useHelm((s) => s.routePrefs);
   const card = routeSummary(draft, prefs.motorKn, prefs.fuelLph);
   const fallback = nextTrackName(drafts);
+  const area = draft.length >= 1 ? trackAreaSize(draft) : null;
+  const [offline, setOffline] = useState(true);
 
   const save = () => {
     const saved: LocalDraft = saveDraft({
@@ -1154,6 +1182,7 @@ export function SavePanel() {
       waypoints: draft,
     });
     toast(`Saved ${saved.title}`);
+    if (offline && area && navigator.onLine !== false) void saveTrackOffline(saved.waypoints, saved.title);
     setTitle("");
     setNotes("");
   };
@@ -1171,6 +1200,15 @@ export function SavePanel() {
           <span className="text-t13 text-muted-foreground">Comment (optional)</span>
           <Input value={notes} onChange={(e) => setNotes(e.target.value.slice(0, LIMITS.comment))} className="h-11 text-base" />
         </label>
+        {area ? (
+          <label className="flex items-start gap-2.5 rounded-lg border border-border bg-background px-2.5 py-2">
+            <input type="checkbox" className="mt-0.5 size-5 accent-[var(--color-primary)]" checked={offline} onChange={(e) => setOffline(e.target.checked)} />
+            <span>
+              <span className="block text-t15 font-semibold">Also save this area for offline</span>
+              <span className="block text-t13 text-muted-foreground">Photos at full detail, seabed depth, chart, tides and weather round the track ({area.text}), so it all works out at the reef with no signal.</span>
+            </span>
+          </label>
+        ) : null}
         <Button onClick={save} disabled={draft.length < 1}>
           Save to My tracks
         </Button>
@@ -1260,6 +1298,32 @@ function followTrack(p: Passage | LocalDraft) {
     if (fit) s.fly(fit.lat, fit.lng, fit.zoom);
   }
   s.setPanel(null);
+  // Start from where the boat is: reversed when it's at the far end, part-way when beside the line.
+  const st = useHelm.getState();
+  const pts = guidePoints(p, undefined, { turnDeg: st.trackTurnDeg, chordM: st.trackChordM });
+  const start = followStart(st.boat, pts);
+  if (start.reverse) {
+    toast("You're at the far end of this track", {
+      id: "follow-start",
+      description: "Leaving the anchorage? Follow it reversed, from the end back to the start.",
+      duration: 15_000,
+      classNames: { actionButton: "!h-10 !rounded-lg !px-4 !text-t14 !font-semibold" },
+      action: {
+        label: "Follow reversed",
+        onClick: () => {
+          useHelm.getState().reverseTrack();
+          const again = useHelm.getState();
+          const back = again.activePassage
+            ? followStart(again.boat, guidePoints(again.activePassage, undefined, { turnDeg: again.trackTurnDeg, chordM: again.trackChordM }))
+            : null;
+          if (back && back.index > 0 && !back.reverse) again.setCourseMark(back.index);
+        },
+      },
+    });
+  } else if (start.index > 0) {
+    st.setCourseMark(start.index);
+    toast(`Picking up at mark ${start.index + 1} of ${pts.length}`, { id: "follow-start", description: "The boat is already part-way along, so the marks behind are skipped." });
+  }
 }
 
 function MyTracks() {
@@ -1343,6 +1407,7 @@ function MyTracks() {
                     >
                       Export GPX
                     </Button>
+                    <TrackOfflineButton pts={d.waypoints} name={d.title} />
                     <Button
                       variant="ghost"
                       size="sm"
@@ -1372,6 +1437,20 @@ function MyTracks() {
       <GpxImportRow />
       <BackupRow />
     </>
+  );
+}
+
+/** Save the water round a saved track for offline; shows when it's already on the phone. */
+function TrackOfflineButton({ pts, name }: { pts: LatLng[]; name: string }) {
+  const packs = useHelm((s) => s.offlinePacks);
+  const first = pts[0];
+  const last = pts[pts.length - 1];
+  const saved = Boolean(first && last && packOnPhone(packs, first.lat, first.lng, 18) && packOnPhone(packs, last.lat, last.lng, 18));
+  const area = trackAreaSize(pts);
+  return (
+    <Button variant="outline" size="sm" className="col-span-2" disabled={!area} onClick={() => void saveTrackOffline(pts, name)}>
+      {!area ? "Too long to save as one offline area" : saved ? "Offline area saved ✓ (save again to refresh)" : `Save area for offline (${area.text})`}
+    </Button>
   );
 }
 

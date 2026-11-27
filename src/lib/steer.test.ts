@@ -154,3 +154,29 @@ describe("markLine", () => {
     assert.match(markLine(nearEnd, pts, 3, nextTurn({ ...nearEnd, speedMs: 2 }, pts, 3), fmt, hdg), /^Last mark in 50 m/);
   });
 });
+
+describe("followStart", async () => {
+  const { followStart } = await import("./steer.ts");
+  const a = { lat: -16.9, lng: 145.9 };
+  const pts = [0, 1, 2, 3, 4].map((i) => destPoint(a, 90, i * 200));
+  it("at the start: forwards from mark 1", () => {
+    assert.deepEqual({ ...followStart(destPoint(a, 270, 30), pts), offM: 0 }, { reverse: false, index: 0, offM: 0 });
+  });
+  it("at the anchorage end: suggests reversed", () => {
+    const r = followStart(destPoint(pts[4]!, 0, 20), pts);
+    assert.equal(r.reverse, true);
+    assert.equal(r.index, 0);
+  });
+  it("part-way along: picks up at the mark ahead", () => {
+    const r = followStart(destPoint(destPoint(a, 90, 300), 0, 15), pts);
+    assert.equal(r.reverse, false);
+    assert.equal(r.index, 2);
+  });
+  it("a closed loop is not flipped", () => {
+    const loop = [...pts, destPoint(a, 0, 40)];
+    assert.equal(followStart(destPoint(a, 270, 20), loop).reverse, false);
+  });
+  it("no boat: plain start", () => {
+    assert.equal(followStart(null, pts).index, 0);
+  });
+});

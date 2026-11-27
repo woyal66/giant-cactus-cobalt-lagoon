@@ -419,3 +419,23 @@ export async function downloadPack(
   abort = null;
   return pack;
 }
+/** The box round a track, `padM` beyond its marks each way (so the approach shows too). */
+export function trackBox(pts: LatLng[], padM = 300): BBox | null {
+  if (!pts.length) return null;
+  let south = Infinity, north = -Infinity, west = Infinity, east = -Infinity;
+  for (const p of pts) {
+    south = Math.min(south, p.lat);
+    north = Math.max(north, p.lat);
+    west = Math.min(west, p.lng);
+    east = Math.max(east, p.lng);
+  }
+  const sw = destPoint(destPoint({ lat: south, lng: west }, 180, padM), 270, padM);
+  const ne = destPoint(destPoint({ lat: north, lng: east }, 0, padM), 90, padM);
+  return { south: sw.lat, west: sw.lng, north: ne.lat, east: ne.lng };
+}
+
+/** The finest photo detail that fits for a track's box (full detail first), or null if too big. */
+export function trackPackZoom(b: BBox): PackZoom | null {
+  for (const z of [20, 19, 18, 17] as const) if (!estimatePack(b, z).tooWide) return z;
+  return null;
+}
