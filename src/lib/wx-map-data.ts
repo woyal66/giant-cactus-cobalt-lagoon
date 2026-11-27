@@ -64,7 +64,7 @@ function covers(f: WeatherField, b: BBox): boolean {
 }
 
 /**
- * Weather grid for the chart view (7 days; offline packs keep 3). Recent downloads are reused; each
+ * Weather grid for the chart view (14 days for ECMWF and GFS, 7 for ICON and UKMO; offline packs keep 3). Recent downloads are reused; each
  * download is kept on the phone so the layers still play offline. With no signal, falls back
  * to a saved download for the area, then to the saved passage's forecast.
  */
@@ -76,7 +76,7 @@ export async function loadViewField(b: BBox, modelId = "ecmwf"): Promise<ViewFie
   const hit = mem.get(key);
   if (hit && now - (hit.fetchedAt ?? 0) < FRESH_MS) return { field: hit, source: "live" };
   try {
-    const field = await fetchField(grid, model, 7, { cloud: true });
+    const field = await fetchField(grid, model, Math.min(14, model.days), { cloud: true });
     mem.set(key, field);
     void kvSet(key, field)
       .then(() => remember(key, field))

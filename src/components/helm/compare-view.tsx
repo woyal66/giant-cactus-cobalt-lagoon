@@ -27,7 +27,7 @@ function Arrow({ fromDeg }: { fromDeg: number }) {
 export function CompareView({ data, lat, lng }: { data: WxForecast; lat: number; lng: number }) {
   useUnitsKey();
   const [view, setView] = useState<View>("basic");
-  const [days, setDays] = useState<3 | 7>(3);
+  const [days, setDays] = useState<3 | 7 | 14>(3);
   const hidden = useHelm((s) => s.compareHidden);
   const pinned = useHelm((s) => s.comparePinned);
   const waves = useQuery({
@@ -38,7 +38,7 @@ export function CompareView({ data, lat, lng }: { data: WxForecast; lat: number;
     retry: 1,
   });
 
-  const stepH = days === 3 ? 3 : 6;
+  const stepH = days === 3 ? 3 : days === 7 ? 6 : 12;
   const cols = useMemo(() => columnTimes(Date.now(), days * 24, stepH), [days, stepH]);
 
   // The weather models: the main one plus the others it was compared with.
@@ -97,7 +97,7 @@ export function CompareView({ data, lat, lng }: { data: WxForecast; lat: number;
           ))}
         </div>
         <div className="flex rounded-full bg-background p-0.5" role="radiogroup" aria-label="How many days">
-          {([3, 7] as const).map((d) => (
+          {([3, 7, 14] as const).map((d) => (
             <button key={d} type="button" role="radio" aria-checked={days === d} onClick={() => setDays(d)} className={`h-9 rounded-full px-3 text-t13 font-semibold ${days === d ? "bg-primary text-primary-foreground" : "text-foreground"}`}>
               {d} days
             </button>
@@ -106,6 +106,9 @@ export function CompareView({ data, lat, lng }: { data: WxForecast; lat: number;
       </div>
 
       <p className="mt-2 text-t14 leading-snug font-semibold">{summary}</p>
+      {days === 14 && view !== "waves" ? (
+        <p className="text-t12 text-muted-foreground">ICON and UKMO stop after about a week; beyond that it is ECMWF against GFS.</p>
+      ) : null}
 
       {view === "waves" && waves.isLoading ? <p className="mt-2 text-t14 text-muted-foreground">Loading the wave models…</p> : null}
       {view === "waves" && !waves.isLoading && !waveModels.length ? <p className="mt-2 text-t14 text-muted-foreground">No wave models here (inland, or no signal).</p> : null}

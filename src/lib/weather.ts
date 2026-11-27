@@ -779,16 +779,38 @@ async function fetchNamedModel(
   let json = (await fetchJson(url.toString())) as OpenMeteoPayload;
   const realHours = (j: OpenMeteoPayload) => (j.hourly?.wind_speed_10m ?? []).filter((v) => typeof v === "number" && Number.isFinite(v)).length;
   let resKm = RES_KM[spec.model] ?? 0;
-  // ECMWF's 9 km run where Open-Meteo serves it; the 25 km open run when it doesn't (or is short).
-  if (source === "ecmwf" && realHours(json) < 72) {
+  // ECMWF's 9 km run where Open-Meteo serves it, topped up with the 25 km run for any hours it
+  // doesn't cover, so the forecast still reaches about 15 days.
+  if (source === "ecmwf" && realHours(json) < 13 * 24) {
     url.searchParams.set("models", "ecmwf_ifs025");
-    json = (await fetchJson(url.toString())) as OpenMeteoPayload;
-    resKm = 25;
+    const back = (await fetchJson(url.toString()).catch(() => null)) as OpenMeteoPayload | null;
+    if (back) {
+      if (realHours(json) < 72) {
+        json = back;
+        resKm = 25;
+      } else json = fillHourly(json, back);
+    }
   }
   if (realHours(json) < 3) return null;
   const f = parseOpenMeteo(json, lat, lng, Date.now(), source);
   f.resKm = resKm;
   return f;
+}
+
+/** Fill the nulls of one hourly payload from another (same times, same variables). */
+export function fillHourly(a: OpenMeteoPayload, b: OpenMeteoPayload): OpenMeteoPayload {
+  const ha = a.hourly;
+  const hb = b.hourly;
+  if (!ha || !hb) return ha ? a : b;
+  const time = (hb.time?.length ?? 0) > (ha.time?.length ?? 0) ? hb.time : ha.time;
+  const out: Record<string, unknown> = { time };
+  for (const k of new Set([...Object.keys(ha), ...Object.keys(hb)])) {
+    if (k === "time") continue;
+    const x = (ha as Record<string, (number | null)[] | undefined>)[k] ?? [];
+    const y = (hb as Record<string, (number | null)[] | undefined>)[k] ?? [];
+    out[k] = (time ?? []).map((_, i) => (typeof x[i] === "number" && Number.isFinite(x[i] as number) ? x[i] : (y[i] ?? null)));
+  }
+  return { ...a, hourly: out as OpenMeteoPayload["hourly"] };
 }
 
 /** Grid spacing of each Open-Meteo model, km. */
@@ -816,7 +838,7 @@ export async function fetchWaveModels(lat: number, lng: number): Promise<WaveMod
       url.searchParams.set("latitude", lat.toFixed(4));
       url.searchParams.set("longitude", lng.toFixed(4));
       url.searchParams.set("hourly", "wave_height,wave_direction,wave_period,swell_wave_height");
-      url.searchParams.set("forecast_days", "8");
+      url.searchParams.set("forecast_days", "16");
       url.searchParams.set("timezone", "GMT");
       url.searchParams.set("models", m.param);
       try {

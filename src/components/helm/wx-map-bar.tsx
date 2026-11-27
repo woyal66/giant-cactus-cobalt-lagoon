@@ -23,8 +23,8 @@ import { ROUTE_MODELS } from "@/lib/routing/fetch-field";
 import { useHelm, useUnitsKey } from "@/store/helm";
 
 const H = 3_600_000;
-/** How far ahead the timeline runs. */
-const DAYS = 7;
+/** How far ahead the timeline runs: ECMWF and GFS two weeks, ICON and UKMO a week. */
+const daysFor = (modelId: string, marine: boolean) => (marine ? 14 : Math.min(14, ROUTE_MODELS.find((m) => m.id === modelId)?.days ?? 7));
 
 const ICON: Record<WxMapLayer, typeof Wind> = {
   wind: Wind,
@@ -94,6 +94,7 @@ export function WxMapBar() {
   const live = useHelm((s) => s.wxLiveInfo);
   const field = useViewField();
   const liveMode = LIVE_LAYERS.has(layer) && liveAt != null;
+  const DAYS = daysFor(modelId, layer === "waves" || layer === "current");
   const liveFrames = useMemo(() => (liveMode && live?.status === "ok" ? live.frames : []), [liveMode, live]);
   const times = info?.times ?? [];
   const now = Date.now();

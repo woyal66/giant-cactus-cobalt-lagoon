@@ -502,6 +502,7 @@ const SPANS = [
   { h: 48, label: "2 days" },
   { h: 72, label: "3 days" },
   { h: 168, label: "7 days" },
+  { h: 336, label: "14 days" },
 ];
 
 const GRAPH_W = 320;
