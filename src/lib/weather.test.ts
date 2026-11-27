@@ -310,3 +310,13 @@ describe("forecast table helpers", () => {
     assert.ok(stormRiskOf({ ...h, code: 95, precipMm: 2 }) >= 2);
   });
 });
+
+it("point forecast: 9 km hours kept, the rest from the 25 km run", async () => {
+  const { fillHourly } = await import("./weather.ts");
+  const out = fillHourly(
+    { hourly: { time: ["a", "b"], wind_speed_10m: [5, null] } },
+    { hourly: { time: ["a", "b", "c"], wind_speed_10m: [9, 8, 7] } },
+  );
+  assert.deepEqual(out.hourly!.wind_speed_10m, [5, 8, 7]);
+  assert.deepEqual(out.hourly!.time, ["a", "b", "c"]);
+});

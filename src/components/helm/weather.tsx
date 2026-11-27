@@ -1,6 +1,7 @@
 import { useRef, useState, type PointerEvent, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { WeatherTable } from "@/components/helm/weather-table";
+import { CompareView } from "@/components/helm/compare-view";
 import { ForecastNow } from "@/components/helm/forecast-now";
 import { toast } from "sonner";
 import { useSpotWx, useWx } from "@/hooks/weather";
@@ -185,6 +186,7 @@ export function WeatherPanel() {
   const spot = useSpotWx(pin?.lat ?? null, pin?.lng ?? null);
   const wx = pin ? spot : boatWx;
   const [full, setFull] = useState(false);
+  const wxView = useHelm((s) => s.wxView);
   if (panel !== "weather") return null;
   const data = wx.data;
   const measureHead = (el: HTMLDivElement | null) => {
@@ -250,10 +252,24 @@ export function WeatherPanel() {
             </Button>
           </div>
         </div>
-        <div className="mt-1.5 grid grid-cols-2 gap-1 rounded-lg bg-background p-1" role="tablist" aria-label="Weather view">
-          <button type="button" role="tab" aria-selected className="h-10 rounded-md bg-primary text-t14 font-semibold text-primary-foreground">
-            Forecast here
-          </button>
+        <div className="mt-1.5 grid grid-cols-3 gap-1 rounded-lg bg-background p-1" role="tablist" aria-label="Weather view">
+          {(
+            [
+              ["forecast", "Forecast here"],
+              ["compare", "Compare"],
+            ] as const
+          ).map(([id, t]) => (
+            <button
+              key={id}
+              type="button"
+              role="tab"
+              aria-selected={wxView === id}
+              onClick={() => useHelm.setState({ wxView: id })}
+              className={`h-10 rounded-md text-t14 font-semibold ${wxView === id ? "bg-primary text-primary-foreground" : "text-foreground"}`}
+            >
+              {t}
+            </button>
+          ))}
           <button
             type="button"
             role="tab"
@@ -281,10 +297,16 @@ export function WeatherPanel() {
             </Button>
           </div>
         ) : null}
-        {data ? <WxBody data={data} horizonH={horizonH} onHorizon={setHorizon} /> : null}
-        <div className="mt-3">
-          <MoonCard />
-        </div>
+        {data && wxView === "compare" ? (
+          <CompareView data={data} lat={pin?.lat ?? boat?.lat ?? data.lat} lng={pin?.lng ?? boat?.lng ?? data.lng} />
+        ) : data ? (
+          <WxBody data={data} horizonH={horizonH} onHorizon={setHorizon} />
+        ) : null}
+        {wxView === "forecast" ? (
+          <div className="mt-3">
+            <MoonCard />
+          </div>
+        ) : null}
       </div>
     </div>
   );
@@ -480,6 +502,7 @@ const SPANS = [
   { h: 48, label: "2 days" },
   { h: 72, label: "3 days" },
   { h: 168, label: "7 days" },
+  { h: 336, label: "14 days" },
 ];
 
 const GRAPH_W = 320;

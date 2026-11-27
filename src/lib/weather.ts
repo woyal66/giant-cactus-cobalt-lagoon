@@ -102,7 +102,11 @@ export type WxForecast = {
   rainMm: number;
   sea: SeaState | null;
   /** Other models drawn against the primary line. */
-  compare?: Array<{ source: WxModel; hours: WxHour[] }>;
+  compare?: Array<{ source: WxModel; hours: WxHour[]; resKm?: number }>;
+  /** Grid spacing of this forecast's model, km (ECMWF is 9 km where the fine run is served). */
+  resKm?: number;
+  /** Wave models side by side (Compare → Waves). */
+  waveModels?: WaveModelForecast[];
   alt?: { source: WxModel; hours: WxHour[] };
   /** Set when there was no signal and this is the last forecast saved on the phone. */
   savedAt?: number;
@@ -756,7 +760,7 @@ async function fetchNamedModel(
   source: "ecmwf" | "gfs" | "ukmo" | "icon",
 ): Promise<WxForecast | null> {
   const spec = {
-    ecmwf: { base: "https://api.open-meteo.com/v1/forecast", model: "ecmwf_ifs025", days: "16" },
+    ecmwf: { base: "https://api.open-meteo.com/v1/forecast", model: "ecmwf_ifs", days: "16" },
     gfs: { base: "https://api.open-meteo.com/v1/forecast", model: "gfs_global", days: "16" },
     icon: { base: "https://api.open-meteo.com/v1/forecast", model: "icon_global", days: "7" },
     ukmo: { base: "https://api.open-meteo.com/v1/forecast", model: "ukmo_global_deterministic_10km", days: "7" },
@@ -772,14 +776,80 @@ async function fetchNamedModel(
   url.searchParams.set("wind_speed_unit", "kn");
   url.searchParams.set("timezone", "GMT");
   url.searchParams.set("models", spec.model);
-  const json = (await fetchJson(url.toString())) as OpenMeteoPayload;
-  const winds = json.hourly?.wind_speed_10m ?? [];
-  let real = 0;
-  for (const v of winds) {
-    if (typeof v === "number" && Number.isFinite(v)) real += 1;
+  let json = (await fetchJson(url.toString())) as OpenMeteoPayload;
+  const realHours = (j: OpenMeteoPayload) => (j.hourly?.wind_speed_10m ?? []).filter((v) => typeof v === "number" && Number.isFinite(v)).length;
+  let resKm = RES_KM[spec.model] ?? 0;
+  // ECMWF's 9 km run where Open-Meteo serves it, topped up with the 25 km run for any hours it
+  // doesn't cover, so the forecast still reaches about 15 days.
+  if (source === "ecmwf" && realHours(json) < 13 * 24) {
+    url.searchParams.set("models", "ecmwf_ifs025");
+    const back = (await fetchJson(url.toString()).catch(() => null)) as OpenMeteoPayload | null;
+    if (back) {
+      if (realHours(json) < 72) {
+        json = back;
+        resKm = 25;
+      } else json = fillHourly(json, back);
+    }
   }
-  if (real < 3) return null;
-  return parseOpenMeteo(json, lat, lng, Date.now(), source);
+  if (realHours(json) < 3) return null;
+  const f = parseOpenMeteo(json, lat, lng, Date.now(), source);
+  f.resKm = resKm;
+  return f;
+}
+
+/** Fill the nulls of one hourly payload from another (same times, same variables). */
+export function fillHourly(a: OpenMeteoPayload, b: OpenMeteoPayload): OpenMeteoPayload {
+  const ha = a.hourly;
+  const hb = b.hourly;
+  if (!ha || !hb) return ha ? a : b;
+  const time = (hb.time?.length ?? 0) > (ha.time?.length ?? 0) ? hb.time : ha.time;
+  const out: Record<string, unknown> = { time };
+  for (const k of new Set([...Object.keys(ha), ...Object.keys(hb)])) {
+    if (k === "time") continue;
+    const x = (ha as Record<string, (number | null)[] | undefined>)[k] ?? [];
+    const y = (hb as Record<string, (number | null)[] | undefined>)[k] ?? [];
+    out[k] = (time ?? []).map((_, i) => (typeof x[i] === "number" && Number.isFinite(x[i] as number) ? x[i] : (y[i] ?? null)));
+  }
+  return { ...a, hourly: out as OpenMeteoPayload["hourly"] };
+}
+
+/** Grid spacing of each Open-Meteo model, km. */
+export const RES_KM: Record<string, number> = {
+  ecmwf_ifs: 9,
+  ecmwf_ifs025: 25,
+  gfs_global: 25,
+  icon_global: 13,
+  ukmo_global_deterministic_10km: 10,
+};
+
+export type WaveModelId = "ecmwf_wam" | "gfs_wave" | "meteofrance";
+export type WaveModelForecast = { source: WaveModelId; label: string; resKm: number; hours: WaveHour[] };
+const WAVE_MODELS: Array<{ id: WaveModelId; param: string; label: string; resKm: number }> = [
+  { id: "ecmwf_wam", param: "ecmwf_wam025", label: "ECMWF WAM", resKm: 25 },
+  { id: "gfs_wave", param: "ncep_gfswave025", label: "GFS Wave", resKm: 25 },
+  { id: "meteofrance", param: "meteofrance_wave", label: "Météo-France", resKm: 8 },
+];
+
+/** The three global wave models at a spot, for Compare → Waves. Missing ones are left out. */
+export async function fetchWaveModels(lat: number, lng: number): Promise<WaveModelForecast[]> {
+  const got = await Promise.all(
+    WAVE_MODELS.map(async (m) => {
+      const url = openMeteoUrl("https://marine-api.open-meteo.com/v1/marine");
+      url.searchParams.set("latitude", lat.toFixed(4));
+      url.searchParams.set("longitude", lng.toFixed(4));
+      url.searchParams.set("hourly", "wave_height,wave_direction,wave_period,swell_wave_height");
+      url.searchParams.set("forecast_days", "16");
+      url.searchParams.set("timezone", "GMT");
+      url.searchParams.set("models", m.param);
+      try {
+        const sea = parseSea((await fetchJson(url.toString())) as MarinePayload);
+        return sea && sea.waveHours.length > 3 ? { source: m.id, label: m.label, resKm: m.resKm, hours: sea.waveHours } : null;
+      } catch {
+        return null;
+      }
+    }),
+  );
+  return got.filter((x): x is WaveModelForecast => x != null);
 }
 
 async function fetchOpenMeteo(
@@ -883,7 +953,7 @@ async function fetchWeatherLive(
     (f): f is WxForecast => Boolean(f && f.hours.length > 2 && f.source !== forecast!.source),
   );
   if (others.length) {
-    forecast.compare = others.map((f) => ({ source: f.source, hours: f.hours }));
+    forecast.compare = others.map((f) => ({ source: f.source, hours: f.hours, resKm: f.resKm }));
     const gfs = others.find((f) => f.source === "gfs");
     if (gfs) forecast.alt = { source: gfs.source, hours: gfs.hours };
   }

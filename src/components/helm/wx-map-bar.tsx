@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo } from "react";
 import { Cloud, CloudRain, Gauge, Navigation, Pause, Play, Waves, Wind, X, Zap } from "lucide-react";
 import { RAIN_BANDS } from "@/lib/rain";
 import { Button } from "@/components/ui/button";
@@ -23,8 +23,8 @@ import { ROUTE_MODELS } from "@/lib/routing/fetch-field";
 import { useHelm, useUnitsKey } from "@/store/helm";
 
 const H = 3_600_000;
-/** How far ahead the timeline runs. */
-const DAYS = 7;
+/** How far ahead the timeline runs: ECMWF and GFS two weeks, ICON and UKMO a week. */
+const daysFor = (modelId: string, marine: boolean) => (marine ? 14 : Math.min(14, ROUTE_MODELS.find((m) => m.id === modelId)?.days ?? 7));
 
 const ICON: Record<WxMapLayer, typeof Wind> = {
   wind: Wind,
@@ -53,19 +53,6 @@ function when(at: number): string {
   return d.toLocaleString([], { weekday: "short", hour: "numeric" });
 }
 
-/** Show the "tap the chart" hint the first few times only. */
-function useFirstTimes(key: string, n: number): boolean {
-  const [show] = useState(() => {
-    try {
-      const seen = Number(localStorage.getItem(key) ?? 0);
-      localStorage.setItem(key, String(seen + 1));
-      return seen < n;
-    } catch {
-      return false;
-    }
-  });
-  return show;
-}
 
 /** A small on/off pill for an overlay (Isobars, Animation). */
 function Pill({ on, label, onClick, disabled }: { on: boolean; label: string; onClick: () => void; disabled?: boolean }) {
@@ -106,8 +93,8 @@ export function WxMapBar() {
   const liveAt = useHelm((s) => s.wxLiveAt);
   const live = useHelm((s) => s.wxLiveInfo);
   const field = useViewField();
-  const hint = useFirstTimes("wx-tap-hint", 3);
   const liveMode = LIVE_LAYERS.has(layer) && liveAt != null;
+  const DAYS = daysFor(modelId, layer === "waves" || layer === "current");
   const liveFrames = useMemo(() => (liveMode && live?.status === "ok" ? live.frames : []), [liveMode, live]);
   const times = info?.times ?? [];
   const now = Date.now();
@@ -275,94 +262,85 @@ export function WxMapBar() {
         </div>
       )}
 
-      <div className="mt-1.5">
-        {layer === "rain" ? (
-          <div aria-label="Rain intensity, mm per hour">
-            <div className="flex h-2 overflow-hidden rounded-full">
+      {/* One slim row, like Windy: overlays, the model, and the legend with its numbers inside. */}
+      <div className="mt-1.5 flex flex-wrap items-center gap-1.5 md:flex-nowrap">
+        {!liveMode ? (
+          <div className="rp-noscroll order-2 flex w-full items-center gap-1.5 overflow-x-auto md:order-1 md:w-auto md:shrink-0">
+            <Pill on={isobars} label="Isobars" onClick={() => set({ wxIsobars: !isobars })} />
+            <Pill
+              on={style === "particles" && !lowBattery}
+              disabled={lowBattery}
+              label={lowBattery ? "Moving (low battery)" : "Moving"}
+              onClick={() => set({ wxMapStyle: style === "arrows" ? "particles" : "arrows" })}
+            />
+            {marine ? (
+              <span className="shrink-0 px-1 text-t12 text-muted-foreground">Marine model</span>
+            ) : (
+              <div className="flex shrink-0 rounded-full bg-background p-0.5" role="radiogroup" aria-label="Weather model">
+                {ROUTE_MODELS.map((m) => {
+                  const on = modelId === m.id;
+                  return (
+                    <button
+                      key={m.id}
+                      type="button"
+                      role="radio"
+                      aria-checked={on}
+                      onClick={() => set({ wxMapModel: m.id })}
+                      className={`h-9 rounded-full px-2.5 text-t12 font-semibold whitespace-nowrap ${on ? "bg-primary text-primary-foreground" : "text-foreground"}`}
+                    >
+                      {m.label}
+                      <span className={`ml-0.5 align-top text-t11 font-normal ${on ? "" : "text-muted-foreground"}`}>{MODEL_KM[m.id] ?? ""}km</span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        ) : null}
+        <div className="order-1 w-full md:order-2 md:w-auto md:min-w-[14rem] md:flex-1">
+          {layer === "rain" ? (
+            <div className="flex h-7 overflow-hidden rounded-full text-t11 font-semibold" aria-label="Rain intensity, mm per hour">
               {RAIN_BANDS.map((b) => (
-                <span key={b.label} className="flex-1" style={{ background: `rgb(${b.color.join(",")})` }} />
-              ))}
-            </div>
-            <div className="flex text-t11 text-muted-foreground">
-              {RAIN_BANDS.map((b, i) => (
-                <span key={b.label} className="flex-1 truncate text-center" title={`${b.min}${i < RAIN_BANDS.length - 1 ? `–${RAIN_BANDS[i + 1]!.min}` : "+"} mm/h`}>
+                <span key={b.label} className="grid flex-1 place-items-center truncate px-0.5 text-white [text-shadow:0_1px_2px_rgba(0,0,0,0.9)]" style={{ background: `rgb(${b.color.join(",")})` }}>
                   {b.label === "Very heavy" ? "V. heavy" : b.label === "Moderate" ? "Mod." : b.label}
                 </span>
               ))}
-              <span className="shrink-0 pl-1">{liveMode ? "◯ core" : "⚡ thunder"}</span>
+              <span className="grid shrink-0 place-items-center bg-background px-2 text-muted-foreground">{liveMode ? "◯ core" : "⚡"}</span>
             </div>
-          </div>
-        ) : layer === "cloud" ? (
-          liveMode ? null : (
-            <div>
-              <div className="h-2 rounded-full" style={{ background: "linear-gradient(to right, rgba(170,180,195,0.15), rgb(245,248,252))" }} />
-              <div className="flex justify-between text-t11 text-muted-foreground">
+          ) : layer === "cloud" ? (
+            liveMode ? null : (
+              <div
+                className="flex h-7 items-center justify-between rounded-full px-3 text-t11 font-semibold text-white [text-shadow:0_1px_2px_rgba(0,0,0,0.9)]"
+                style={{ background: "linear-gradient(to right, rgba(120,130,150,0.5), rgb(235,240,248))" }}
+              >
                 <span>Clear</span>
-                <span>greyer = low cloud</span>
+                <span>low cloud greyer</span>
                 <span>Overcast</span>
               </div>
-            </div>
-          )
-        ) : legend ? (
-          <div>
-            <div className="h-2 rounded-full" style={{ background: rampGradient(legend.ramp) }} />
-            <div className="relative h-4 text-t11 text-muted-foreground tabular-nums">
-              {legend.ticks.map((v, i) => {
+            )
+          ) : legend ? (
+            <div className="relative h-7 rounded-full text-t11 font-semibold text-white tabular-nums [text-shadow:0_1px_2px_rgba(0,0,0,0.9)]" style={{ background: rampGradient(legend.ramp) }}>
+              <span className="absolute top-1/2 left-2.5 -translate-y-1/2">{layer === "waves" ? formatDepth(1).replace(/^[\d.,\s]+/, "") : legend.unit}</span>
+              {legend.ticks.slice(1).map((v) => {
                 const lo = legend.ramp[0]![0];
                 const hi = legend.ramp[legend.ramp.length - 1]![0];
                 const at2 = Math.max(0, Math.min(100, ((v - lo) / (hi - lo)) * 100));
-                const unit = layer === "waves" ? formatDepth(1).replace(/^[\d.,\s]+/, "") : legend.unit;
                 const text = layer === "waves" ? formatDepth(v).replace(/\s*[a-z]+$/i, "").replace(/\.0$/, "") : String(v);
                 return (
-                  <span key={v} className="absolute -translate-x-1/2 whitespace-nowrap" style={{ left: `${Math.max(5, Math.min(92, at2))}%` }}>
-                    {i === legend.ticks.length - 1 ? `${text} ${unit}` : text}
+                  <span key={v} className="absolute top-1/2 -translate-x-1/2 -translate-y-1/2" style={{ left: `${Math.max(12, Math.min(94, at2))}%` }}>
+                    {text}
                   </span>
                 );
               })}
             </div>
-          </div>
-        ) : null}
+          ) : null}
+        </div>
       </div>
 
-      {!liveMode ? (
-        <div className="rp-noscroll mt-1 flex items-center gap-1 overflow-x-auto pb-0.5 md:flex-wrap">
-          <Pill on={isobars || layer === "pressure"} disabled={layer === "pressure"} label="Isobars" onClick={() => set({ wxIsobars: !isobars })} />
-          <Pill
-            on={style === "particles" && !lowBattery}
-            disabled={lowBattery}
-            label={lowBattery ? "Animation (battery low)" : "Animation"}
-            onClick={() => set({ wxMapStyle: style === "arrows" ? "particles" : "arrows" })}
-          />
-          <span className="mx-0.5 h-6 w-px shrink-0 bg-border" aria-hidden />
-          {marine ? (
-            <span className="shrink-0 text-t12 text-muted-foreground">Open-Meteo marine model</span>
-          ) : (
-            <div className="flex gap-1" role="radiogroup" aria-label="Weather model">
-              {ROUTE_MODELS.map((m) => {
-                const on = modelId === m.id;
-                return (
-                  <button
-                    key={m.id}
-                    type="button"
-                    role="radio"
-                    aria-checked={on}
-                    onClick={() => set({ wxMapModel: m.id })}
-                    className={`h-10 shrink-0 rounded-full px-3 text-t12 font-semibold ${on ? "bg-primary text-primary-foreground" : "bg-background text-foreground"}`}
-                  >
-                    {m.label}
-                    <span className={`ml-1 font-normal ${on ? "" : "text-muted-foreground"}`}>{MODEL_KM[m.id] ?? ""} km</span>
-                  </button>
-                );
-              })}
-            </div>
-          )}
-        </div>
-      ) : null}
-      {problem || empty || (hint && !liveMode) ? (
+      {problem || empty ? (
         <p className="mt-1 text-t12 text-muted-foreground">
           {problem ? <span className="font-semibold text-amber-200">{problem} </span> : null}
           {empty ? <span className="font-semibold text-foreground">{empty} </span> : null}
-          {hint && !liveMode ? "Tap the chart for the forecast at a spot." : null}
         </p>
       ) : null}
       {liveMode ? (
@@ -454,18 +432,19 @@ export function WxProbeCard() {
   if (!probe || layer === "off" || panel || !field) return null;
   const p = probeAt(field, at, probe.lat, probe.lng);
   const dir = (d: number | null) => (d == null ? "" : ` ${compassPoint(d)}`);
+  const deg = (d: number | null) => (d == null ? "" : ` ${compassPoint(d)} ${String(Math.round(d) % 360).padStart(3, "0")}°`);
   const rows: Array<[string, string]> = [];
-  if (p.windKn != null) rows.push(["Wind", `${Math.round(p.windKn)} kn${dir(p.windFrom)}${p.gustKn != null ? `, gusts ${Math.round(p.gustKn)}` : ""}`]);
-  if (p.waveM != null) rows.push(["Waves", `${formatDepth(p.waveM)}${dir(p.waveFrom)}${p.periodS != null ? `, ${Math.round(p.periodS)} s` : ""}`]);
+  if (p.windKn != null) rows.push(["Wind", `${Math.round(p.windKn)} kn${deg(p.windFrom)}${p.gustKn != null ? `, gust ${Math.round(p.gustKn)}` : ""}`]);
+  if (p.waveM != null) rows.push(["Waves", `${formatDepth(p.waveM)}${deg(p.waveFrom)}${p.periodS != null ? `, ${Math.round(p.periodS)} s` : ""}`]);
   if (p.curKn != null && p.curKn >= 0.1) rows.push(["Current", `${p.curKn.toFixed(1)} kn toward${dir(p.curToward)}`]);
   if (p.rainMm != null) rows.push(["Rain", p.rainMm < 0.1 ? "none" : `${p.rainMm.toFixed(1)} mm/h`]);
   if (p.cloudPct != null) rows.push(["Cloud", `${Math.round(p.cloudPct)}%${p.lowCloudPct != null ? `, low ${Math.round(p.lowCloudPct)}%` : ""}`]);
   if (p.capeJkg != null && p.capeJkg >= 300) rows.push(["Thunder", p.capeJkg >= 2000 ? "high risk" : p.capeJkg >= 1000 ? "possible" : "low risk"]);
-  if (p.pressureHpa != null) rows.push(["Pressure", `${Math.round(p.pressureHpa)} hPa`]);
+  if (p.pressureHpa != null) rows.push(["hPa", String(Math.round(p.pressureHpa))]);
   return (
-    <div className="pointer-events-auto absolute inset-x-2 top-[calc(max(0.4rem,var(--safe-area-inset-top,env(safe-area-inset-top)))+3.6rem)] z-40 mx-auto max-w-sm rounded-xl border border-border bg-card/97 p-2.5 shadow-[var(--shadow-border)]">
+    <div className="pointer-events-auto absolute top-[calc(max(0.4rem,var(--safe-area-inset-top,env(safe-area-inset-top)))+3.6rem)] right-2 z-40 w-max max-w-[calc(100vw-6.5rem)] rounded-xl border border-border bg-card/95 p-2 shadow-[var(--shadow-border)]">
       <div className="flex items-start justify-between gap-2">
-        <p className="text-t13 text-muted-foreground tabular-nums">
+        <p className="text-t12 text-muted-foreground tabular-nums">
           This spot · {new Date(at).toLocaleString([], { weekday: "short", hour: "numeric" })}
         </p>
         <button type="button" aria-label="Close" className="-m-1 rounded p-1.5" onClick={() => useHelm.getState().setWxMap({ wxProbe: null })}>
@@ -473,7 +452,7 @@ export function WxProbeCard() {
         </button>
       </div>
       {rows.length ? (
-        <dl className="mt-0.5 grid grid-cols-[5rem_1fr] gap-x-2 gap-y-0.5 text-t15 tabular-nums">
+        <dl className="mt-0.5 grid grid-cols-[3.6rem_1fr] gap-x-1.5 text-t13 leading-snug tabular-nums">
           {rows.map(([k, v]) => (
             <div key={k} className="contents">
               <dt className="text-muted-foreground">{k}</dt>
@@ -484,16 +463,27 @@ export function WxProbeCard() {
       ) : (
         <p className="text-t14">No forecast here. Pan so the spot is inside the view.</p>
       )}
-      <Button
-        className="mt-2 h-11 w-full"
-        onClick={() => {
-          const s = useHelm.getState();
-          useHelm.setState({ wxPin: { lat: probe.lat, lng: probe.lng } });
-          s.setPanel("weather");
-        }}
-      >
-        Full forecast here
-      </Button>
+      <div className="mt-1.5 grid grid-cols-2 gap-1">
+        <Button
+          size="sm"
+          onClick={() => {
+            useHelm.setState({ wxPin: { lat: probe.lat, lng: probe.lng }, wxView: "forecast" });
+            useHelm.getState().setPanel("weather");
+          }}
+        >
+          Forecast
+        </Button>
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() => {
+            useHelm.setState({ wxPin: { lat: probe.lat, lng: probe.lng }, wxView: "compare" });
+            useHelm.getState().setPanel("weather");
+          }}
+        >
+          Compare
+        </Button>
+      </div>
     </div>
   );
 }

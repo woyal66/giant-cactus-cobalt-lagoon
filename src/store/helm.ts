@@ -295,6 +295,10 @@ export type HelmState = {
   aisTargets: import("@/lib/ais").AisTarget[];
   aisStatus: { state: "off" | "connecting" | "live" | "error"; note: string | null; at: number };
   aisCard: string | null;
+  /** Weather panel tab (not saved), and Compare's hidden / pinned models (saved). */
+  wxView: "forecast" | "compare";
+  compareHidden: string[];
+  comparePinned: string | null;
   /** Marine rescue log on / log off: the skipper's base and whether to remind them. */
   rescue: { on: boolean; name: string; vhf: string; phone: string; returnBy: number | null };
   /** Places on the chart (moorings, ramps, marinas...): on, and which kinds. */
@@ -643,6 +647,8 @@ function persistSig(state: Record<string, unknown>): string {
     state.places,
     state.placeKinds,
     state.rescue,
+    state.compareHidden,
+    state.comparePinned,
     state.aisSource,
     state.aisKey,
     state.aisHost,
@@ -1010,6 +1016,9 @@ export const useHelm = create<HelmState & HelmActions>()(
       lowBattery: false,
       anchorageCard: null,
       rescue: { on: true, name: "", vhf: "", phone: "", returnBy: null },
+      wxView: "forecast",
+      compareHidden: [],
+      comparePinned: null,
       aisSource: "off",
       aisKey: "",
       aisHost: "",
@@ -1908,6 +1917,8 @@ export const useHelm = create<HelmState & HelmActions>()(
         places: s.places,
         placeKinds: s.placeKinds,
         rescue: s.rescue,
+        compareHidden: s.compareHidden,
+        comparePinned: s.comparePinned,
         aisSource: s.aisSource,
         aisKey: s.aisKey,
         aisHost: s.aisHost,
@@ -1985,8 +1996,16 @@ export const useHelm = create<HelmState & HelmActions>()(
           sharpTiles: current.sharpTiles,
           depthLayer: p.depthLayer === "depth" || p.depthLayer === "shallow" || p.depthLayer === "lines" ? p.depthLayer : "off",
           // "storm" was its own layer before Rain & thunder merged them.
-          wxMapLayer: (p.wxMapLayer as string) === "storm" ? "rain" : WX_MAP_LAYERS.some((l) => l.id === p.wxMapLayer) ? (p.wxMapLayer as WxMapLayer) : "off",
-          wxIsobars: p.wxIsobars === true,
+          // "storm" merged into Rain & thunder; "pressure" is now the Isobars overlay on Wind.
+          wxMapLayer:
+            (p.wxMapLayer as string) === "storm"
+              ? "rain"
+              : (p.wxMapLayer as string) === "pressure"
+                ? "wind"
+                : WX_MAP_LAYERS.some((l) => l.id === p.wxMapLayer)
+                  ? (p.wxMapLayer as WxMapLayer)
+                  : "off",
+          wxIsobars: p.wxIsobars === true || (p.wxMapLayer as string) === "pressure",
           // Always opens moving (arrows are one tap away); the model choice is remembered.
           wxMapStyle: "particles",
           wxMapModel: ["ecmwf", "gfs", "icon", "ukmo"].includes(p.wxMapModel as string) ? (p.wxMapModel as string) : "ecmwf",
@@ -2011,6 +2030,8 @@ export const useHelm = create<HelmState & HelmActions>()(
           usePace: p.usePace === true,
           keepScreenOn: p.keepScreenOn !== false,
           places: p.places !== false,
+          compareHidden: Array.isArray(p.compareHidden) ? (p.compareHidden as unknown[]).filter((x): x is string => typeof x === "string").slice(0, 12) : current.compareHidden,
+          comparePinned: typeof p.comparePinned === "string" ? p.comparePinned : null,
           rescue:
             p.rescue && typeof p.rescue === "object"
               ? {

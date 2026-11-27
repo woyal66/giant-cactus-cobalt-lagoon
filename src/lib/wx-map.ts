@@ -15,11 +15,10 @@ export const WX_MAP_LAYERS: Array<{ id: WxMapLayer; label: string }> = [
   { id: "cloud", label: "Cloud" },
   { id: "waves", label: "Waves" },
   { id: "current", label: "Current" },
-  { id: "pressure", label: "Pressure" },
 ];
 
 /** Resolution of each weather model on the map (Open-Meteo global runs). */
-export const MODEL_KM: Record<string, number> = { ecmwf: 25, gfs: 25, icon: 13, ukmo: 10 };
+export const MODEL_KM: Record<string, number> = { ecmwf: 9, gfs: 25, icon: 13, ukmo: 10 };
 
 const MAX_POINTS = 144;
 

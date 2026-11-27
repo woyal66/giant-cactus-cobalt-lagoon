@@ -25,3 +25,12 @@ test("builds a field from multi-location responses, converting current to knots"
   // Marine had no first hour: that layer reads as calm sea.
   assert.equal(conditionsAt(f, -23.5, 152.1, 1_800_000_000_000).waveM, 0);
 });
+
+test("the fine model's hours are kept and its gaps filled from the fallback", async () => {
+  const { mergeLocs } = await import("./fetch-field.ts");
+  const out = mergeLocs(
+    [{ hourly: { time: [1, 2, 3], wind_speed_10m: [5, null, null] } }],
+    [{ hourly: { time: [1, 2, 3], wind_speed_10m: [9, 8, 7] } }],
+  );
+  assert.deepEqual(out[0]!.hourly!.wind_speed_10m, [5, 8, 7]);
+});

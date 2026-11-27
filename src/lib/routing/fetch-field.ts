@@ -8,13 +8,14 @@ import { openMeteoUrl } from "../open-meteo.ts";
 import type { WeatherField } from "./field.ts";
 import type { BBox } from "./land.ts";
 
-export type RouteModel = { id: string; label: string; param: string };
+/** `fallback`: the model asked for when `param` comes back empty or short (ECMWF 9 km → 25 km). */
+export type RouteModel = { id: string; label: string; param: string; fallback?: string; /** How far ahead it runs. */ days: number };
 
 export const ROUTE_MODELS: RouteModel[] = [
-  { id: "ecmwf", label: "ECMWF", param: "ecmwf_ifs025" },
-  { id: "gfs", label: "GFS", param: "gfs_global" },
-  { id: "icon", label: "ICON", param: "icon_global" },
-  { id: "ukmo", label: "UKMO", param: "ukmo_global_deterministic_10km" },
+  { id: "ecmwf", label: "ECMWF", param: "ecmwf_ifs", fallback: "ecmwf_ifs025", days: 15 },
+  { id: "gfs", label: "GFS", param: "gfs_global", days: 16 },
+  { id: "icon", label: "ICON", param: "icon_global", days: 7 },
+  { id: "ukmo", label: "UKMO", param: "ukmo_global_deterministic_10km", days: 7 },
 ];
 
 export type CorridorGrid = BBox & { lats: number[]; lngs: number[] };
@@ -132,6 +133,24 @@ function coords(grid: CorridorGrid) {
   return { lat: lat.join(","), lng: lng.join(",") };
 }
 
+/** Fill the gaps (nulls) of one model's response from another's, location by location. */
+export function mergeLocs(primary: Loc[], fill: Loc[]): Loc[] {
+  return primary.map((p, k) => {
+    const f = fill[k]?.hourly;
+    const h = p.hourly;
+    if (!h || !f) return h ? p : (fill[k] ?? p);
+    const times = h.time ?? f.time ?? [];
+    const out: Hourly = { ...h, time: times };
+    for (const key of Object.keys(f)) {
+      if (key === "time") continue;
+      const a = h[key] ?? [];
+      const b = f[key] ?? [];
+      out[key] = times.map((_, i) => (typeof a[i] === "number" && Number.isFinite(a[i] as number) ? a[i]! : (b[i] ?? null)));
+    }
+    return { ...p, hourly: out };
+  });
+}
+
 async function getJson(url: URL): Promise<Loc[]> {
   const res = await fetch(url.toString(), { signal: AbortSignal.timeout(20_000) });
   if (!res.ok) throw new Error(`Weather request failed (${res.status}).`);
@@ -142,7 +161,7 @@ async function getJson(url: URL): Promise<Loc[]> {
 /** `cloud` adds cloud cover (weather map); the router doesn't need it. */
 export async function fetchField(grid: CorridorGrid, model: RouteModel, days: number, opts: { cloud?: boolean } = {}): Promise<WeatherField> {
   const { lat, lng } = coords(grid);
-  const d = String(Math.min(10, Math.max(2, Math.ceil(days))));
+  const d = String(Math.min(16, Math.max(2, Math.ceil(days))));
   const w = openMeteoUrl("https://api.open-meteo.com/v1/forecast");
   w.searchParams.set("latitude", lat);
   w.searchParams.set("longitude", lng);
@@ -161,7 +180,17 @@ export async function fetchField(grid: CorridorGrid, model: RouteModel, days: nu
   m.searchParams.set("longitude", lng);
   m.searchParams.set("hourly", "wave_height,wave_direction,wave_period,ocean_current_velocity,ocean_current_direction");
   m.searchParams.set("timeformat", "unixtime");
-  m.searchParams.set("forecast_days", String(Math.min(8, Number(d))));
-  const [wind, marine] = await Promise.all([getJson(w), getJson(m).catch(() => null)]);
+  m.searchParams.set("forecast_days", String(Math.min(16, Number(d))));
+  const [first, marine] = await Promise.all([getJson(w), getJson(m).catch(() => null)]);
+  let wind = first;
+  // The fine model may not be served (or may run shorter than asked): use the fallback then.
+  const want = Number(d) * 24 * 0.8;
+  const real = (wind[0]?.hourly?.wind_speed_10m ?? []).filter((v) => typeof v === "number" && Number.isFinite(v)).length;
+  if (model.fallback && real < want) {
+    // Keep the fine model's hours and fill the rest (or all of it) from the fallback.
+    w.searchParams.set("models", model.fallback);
+    const back = await getJson(w).catch(() => null);
+    if (back) wind = mergeLocs(wind, back);
+  }
   return fieldFromResponses(grid, model.id, wind, marine);
 }
